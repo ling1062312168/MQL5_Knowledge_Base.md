@@ -661,11 +661,11 @@ void CPanel::BuildPositionsTab()
    for(int r=0;r<10;r++)
    {
       int ry=hy+16+r*30;
-      Lbl("Tab_P_R"+IntegerToString(r)+"_0","--",18+0*cw6,ry,cw6,16,clrWhite,8);
-      Lbl("Tab_P_R"+IntegerToString(r)+"_1","--",18+1*cw6,ry,cw6,16,clrWhite,8);
-      Lbl("Tab_P_R"+IntegerToString(r)+"_2","--",18+2*cw6,ry,cw6,16,clrWhite,8);
-      Lbl("Tab_P_R"+IntegerToString(r)+"_3","--",18+3*cw6,ry,cw6,16,clrWhite,8);
-      Lbl("Tab_P_R"+IntegerToString(r)+"_4","--",18+4*cw6,ry,cw6,16,clrWhite,7);
+      Lbl("Tab_P_R"+IntegerToString(r)+"_0","",18+0*cw6,ry,cw6,16,clrWhite,8);
+      Lbl("Tab_P_R"+IntegerToString(r)+"_1","",18+1*cw6,ry,cw6,16,clrWhite,8);
+      Lbl("Tab_P_R"+IntegerToString(r)+"_2","",18+2*cw6,ry,cw6,16,clrWhite,8);
+      Lbl("Tab_P_R"+IntegerToString(r)+"_3","",18+3*cw6,ry,cw6,16,clrWhite,8);
+      Lbl("Tab_P_R"+IntegerToString(r)+"_4","",18+4*cw6,ry,cw6,16,clrWhite,7);
 
       Btn("Tab_P_Mod_"+IntegerToString(r),"改",18+5*cw6,ry,22,16,clrDodgerBlue,clrWhite);
       Btn("Tab_P_Close_"+IntegerToString(r),"平",18+5*cw6+26,ry,22,16,clrRed,clrWhite);
@@ -676,7 +676,7 @@ void CPanel::BuildPositionsTab()
    int sy=ty+410;
    Lbl("Tab_P_Sum_Title","持仓汇总",16,sy,80,14,clrAqua,9);
    Lbl("Tab_P_Sum_Total","总持仓: 0  |  Buy: 0  |  Sell: 0",16,sy+18,250,12,clrLightGray,9);
-   Lbl("Tab_P_Sum_PL","总盈亏: --",16,sy+36,180,12,clrLightGray,9);
+   Lbl("Tab_P_Sum_PL","总盈亏: 0.00",16,sy+36,180,12,clrLightGray,9);
 
    UpdatePositions(g_pos_filter, g_pos_sort);
 }
@@ -703,7 +703,7 @@ void CPanel::BuildStatsTab()
    for(int i=0;i<12;i++)
    {
       int r=i/4,c=i%4;
-      Lbl("Tab_S_V_"+sk[i],"--",20+c*scw,sy+r*38,scw,18,clrWhite,11);
+      Lbl("Tab_S_V_"+sk[i],"",20+c*scw,sy+r*38,scw,18,clrWhite,11);
       Lbl("Tab_S_L_"+sk[i],slb[i],20+c*scw,sy+r*38+16,scw,14,clrLightGray,7);
    }
 
