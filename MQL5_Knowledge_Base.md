@@ -314,16 +314,21 @@ void OnChartEvent(const int id, const long &lparam,
 }
 ```
 
-**IsClickOnPanel方法**：
+**IsClickOnPanel方法**（只检测外边框）：
 ```cpp
 bool CPanel::IsClickOnPanel(int x, int y)
 {
-   return (x >= m_x && x <= m_x + m_w && y >= m_y && y <= m_y + m_h);
+   int border = 3;  // 边框宽度3像素
+   return (x >= m_x && x <= m_x + m_w && y >= m_y && y <= m_y + m_h &&
+           (x <= m_x + border || x >= m_x + m_w - border ||
+            y <= m_y + border || y >= m_y + m_h - border));
 }
 ```
 
+**说明**：点击面板边缘3像素范围内才触发拖拽，点击内部区域（按钮、输入框等）不会触发，避免误拖拽。
+
 **交互流程**：
-1. 点击面板任意区域 → 开始拖拽（边框变红加粗）
+1. 点击面板外边框（边缘3像素） → 开始拖拽（边框变红加粗）
 2. 移动鼠标 → 面板跟随移动（自动边界限制）
 3. 点击任意位置（图表或面板上） → 结束拖拽（边框恢复）
 

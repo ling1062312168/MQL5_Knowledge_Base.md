@@ -1226,7 +1226,10 @@ void CPanel::EndDrag()
 
 bool CPanel::IsClickOnPanel(int x,int y)
 {
-   return (x >= m_x && x <= m_x + m_w && y >= m_y && y <= m_y + m_h);
+   int border = 3;
+   return (x >= m_x && x <= m_x + m_w && y >= m_y && y <= m_y + m_h &&
+           (x <= m_x + border || x >= m_x + m_w - border ||
+            y <= m_y + border || y >= m_y + m_h - border));
 }
 
 //==================== 辅助创建 ====================
