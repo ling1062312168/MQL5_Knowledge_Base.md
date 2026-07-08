@@ -677,6 +677,8 @@ void CPanel::BuildPositionsTab()
    Lbl("Tab_P_Sum_Title","持仓汇总",16,sy,80,14,clrAqua,9);
    Lbl("Tab_P_Sum_Total","总持仓: 0  |  Buy: 0  |  Sell: 0",16,sy+18,250,12,clrLightGray,9);
    Lbl("Tab_P_Sum_PL","总盈亏: --",16,sy+36,180,12,clrLightGray,9);
+
+   UpdatePositions(g_pos_filter, g_pos_sort);
 }
 
 //==================== Tab 2: 统计页 ====================
@@ -708,6 +710,8 @@ void CPanel::BuildStatsTab()
    // 重置统计按钮
    Btn("Tab_S_Reset","重置统计",m_w-100,ty+410,80,22,clrMaroon,clrWhite);
    Lbl("Tab_S_Hint","点击周期切换统计范围",16,ty+420,200,14,clrDimGray,8);
+
+   UpdateStats();
 }
 
 //==================== Tab 3: 设置页 ====================
@@ -1201,9 +1205,10 @@ void CPanel::DragTo(int x,int y)
    Destroy();
    m_x=nx; m_y=ny;
    BuildLayout();
+   UpdateAccount();
    if(g_active_tab==0) BuildTradeTab();
-   else if(g_active_tab==1) { BuildPositionsTab(); UpdatePositions(g_pos_filter, g_pos_sort); }
-   else if(g_active_tab==2) { BuildStatsTab(); UpdateStats(); }
+   else if(g_active_tab==1) BuildPositionsTab();
+   else if(g_active_tab==2) BuildStatsTab();
    else if(g_active_tab==3) BuildSettingsTab();
    Redraw();
 }
