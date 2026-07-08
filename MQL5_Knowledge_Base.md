@@ -5,6 +5,22 @@
 
 ---
 
+## 🔥 BUG快速索引表
+
+> 每次修复BUG后必须在此表追加记录，防止重复踩坑。
+
+| BUG描述 | 现象 | 根因 | 解决方案 | 所在章节 |
+|---------|------|------|---------|---------|
+| 类成员用指针声明 | 大量级联undeclared错误 | 类成员应声明为对象而非指针 | 改为对象成员，用`.`访问 | 第1章 |
+| long→int隐式转换 | 编译警告possible loss of data | PositionsTotal()等返回long | 加`(int)`显式强制转换 | 第2章 |
+| Hour函数找不到 | undeclared identifier 'Hour' | MQL5无Hour()，需用TimeToStruct | MqlDateTime结构体取dt.hour | 第4章 |
+| CTrade.Close不存在 | undeclared identifier 'Close' | 方法名记错了 | 用`trade.PositionClose(ticket)` | 第5章 |
+| 面板被K线遮挡 | 面板背景在K线后面 | `OBJPROP_BACK=true`后置底 | 改为`OBJPROP_BACK=false` | 第7.1章 |
+| 拖拽无法停止 | 鼠标松开后面板仍跟随 | 只在OBJECT_CLICK中结束拖拽，空白处松开不触发 | 在MOUSE_MOVE中检测sparam含"l"否 | 第7章 |
+| 订单号显示不全 | 按钮文字被截断 | 按钮宽度不够，票号太长 | 订单号独立一列，按钮只显示"改/平" | 持仓Tab布局 |
+
+---
+
 ## 📋 目录索引
 
 | 分类 | 说明 | 章节 |
@@ -1027,6 +1043,10 @@ void OnTick() {
 | 2026-07-07 | 修复CTrade平仓方法名：PositionClose() |
 | 2026-07-07 | 修复时间函数：MQL5需用TimeToStruct() |
 | 2026-07-07 | **重构：按12大分类重新组织知识库** |
+| 2026-07-08 | 新增BUG快速索引表，7个历史BUG全收录 |
+| 2026-07-08 | 新增拖拽无法停止BUG修复方案（MOUSE_MOVE检测sparam） |
+| 2026-07-08 | 新增Z轴置顶方案（OBJPROP_BACK=false） |
+| 2026-07-08 | 新增订单号显示不全解决方案（独立列布局） |
 
 ---
 
