@@ -16,7 +16,7 @@
 | Hour函数找不到 | undeclared identifier 'Hour' | MQL5无Hour()，需用TimeToStruct | MqlDateTime结构体取dt.hour | 第4章 |
 | CTrade.Close不存在 | undeclared identifier 'Close' | 方法名记错了 | 用`trade.PositionClose(ticket)` | 第5章 |
 | 面板被K线遮挡 | 面板背景在K线后面 | `OBJPROP_BACK=true`后置底 | 改为`OBJPROP_BACK=false` | 第7.1章 |
-| 拖拽无法停止 | 鼠标松开后面板仍跟随 | 错误使用sparam检测按键，不可靠 | 用CHARTEVENT_CLICK事件结束拖拽（点击任意位置停止） | 第7章 |
+| 拖拽无法停止 | 鼠标松开后面板仍跟随 | 错误使用sparam检测按键，不可靠 | **完整沿用DraggablePanel_MT5模式**：CHARTEVENT_CLICK处理开始/结束拖拽，IsClickOnPanel检测，边框视觉反馈 | 第7章 |
 | 订单号显示不全 | 按钮文字被截断 | 按钮宽度不够，票号太长 | 订单号独立一列，按钮只显示"改/平" | 持仓Tab布局 |
 | 输入框无法输入 | 编辑框无法输入或值不保存 | 缺少CHARTEVENT_OBJECT_ENDEDIT处理和READONLY设置 | 添加ENDEDIT事件处理，设置OBJPROP_READONLY=false | 第27章 |
 | 持仓页显示"--" | 无订单时行标签仍显示-- | SwitchTab后未调用UpdatePositions清空 | SwitchTab时同时调用UpdatePositions | 持仓Tab布局 |
@@ -238,39 +238,64 @@ void OnChartEvent(const int id, const long &lparam,
 }
 ```
 
-### ⚠️ 关键BUG：拖拽无法停止（正确方案）
+### ⚠️ 关键BUG：拖拽无法停止（完整修复方案）
 
 **问题**：拖拽面板时，松开鼠标后面板仍跟随鼠标移动，无法停止拖拽。
 
-**❌ 错误方案（已废弃）**：在 `CHARTEVENT_MOUSE_MOVE` 中检测 `sparam` 是否含 `"l"` — 不可靠，不同MT5版本表现不一致。
+**❌ 错误方案（已废弃）**：
+1. 在 `CHARTEVENT_MOUSE_MOVE` 中检测 `sparam` 是否含 `"l"` — 不可靠
+2. 只在 `CHARTEVENT_OBJECT_CLICK` 中结束拖拽 — 空白区域不触发
 
-**✅ 正确方案**：使用 `CHARTEVENT_CLICK` 事件结束拖拽（MT5官方推荐模式）。
+**✅ 正确方案**：完整沿用 `DraggablePanel_MT5.mq5` 模式。
 
 **核心原理**：
-- `CHARTEVENT_OBJECT_CLICK` → 点击对象时触发（用于开始拖拽）
-- `CHARTEVENT_CLICK` → 点击图表任意位置时触发（用于结束拖拽）
-- `CHARTEVENT_MOUSE_MOVE` → 鼠标移动时触发（用于移动面板）
+- `CHARTEVENT_CLICK` → **同时处理开始和结束拖拽**（点击面板区域开始，再次点击任意位置结束）
+- `CHARTEVENT_MOUSE_MOVE` → 移动面板
+- `IsClickOnPanel()` → 判断点击是否在面板区域内
+- 边框视觉反馈 → 拖拽时变红加粗，结束时恢复
 
-**完整拖拽事件处理**：
+**完整拖拽事件处理（参考DraggablePanel_MT5.mq5）**：
 ```cpp
 void OnChartEvent(const int id, const long &lparam, 
                   const double &dparam, const string &sp)
 {
-   // 1. 鼠标移动: 移动面板
+   int x = (int)lparam;
+   int y = (int)dparam;
+
+   // 1. 鼠标移动: 拖拽移动
    if(id == CHARTEVENT_MOUSE_MOVE)
    {
       if(g_drag_state)
-         panel.DragTo((int)lparam, (int)dparam);
+         panel.DragTo(x, y);
       return;
    }
 
-   // 2. 图表点击: 结束拖拽（点击任意位置都停止）
+   // 2. 图表点击: 开始/结束拖拽（核心模式）
    if(id == CHARTEVENT_CLICK)
    {
-      if(g_drag_state)
+      if(!g_drag_state)
       {
-         g_mouse_down=false;
-         panel.EndDrag();
+         // 点击面板区域 → 开始拖拽
+         if(panel.IsClickOnPanel(x, y))
+         {
+            g_drag_state = true;
+            g_mouse_down = true;
+            g_drag_start_x = x - panel.GetX();
+            g_drag_start_y = y - panel.GetY();
+            // 边框变红色，增加宽度（视觉反馈）
+            ObjectSetInteger(0, "EAP_BG", OBJPROP_COLOR, clrRed);
+            ObjectSetInteger(0, "EAP_BG", OBJPROP_WIDTH, 2);
+            ChartRedraw(0);
+         }
+      }
+      else
+      {
+         // 已在拖拽中 → 结束拖拽
+         g_drag_state = false;
+         g_mouse_down = false;
+         // 恢复原边框颜色和宽度
+         ObjectSetInteger(0, "EAP_BG", OBJPROP_COLOR, clrDimGray);
+         ObjectSetInteger(0, "EAP_BG", OBJPROP_WIDTH, 1);
          ChartRedraw(0);
       }
       return;
@@ -279,28 +304,28 @@ void OnChartEvent(const int id, const long &lparam,
    // 3. 编辑框完成事件...
    if(id == CHARTEVENT_OBJECT_ENDEDIT) { ... }
 
-   // 4. 对象点击事件
+   // 4. 对象点击事件（按钮等）
    if(id != CHARTEVENT_OBJECT_CLICK) return;
 
    // 拖拽中忽略对象点击
    if(g_drag_state) return;
 
-   // 点击标题开始拖拽
-   if(sp == "EAP_Title")
-   {
-      g_mouse_down = true;
-      panel.StartDrag((int)lparam, (int)dparam);
-      return;
-   }
-
    // 其他按钮点击处理...
 }
 ```
 
+**IsClickOnPanel方法**：
+```cpp
+bool CPanel::IsClickOnPanel(int x, int y)
+{
+   return (x >= m_x && x <= m_x + m_w && y >= m_y && y <= m_y + m_h);
+}
+```
+
 **交互流程**：
-1. 点击标题栏 → 开始拖拽
-2. 移动鼠标 → 面板跟随移动
-3. 点击任意位置（图表或面板上） → 结束拖拽
+1. 点击面板任意区域 → 开始拖拽（边框变红加粗）
+2. 移动鼠标 → 面板跟随移动（自动边界限制）
+3. 点击任意位置（图表或面板上） → 结束拖拽（边框恢复）
 
 ---
 
