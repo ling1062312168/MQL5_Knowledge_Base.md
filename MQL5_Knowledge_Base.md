@@ -220,6 +220,72 @@ void OnChartEvent(const int id, const long &lparam,
 }
 ```
 
+### ⚠️ 关键BUG：拖拽无法停止
+
+**问题**：只在 `CHARTEVENT_OBJECT_CLICK` 中结束拖拽，鼠标在非面板区域松开时不会触发，导致面板一直跟随鼠标。
+
+**根因**：`CHARTEVENT_OBJECT_CLICK` 仅在点击图表对象时触发，鼠标在空白图表区域松开不会触发该事件。
+
+**解决方案**：在 `CHARTEVENT_MOUSE_MOVE` 事件中检测鼠标左键状态，松开则结束拖拽。
+```cpp
+if(id == CHARTEVENT_MOUSE_MOVE)
+{
+   int mx=(int)lparam, my=(int)dparam;
+   if(g_drag_state)
+   {
+      bool left_down = (StringFind(sparam,"l")>=0);
+      if(!left_down)
+      {
+         g_mouse_down=false;
+         EndDrag();
+      }
+      else
+      {
+         DragTo(mx, my);
+      }
+   }
+   return;
+}
+```
+
+**说明**：`CHARTEVENT_MOUSE_MOVE` 的 `sparam` 参数包含按键状态：
+- `"l"` = 鼠标左键按下
+- `"r"` = 鼠标右键按下
+- `"m"` = 鼠标中键按下
+- `"d"` = 双击
+
+---
+
+## 7.1 Z轴层级与面板置顶
+
+### OBJPROP_BACK 属性
+```cpp
+// false = 在图表前方（置顶），true = 在图表后方
+ObjectSetInteger(0, name, OBJPROP_BACK, false);
+```
+
+### 面板默认置顶设置
+面板所有元素（背景、按钮、标签、编辑框）都应设置 `OBJPROP_BACK=false`，确保显示在K线之上。
+
+**注意**：背景矩形若设为 `OBJPROP_BACK=true`，会被K线和指标覆盖，导致面板"消失"在图表后面。
+
+### 切换置顶/置底
+```cpp
+void ToggleOnTop()
+{
+   static bool on_top = true;
+   on_top = !on_top;
+   int tot=(int)ObjectsTotal(0, 0);
+   for(int i=0;i<tot;i++)
+   {
+      string n=ObjectName(0,i,0);
+      if(StrStarts(n, PREFIX))
+         ObjectSetInteger(0, n, OBJPROP_BACK, on_top?false:true);
+   }
+   ChartRedraw();
+}
+```
+
 ---
 
 ## 8. 颜色配置
