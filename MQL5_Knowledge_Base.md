@@ -17,6 +17,8 @@
 | CTrade.Close不存在 | undeclared identifier 'Close' | 方法名记错了 | 用`trade.PositionClose(ticket)` | 第5章 |
 | 面板被K线遮挡 | 面板背景在K线后面 | `OBJPROP_BACK=true`后置底 | 改为`OBJPROP_BACK=false` | 第7.1章 |
 | 拖拽无法停止 | 鼠标松开后面板仍跟随 | 错误使用sparam检测按键，不可靠 | **完整沿用DraggablePanel_MT5模式**：CHARTEVENT_CLICK处理开始/结束拖拽，IsClickOnPanel检测，边框视觉反馈 | 第7章 |
+| 内部面板错位 | 内部黑色面板拖拽时位置不变 | Rct/Lbl/Btn/Edt创建控件时使用绝对坐标，未加m_x/m_y偏移 | 所有创建函数添加m_x+x, m_y+y偏移，拖拽时Destroy+重建 | 第7章 |
+| 显示"Label" | 持仓行标签显示"Label"文本 | Lbl函数创建标签时未正确设置文本 | Lbl函数确保设置OBJPROP_TEXT | 第27章 |
 | 订单号显示不全 | 按钮文字被截断 | 按钮宽度不够，票号太长 | 订单号独立一列，按钮只显示"改/平" | 持仓Tab布局 |
 | 输入框无法输入 | 编辑框无法输入或值不保存 | 缺少CHARTEVENT_OBJECT_ENDEDIT处理和READONLY设置 | 添加ENDEDIT事件处理，设置OBJPROP_READONLY=false | 第27章 |
 | 持仓页显示"--" | 无订单时行标签仍显示-- | SwitchTab后未调用UpdatePositions清空 | SwitchTab时同时调用UpdatePositions | 持仓Tab布局 |

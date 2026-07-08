@@ -1196,26 +1196,15 @@ void CPanel::DragTo(int x,int y)
    if(nx>maxX) nx=maxX;
    if(ny>maxY) ny=maxY;
 
-   int dx=nx-m_x, dy=ny-m_y;
-   if(dx==0&&dy==0) return;
+   if(nx==m_x&&ny==m_y) return;
 
-   int tot=(int)ObjectsTotal(m_ch,m_sub);
-   for(int i=0;i<tot;i++)
-   {
-      string n=ObjectName(m_ch,i,m_sub);
-      if(StrStarts(n,m_pfx))
-      {
-         long t=ObjectGetInteger(m_ch,n,OBJPROP_TYPE);
-         if(t==OBJ_BUTTON||t==OBJ_LABEL||t==OBJ_EDIT||t==OBJ_RECTANGLE_LABEL)
-         {
-            int xx=(int)ObjectGetInteger(m_ch,n,OBJPROP_XDISTANCE)+dx;
-            int yy=(int)ObjectGetInteger(m_ch,n,OBJPROP_YDISTANCE)+dy;
-            ObjectSetInteger(m_ch,n,OBJPROP_XDISTANCE,xx);
-            ObjectSetInteger(m_ch,n,OBJPROP_YDISTANCE,yy);
-         }
-      }
-   }
+   Destroy();
    m_x=nx; m_y=ny;
+   BuildLayout();
+   if(g_active_tab==0) BuildTradeTab();
+   else if(g_active_tab==1) { BuildPositionsTab(); UpdatePositions(g_pos_filter, g_pos_sort); }
+   else if(g_active_tab==2) { BuildStatsTab(); UpdateStats(); }
+   else if(g_active_tab==3) BuildSettingsTab();
    Redraw();
 }
 
@@ -1237,8 +1226,8 @@ bool CPanel::Btn(string n,string t,int x,int y,int w,int h,color bg,color tc)
 {
    string nm=m_pfx+n;
    if(!ObjectCreate(m_ch,nm,OBJ_BUTTON,m_sub,0,0)) return false;
-   ObjectSetInteger(m_ch,nm,OBJPROP_XDISTANCE,x);
-   ObjectSetInteger(m_ch,nm,OBJPROP_YDISTANCE,y);
+   ObjectSetInteger(m_ch,nm,OBJPROP_XDISTANCE,m_x+x);
+   ObjectSetInteger(m_ch,nm,OBJPROP_YDISTANCE,m_y+y);
    ObjectSetInteger(m_ch,nm,OBJPROP_XSIZE,w);
    ObjectSetInteger(m_ch,nm,OBJPROP_YSIZE,h);
    ObjectSetInteger(m_ch,nm,OBJPROP_BGCOLOR,bg);
@@ -1256,8 +1245,8 @@ bool CPanel::Lbl(string n,string t,int x,int y,int w,int h,color tc,int fs)
 {
    string nm=m_pfx+n;
    if(!ObjectCreate(m_ch,nm,OBJ_LABEL,m_sub,0,0)) return false;
-   ObjectSetInteger(m_ch,nm,OBJPROP_XDISTANCE,x);
-   ObjectSetInteger(m_ch,nm,OBJPROP_YDISTANCE,y);
+   ObjectSetInteger(m_ch,nm,OBJPROP_XDISTANCE,m_x+x);
+   ObjectSetInteger(m_ch,nm,OBJPROP_YDISTANCE,m_y+y);
    ObjectSetInteger(m_ch,nm,OBJPROP_XSIZE,w);
    ObjectSetInteger(m_ch,nm,OBJPROP_YSIZE,h);
    ObjectSetInteger(m_ch,nm,OBJPROP_COLOR,tc);
@@ -1273,8 +1262,8 @@ bool CPanel::Edt(string n,string t,int x,int y,int w,int h)
 {
    string nm=m_pfx+n;
    if(!ObjectCreate(m_ch,nm,OBJ_EDIT,m_sub,0,0)) return false;
-   ObjectSetInteger(m_ch,nm,OBJPROP_XDISTANCE,x);
-   ObjectSetInteger(m_ch,nm,OBJPROP_YDISTANCE,y);
+   ObjectSetInteger(m_ch,nm,OBJPROP_XDISTANCE,m_x+x);
+   ObjectSetInteger(m_ch,nm,OBJPROP_YDISTANCE,m_y+y);
    ObjectSetInteger(m_ch,nm,OBJPROP_XSIZE,w);
    ObjectSetInteger(m_ch,nm,OBJPROP_YSIZE,h);
    ObjectSetInteger(m_ch,nm,OBJPROP_COLOR,clrWhite);
@@ -1294,8 +1283,8 @@ bool CPanel::Rct(string n,int x,int y,int w,int h,color bg,color bc)
 {
    string nm=m_pfx+n;
    if(!ObjectCreate(m_ch,nm,OBJ_RECTANGLE_LABEL,m_sub,0,0)) return false;
-   ObjectSetInteger(m_ch,nm,OBJPROP_XDISTANCE,x);
-   ObjectSetInteger(m_ch,nm,OBJPROP_YDISTANCE,y);
+   ObjectSetInteger(m_ch,nm,OBJPROP_XDISTANCE,m_x+x);
+   ObjectSetInteger(m_ch,nm,OBJPROP_YDISTANCE,m_y+y);
    ObjectSetInteger(m_ch,nm,OBJPROP_XSIZE,w);
    ObjectSetInteger(m_ch,nm,OBJPROP_YSIZE,h);
    ObjectSetInteger(m_ch,nm,OBJPROP_BGCOLOR,bg);
