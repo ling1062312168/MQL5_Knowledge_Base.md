@@ -18,6 +18,8 @@
 | 面板被K线遮挡 | 面板背景在K线后面 | `OBJPROP_BACK=true`后置底 | 改为`OBJPROP_BACK=false` | 第7.1章 |
 | 拖拽无法停止 | 鼠标松开后面板仍跟随 | 只在OBJECT_CLICK中结束拖拽，空白处松开不触发 | 在MOUSE_MOVE中检测sparam含"l"否 | 第7章 |
 | 订单号显示不全 | 按钮文字被截断 | 按钮宽度不够，票号太长 | 订单号独立一列，按钮只显示"改/平" | 持仓Tab布局 |
+| 输入框无法输入 | 编辑框无法输入或值不保存 | 缺少CHARTEVENT_OBJECT_ENDEDIT处理和READONLY设置 | 添加ENDEDIT事件处理，设置OBJPROP_READONLY=false | 第27章 |
+| 持仓页显示"--" | 无订单时行标签仍显示-- | SwitchTab后未调用UpdatePositions清空 | SwitchTab时同时调用UpdatePositions | 持仓Tab布局 |
 
 ---
 
@@ -909,6 +911,68 @@ void SetEditDouble(string name, double value, int digits = 2) {
 }
 ```
 
+### ⚠️ 关键BUG：输入框无法输入/值不保存
+
+**问题现象**：点击编辑框无法输入文字，或输入的值点击其他地方后丢失。
+
+**根因分析**：
+1. 未设置 `OBJPROP_READONLY = false`（默认可能因版本不同而异）
+2. 缺少 `CHARTEVENT_OBJECT_ENDEDIT` 事件处理，编辑完成后值未被读取保存
+3. 切换Tab时编辑框被销毁，输入的值未先读取
+
+**完整解决方案**：
+```cpp
+// 1. 创建编辑框时显式设置可编辑
+bool CreateEdit(string name, int x, int y, int w, int h, string defaultValue) {
+   if(!ObjectCreate(0, name, OBJ_EDIT, 0, 0, 0)) return false;
+   ObjectSetInteger(0, name, OBJPROP_XDISTANCE, x);
+   ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y);
+   ObjectSetInteger(0, name, OBJPROP_XSIZE, w);
+   ObjectSetInteger(0, name, OBJPROP_YSIZE, h);
+   ObjectSetInteger(0, name, OBJPROP_COLOR, clrWhite);
+   ObjectSetInteger(0, name, OBJPROP_BGCOLOR, clrDarkGray);
+   ObjectSetInteger(0, name, OBJPROP_BACK, false);
+   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, true);
+   ObjectSetInteger(0, name, OBJPROP_READONLY, false);  // ← 关键：允许编辑
+   ObjectSetString(0, name, OBJPROP_TEXT, defaultValue);
+   ObjectSetInteger(0, name, OBJPROP_ALIGN, ALIGN_CENTER);
+   return true;
+}
+
+// 2. OnChartEvent中处理编辑完成事件
+void OnChartEvent(const int id, const long &lparam, 
+                  const double &dparam, const string &sp)
+{
+   // 鼠标移动事件处理...
+   
+   // 编辑完成事件：保存所有输入框的值
+   if(id == CHARTEVENT_OBJECT_ENDEDIT)
+   {
+      if(StrStarts(sp, "EAP_"))
+      {
+         ReadAllEdits();   // 读取所有编辑框的值到变量
+         ChartRedraw(0);
+      }
+      return;
+   }
+   
+   // 点击事件处理...
+}
+
+// 3. 切换Tab前先读取编辑框值（防止数据丢失）
+void SwitchTab(int tab)
+{
+   ReadAllEdits();  // ← 切换前保存
+   ClearTabContent();
+   // ... 构建新Tab内容
+}
+```
+
+**编辑操作说明**：
+- 单击编辑框 → 进入编辑模式
+- 输入数值 → 编辑中
+- 按 Enter 键 或 点击其他区域 → 完成编辑，触发 `CHARTEVENT_OBJECT_ENDEDIT`
+
 ---
 
 # 第十二部分：按钮
@@ -1047,6 +1111,8 @@ void OnTick() {
 | 2026-07-08 | 新增拖拽无法停止BUG修复方案（MOUSE_MOVE检测sparam） |
 | 2026-07-08 | 新增Z轴置顶方案（OBJPROP_BACK=false） |
 | 2026-07-08 | 新增订单号显示不全解决方案（独立列布局） |
+| 2026-07-08 | 新增输入框无法输入BUG修复（ENDEDIT事件+READONLY设置） |
+| 2026-07-08 | 新增持仓页空数据标签显示问题（SwitchTab后调用UpdatePositions） |
 
 ---
 
