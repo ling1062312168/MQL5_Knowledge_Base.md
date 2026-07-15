@@ -578,7 +578,7 @@ public:
       
       if(InpUseSpacingATR)
       {
-         int atr_handle = iATR(m_symbol, PERIOD_CURRENT, InpATRPeriod, MODE_SMA, PRICE_CLOSE);
+         int atr_handle = iATR(m_symbol, PERIOD_CURRENT, InpATRPeriod);
          if(atr_handle != INVALID_HANDLE)
          {
             double atr_val[];
@@ -957,7 +957,7 @@ public:
       double atr_val = 0;
       if(InpTrailingType == TRAIL_ATR)
       {
-         int atr_handle = iATR(symbol, PERIOD_CURRENT, InpATRPeriod, MODE_SMA, PRICE_CLOSE);
+         int atr_handle = iATR(symbol, PERIOD_CURRENT, InpATRPeriod);
          if(atr_handle != INVALID_HANDLE)
          {
             double atr_buf[];
