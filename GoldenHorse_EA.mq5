@@ -206,7 +206,7 @@ input bool                InpShowPanel      = true;           // 显示面板
 input int                 InpPanelX         = 10;            // 面板X坐标
 input int                 InpPanelY         = 30;            // 面板Y坐标
 input int                 InpPanelWidth     = 440;            // 面板宽度
-input int                 InpPanelHeight    = 640;            // 面板高度
+input int                 InpPanelHeight    = 720;            // 面板高度
 
 //+------------------------------------------------------------------+
 //| 全局变量与实例                                                     |
@@ -1334,133 +1334,131 @@ public:
       Rect("BG", 0, 0, m_w, m_h, C'25,25,30', C'80,60,30');
       
       int y = 0;
-      int pad = 12;
-      int cw = m_w - pad * 2;
       
-      Rect("TitleBG", 0, y, m_w, 70, C'35,30,25', C'100,80,40');
-      Label("Title1", "金戈铁马  多核对冲量化引擎", pad, y + 5, 280, 18, C'200,180,120', 12);
-      Label("Title2", "GOLDEN CAVALRY · MULTI-CORE HEDGE v2.1", pad, y + 25, 380, 10, C'150,130,80', 7);
-      Label("Title3", "「 金戈所向·多空俱亡 | 铁马奔腾·对冲千军 」", pad, y + 38, 380, 10, C'180,160,100', 8);
-      Label("Symbol", _Symbol, pad, y + 53, 70, 10, clrSilver, 7);
-      Label("Magic", "Magic " + IntegerToString(InpMagicNumber), 88, y + 53, 95, 10, clrSilver, 7);
-      Label("Period", "M" + IntegerToString(Period() / 60), 188, y + 53, 40, 10, clrSilver, 7);
-      Label("Status", "战况: 允许交易", 232, y + 53, 190, 10, clrLimeGreen, 7);
-      y += 76;
+      Rect("TitleBG", 0, y, m_w, 85, C'35,30,25', C'100,80,40');
+      Label("Title1", "金戈铁马 多核对冲量化引擎", 12, y + 6, 320, 22, C'200,180,120', 14);
+      Label("Title2", "GOLDEN CAVALRY · MULTI-CORE HEDGE v2.1", 12, y + 32, 380, 12, C'150,130,80', 8);
+      Label("Title3", "金戈所向·多空俱亡 | 铁马奔腾·对冲千军", 12, y + 48, 380, 12, C'180,160,100', 9);
+      Label("Symbol", _Symbol, 12, y + 68, 80, 12, clrSilver, 9);
+      Label("Magic", "Magic " + IntegerToString(InpMagicNumber), 98, y + 68, 100, 12, clrSilver, 9);
+      Label("Period", "M" + IntegerToString(Period() / 60), 205, y + 68, 45, 12, clrSilver, 9);
+      Label("Status", "战况: 允许交易", 255, y + 68, 170, 12, clrLimeGreen, 9);
+      y += 90;
       
-      Rect("ProfitBG", 6, y, m_w - 12, 50, C'20,25,20', C'60,70,50');
-      int col1 = 14, col2 = 150, col3 = 290;
-      Label("TodayLbl", "今日斩获", col1, y + 5, 50, 10, C'180,160,100', 7);
-      Label("TodayVal", "0.00", col1, y + 18, 90, 16, clrLimeGreen, 11);
-      Label("YestLbl", "昨日斩获", col2, y + 5, 50, 10, C'180,160,100', 7);
-      Label("YestVal", "0.00", col2, y + 18, 90, 16, clrLimeGreen, 11);
-      Label("TotalLbl", "累计斩获", col3, y + 5, 50, 10, C'180,160,100', 7);
-      Label("TotalVal", "0.00", col3, y + 18, 130, 16, clrLimeGreen, 11);
-      y += 56;
+      Rect("ProfitBG", 6, y, m_w - 12, 62, C'20,25,20', C'60,70,50');
+      int col1 = 14, col2 = 155, col3 = 295;
+      Label("TodayLbl", "今日斩获", col1, y + 6, 60, 12, C'180,160,100', 9);
+      Label("TodayVal", "0.00", col1, y + 22, 100, 20, clrLimeGreen, 13);
+      Label("YestLbl", "昨日斩获", col2, y + 6, 60, 12, C'180,160,100', 9);
+      Label("YestVal", "0.00", col2, y + 22, 100, 20, clrLimeGreen, 13);
+      Label("TotalLbl", "累计斩获", col3, y + 6, 60, 12, C'180,160,100', 9);
+      Label("TotalVal", "0.00", col3, y + 22, 130, 20, clrLimeGreen, 13);
+      y += 68;
       
-      Rect("AcctBG", 6, y, m_w - 12, 80, C'20,20,25', C'50,50,60');
-      Label("AcctTitle", "账户概览", 14, y + 4, 60, 10, C'150,180,200', 8);
-      int ay = y + 20;
-      Label("BalLbl", "余额", 14, ay, 28, 9, clrSilver, 7);
-      Label("BalVal", "--", 44, ay, 85, 9, clrWhite, 7);
-      Label("EqLbl", "净值", 134, ay, 28, 9, clrSilver, 7);
-      Label("EqVal", "--", 164, ay, 85, 9, clrWhite, 7);
-      Label("TradeCntLbl", "交易", 254, ay, 28, 9, clrSilver, 7);
-      Label("TradeCntVal", "0", 284, ay, 50, 9, clrWhite, 7);
-      Label("WinRateLbl", "胜率", 340, ay, 28, 9, clrSilver, 7);
-      Label("WinRateVal", "--", 370, ay, 50, 9, clrWhite, 7);
-      ay += 18;
-      Label("MarLbl", "可用", 14, ay, 28, 9, clrSilver, 7);
-      Label("MarVal", "--", 44, ay, 75, 9, clrWhite, 7);
-      Label("MargPLbl", "保证金", 134, ay, 38, 9, clrSilver, 7);
-      Label("MargPVal", "--", 175, ay, 65, 9, clrWhite, 7);
-      Label("PFLLbl", "盈亏比", 254, ay, 35, 9, clrSilver, 7);
-      Label("PFLVal", "--", 292, ay, 50, 9, clrWhite, 7);
-      Label("LevLbl", "杠杆", 348, ay, 28, 9, clrSilver, 7);
-      Label("LevVal", "--", 378, ay, 50, 9, clrWhite, 7);
-      ay += 18;
-      Label("FreeLbl", "已用", 14, ay, 28, 9, clrSilver, 7);
-      Label("FreeVal", "--", 44, ay, 75, 9, clrWhite, 7);
-      y += 86;
+      Rect("AcctBG", 6, y, m_w - 12, 100, C'20,20,25', C'50,50,60');
+      Label("AcctTitle", "账户概览", 14, y + 5, 70, 14, C'150,180,200', 10);
+      int ay = y + 24;
+      Label("BalLbl", "余额", 14, ay, 35, 12, clrSilver, 9);
+      Label("BalVal", "--", 52, ay, 100, 12, clrWhite, 9);
+      Label("EqLbl", "净值", 158, ay, 35, 12, clrSilver, 9);
+      Label("EqVal", "--", 196, ay, 100, 12, clrWhite, 9);
+      Label("TradeCntLbl", "交易", 302, ay, 35, 12, clrSilver, 9);
+      Label("TradeCntVal", "0", 340, ay, 60, 12, clrWhite, 9);
+      ay += 22;
+      Label("MarLbl", "可用", 14, ay, 35, 12, clrSilver, 9);
+      Label("MarVal", "--", 52, ay, 90, 12, clrWhite, 9);
+      Label("MargPLbl", "保证金", 158, ay, 45, 12, clrSilver, 9);
+      Label("MargPVal", "--", 206, ay, 80, 12, clrWhite, 9);
+      Label("WinRateLbl", "胜率", 292, ay, 35, 12, clrSilver, 9);
+      Label("WinRateVal", "--", 330, ay, 60, 12, clrWhite, 9);
+      ay += 22;
+      Label("FreeLbl", "已用", 14, ay, 35, 12, clrSilver, 9);
+      Label("FreeVal", "--", 52, ay, 90, 12, clrWhite, 9);
+      Label("LevLbl", "杠杆", 158, ay, 35, 12, clrSilver, 9);
+      Label("LevVal", "--", 196, ay, 60, 12, clrWhite, 9);
+      Label("PFLLbl", "盈亏比", 262, ay, 40, 12, clrSilver, 9);
+      Label("PFLVal", "--", 305, ay, 60, 12, clrWhite, 9);
+      y += 106;
       
-      Rect("PosBG", 6, y, m_w - 12, 92, C'25,20,20', C'60,50,50');
-      Label("PosTitle", "持仓监控", 14, y + 4, 60, 10, C'200,150,150', 8);
-      int py = y + 18;
-      Label("BuyLbl", "多单", 14, py, 28, 9, clrSilver, 7);
-      Label("BuyVal", "0单/0.00手", 44, py, 75, 9, clrWhite, 7);
-      Label("BuyPL", "0.00", 124, py, 60, 9, clrLimeGreen, 7);
-      Label("BuyAvgLbl", "均价", 189, py, 28, 9, clrSilver, 7);
-      Label("BuyAvgVal", "--", 219, py, 195, 9, clrWhite, 7);
-      py += 18;
-      Label("SellLbl", "空单", 14, py, 28, 9, clrSilver, 7);
-      Label("SellVal", "0单/0.00手", 44, py, 75, 9, clrWhite, 7);
-      Label("SellPL", "0.00", 124, py, 60, 9, clrRed, 7);
-      Label("SellAvgLbl", "均价", 189, py, 28, 9, clrSilver, 7);
-      Label("SellAvgVal", "--", 219, py, 195, 9, clrWhite, 7);
-      py += 18;
-      Label("TotalPLLbl", "总盈亏", 14, py, 38, 9, clrSilver, 7);
-      Label("TotalPLVal", "0.00", 55, py, 65, 9, clrWhite, 8);
-      Label("TotalLots", "0.00手", 125, py, 50, 9, clrWhite, 8);
-      Label("NetPLbl", "净盈亏", 180, py, 38, 9, clrSilver, 7);
-      Label("NetPVal", "0.00", 221, py, 195, 9, clrWhite, 8);
-      py += 18;
-      Label("BuyPeakLbl", "多峰值", 14, py, 38, 8, C'180,140,140', 6);
-      Label("BuyPeakVal", "0.00", 55, py, 55, 8, C'200,160,160', 6);
-      Label("SellPeakLbl", "空峰值", 115, py, 38, 8, C'180,140,140', 6);
-      Label("SellPeakVal", "0.00", 156, py, 55, 8, C'200,160,160', 6);
-      Label("NetPeakLbl", "净峰值", 216, py, 38, 8, C'180,140,140', 6);
-      Label("NetPeakVal", "0.00", 257, py, 150, 8, C'200,160,160', 6);
-      y += 98;
+      Rect("PosBG", 6, y, m_w - 12, 110, C'25,20,20', C'60,50,50');
+      Label("PosTitle", "持仓监控", 14, y + 5, 70, 14, C'200,150,150', 10);
+      int py = y + 22;
+      Label("BuyLbl", "多单", 14, py, 35, 12, clrSilver, 9);
+      Label("BuyVal", "0单/0.00手", 52, py, 85, 12, clrWhite, 9);
+      Label("BuyPL", "0.00", 142, py, 70, 12, clrLimeGreen, 9);
+      Label("BuyAvgLbl", "均价", 217, py, 35, 12, clrSilver, 9);
+      Label("BuyAvgVal", "--", 255, py, 170, 12, clrWhite, 9);
+      py += 22;
+      Label("SellLbl", "空单", 14, py, 35, 12, clrSilver, 9);
+      Label("SellVal", "0单/0.00手", 52, py, 85, 12, clrWhite, 9);
+      Label("SellPL", "0.00", 142, py, 70, 12, clrRed, 9);
+      Label("SellAvgLbl", "均价", 217, py, 35, 12, clrSilver, 9);
+      Label("SellAvgVal", "--", 255, py, 170, 12, clrWhite, 9);
+      py += 22;
+      Label("TotalPLLbl", "总盈亏", 14, py, 45, 12, clrSilver, 9);
+      Label("TotalPLVal", "0.00", 62, py, 75, 12, clrWhite, 10);
+      Label("TotalLots", "0.00手", 142, py, 60, 12, clrWhite, 10);
+      Label("NetPLbl", "净盈亏", 207, py, 45, 12, clrSilver, 9);
+      Label("NetPVal", "0.00", 255, py, 170, 12, clrWhite, 10);
+      py += 20;
+      Label("BuyPeakLbl", "多峰值", 14, py, 45, 10, C'180,140,140', 8);
+      Label("BuyPeakVal", "0.00", 62, py, 65, 10, C'200,160,160', 8);
+      Label("SellPeakLbl", "空峰值", 132, py, 45, 10, C'180,140,140', 8);
+      Label("SellPeakVal", "0.00", 180, py, 65, 10, C'200,160,160', 8);
+      Label("NetPeakLbl", "净峰值", 250, py, 45, 10, C'180,140,140', 8);
+      Label("NetPeakVal", "0.00", 298, py, 120, 10, C'200,160,160', 8);
+      y += 116;
       
-      Rect("HedgeBG", 6, y, m_w - 12, 72, C'20,25,20', C'50,60,50');
-      Label("HedgeTitle", "多核对冲 · 移动止盈", 14, y + 4, 150, 10, C'150,200,150', 8);
-      Label("HedgeType", GetCloseModeName(), 300, y + 4, 115, 10, C'150,200,180', 7);
-      int hy = y + 18;
-      Label("HedgeBuy", "多单对冲: 待触发", 14, hy, 175, 9, clrSilver, 7);
-      Label("HedgeSell", "空单对冲: 待触发", 194, hy, 175, 9, clrSilver, 7);
-      hy += 18;
-      Label("HedgeNet", "净盈亏对冲: 待触发", 14, hy, 195, 9, clrSilver, 7);
-      Label("TrailType", "止盈: " + GetTrailingTypeName(), 214, hy, 180, 9, C'150,200,150', 7);
-      hy += 18;
+      Rect("HedgeBG", 6, y, m_w - 12, 86, C'20,25,20', C'50,60,50');
+      Label("HedgeTitle", "多核对冲 · 移动止盈", 14, y + 5, 180, 14, C'150,200,150', 10);
+      Label("HedgeType", GetCloseModeName(), 300, y + 5, 120, 14, C'150,200,180', 9);
+      int hy = y + 22;
+      Label("HedgeBuy", "多单对冲: 待触发", 14, hy, 180, 12, clrSilver, 9);
+      Label("HedgeSell", "空单对冲: 待触发", 200, hy, 180, 12, clrSilver, 9);
+      hy += 22;
+      Label("HedgeNet", "净盈亏对冲: 待触发", 14, hy, 200, 12, clrSilver, 9);
+      Label("TrailType", "止盈: " + GetTrailingTypeName(), 220, hy, 180, 12, C'150,200,150', 9);
+      hy += 22;
       Label("HedgeRule", "盈" + DoubleToString(InpHedgeStartPL, 1) + " 撤" + 
              DoubleToString(InpHedgePullback, 1) + " 净平" + DoubleToString(InpNetClosePL, 1) +
              " 止盈" + IntegerToString(InpTrailActive) + "点",
-             14, hy, 400, 9, C'150,170,150', 6);
-      y += 78;
+             14, hy, 400, 12, C'150,170,150', 8);
+      y += 92;
       
-      Rect("AddBG", 6, y, m_w - 12, 66, C'22,22,28', C'55,50,60');
-      Label("AddTitle", "加仓监控", 14, y + 4, 60, 10, C'200,180,140', 8);
-      int dy = y + 18;
-      Label("AddTypeLbl", "方式", 14, dy, 22, 9, clrSilver, 7);
-      Label("AddTypeVal", GetAddTypeName(), 38, dy, 85, 9, clrWhite, 7);
-      Label("AddDirLbl", "方向", 128, dy, 22, 9, clrSilver, 7);
-      Label("AddDirVal", GetAddDirName(), 152, dy, 55, 9, clrWhite, 7);
-      Label("AddCountLbl", "多/空", 212, dy, 32, 9, clrSilver, 7);
-      Label("AddCountVal", "0/0", 247, dy, 40, 9, clrWhite, 7);
-      Label("SpacingLbl", "间距", 292, dy, 22, 9, clrSilver, 7);
-      Label("SpacingVal", GetSpacingName(), 316, dy, 100, 9, clrWhite, 7);
-      dy += 20;
-      Label("MaxLotLbl", "最大手", 14, dy, 35, 9, clrSilver, 7);
-      Label("MaxLotVal", DoubleToString(InpMaxAddLot, 2), 52, dy, 40, 9, clrWhite, 7);
-      Label("MaxTotLbl", "总手限", 97, dy, 35, 9, clrSilver, 7);
-      Label("MaxTotVal", DoubleToString(InpMaxTotalLot, 2), 135, dy, 40, 9, clrWhite, 7);
-      Label("MaxAddLbl", "最大层", 180, dy, 35, 9, clrSilver, 7);
-      Label("MaxAddVal", IntegerToString(InpMaxAddCount), 218, dy, 30, 9, clrWhite, 7);
-      y += 72;
+      Rect("AddBG", 6, y, m_w - 12, 80, C'22,22,28', C'55,50,60');
+      Label("AddTitle", "加仓监控", 14, y + 5, 70, 14, C'200,180,140', 10);
+      int dy = y + 22;
+      Label("AddTypeLbl", "方式", 14, dy, 30, 12, clrSilver, 9);
+      Label("AddTypeVal", GetAddTypeName(), 47, dy, 100, 12, clrWhite, 9);
+      Label("AddDirLbl", "方向", 152, dy, 30, 12, clrSilver, 9);
+      Label("AddDirVal", GetAddDirName(), 185, dy, 65, 12, clrWhite, 9);
+      Label("AddCountLbl", "多/空", 255, dy, 40, 12, clrSilver, 9);
+      Label("AddCountVal", "0/0", 298, dy, 50, 12, clrWhite, 9);
+      Label("SpacingLbl", "间距", 353, dy, 30, 12, clrSilver, 9);
+      Label("SpacingVal", GetSpacingName(), 386, dy, 100, 12, clrWhite, 9);
+      dy += 24;
+      Label("MaxLotLbl", "最大手", 14, dy, 45, 12, clrSilver, 9);
+      Label("MaxLotVal", DoubleToString(InpMaxAddLot, 2), 62, dy, 50, 12, clrWhite, 9);
+      Label("MaxTotLbl", "总手限", 117, dy, 45, 12, clrSilver, 9);
+      Label("MaxTotVal", DoubleToString(InpMaxTotalLot, 2), 165, dy, 50, 12, clrWhite, 9);
+      Label("MaxAddLbl", "最大层", 220, dy, 45, 12, clrSilver, 9);
+      Label("MaxAddVal", IntegerToString(InpMaxAddCount), 268, dy, 40, 12, clrWhite, 9);
+      y += 86;
       
-      Rect("RiskBG", 6, y, m_w - 12, 58, C'30,20,20', C'70,40,40');
-      Label("RiskTitle", "风控师令", 14, y + 4, 60, 10, C'200,150,150', 8);
-      int ry2 = y + 18;
-      Label("RiskFloat", "浮盈亏: 0.00", 14, ry2, 95, 9, clrWhite, 7);
-      Label("RiskDD", "回撤: 0.00", 114, ry2, 65, 9, clrWhite, 7);
-      Label("RiskDDPct", "0.00%", 184, ry2, 45, 9, clrWhite, 7);
-      Label("RiskMode", "模式: " + GetModeName(), 234, ry2, 180, 9, C'200,170,170', 7);
-      ry2 += 18;
-      Label("RiskTrail", "移止: " + IntegerToString(InpTrailActive) + "/" + IntegerToString(InpTrailLock), 14, ry2, 175, 9, C'180,140,140', 7);
-      Label("RiskBreakeven", "保本: " + IntegerToString(InpBreakevenDist) + "点", 194, ry2, 165, 9, C'180,140,140', 7);
-      y += 64;
+      Rect("RiskBG", 6, y, m_w - 12, 70, C'30,20,20', C'70,40,40');
+      Label("RiskTitle", "风控师令", 14, y + 5, 70, 14, C'200,150,150', 10);
+      int ry2 = y + 22;
+      Label("RiskFloat", "浮盈亏: 0.00", 14, ry2, 110, 12, clrWhite, 9);
+      Label("RiskDD", "回撤: 0.00", 130, ry2, 75, 12, clrWhite, 9);
+      Label("RiskDDPct", "0.00%", 210, ry2, 55, 12, clrWhite, 9);
+      Label("RiskMode", "模式: " + GetModeName(), 270, ry2, 150, 12, C'200,170,170', 9);
+      ry2 += 22;
+      Label("RiskTrail", "移止: " + IntegerToString(InpTrailActive) + "/" + IntegerToString(InpTrailLock), 14, ry2, 190, 12, C'180,140,140', 9);
+      Label("RiskBreakeven", "保本: " + IntegerToString(InpBreakevenDist) + "点", 210, ry2, 180, 12, C'180,140,140', 9);
+      y += 76;
       
-      Rect("FooterBG", 0, m_h - 24, m_w, 24, C'30,25,20', C'80,70,40');
-      Label("Footer", "金戈铁马 · 多核对冲风控执行", 14, m_h - 18, 380, 10, C'180,160,100', 7);
+      Rect("FooterBG", 0, m_h - 28, m_w, 28, C'30,25,20', C'80,70,40');
+      Label("Footer", "金戈铁马 · 多核对冲风控执行", 14, m_h - 22, 380, 12, C'180,160,100', 9);
    }
    
    string GetAddTypeName()
