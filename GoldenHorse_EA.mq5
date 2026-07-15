@@ -578,9 +578,17 @@ public:
       
       if(InpUseSpacingATR)
       {
-         double atr = iATR(m_symbol, PERIOD_CURRENT, InpATRPeriod, MODE_SMA, PRICE_CLOSE, 0);
-         if(atr > 0)
-            spacing = atr * InpATRMult;
+         int atr_handle = iATR(m_symbol, PERIOD_CURRENT, InpATRPeriod, MODE_SMA, PRICE_CLOSE);
+         if(atr_handle != INVALID_HANDLE)
+         {
+            double atr_val[];
+            if(CopyBuffer(atr_handle, 0, 0, 1, atr_val) > 0)
+            {
+               if(atr_val[0] > 0)
+                  spacing = atr_val[0] * InpATRMult;
+            }
+            IndicatorRelease(atr_handle);
+         }
       }
       
       if(add_count > 0)
@@ -948,7 +956,16 @@ public:
       
       double atr_val = 0;
       if(InpTrailingType == TRAIL_ATR)
-         atr_val = iATR(symbol, PERIOD_CURRENT, InpATRPeriod, MODE_SMA, PRICE_CLOSE, 0);
+      {
+         int atr_handle = iATR(symbol, PERIOD_CURRENT, InpATRPeriod, MODE_SMA, PRICE_CLOSE);
+         if(atr_handle != INVALID_HANDLE)
+         {
+            double atr_buf[];
+            if(CopyBuffer(atr_handle, 0, 0, 1, atr_buf) > 0)
+               atr_val = atr_buf[0];
+            IndicatorRelease(atr_handle);
+         }
+      }
       
       if(buy_lot > 0 && buy_avg > 0)
       {
@@ -1492,7 +1509,7 @@ public:
       double margin_used = AccountInfoDouble(ACCOUNT_MARGIN);
       double margin_level = AccountInfoDouble(ACCOUNT_MARGIN_LEVEL);
       double profit = AccountInfoDouble(ACCOUNT_PROFIT);
-      double leverage = AccountInfoInteger(ACCOUNT_LEVERAGE);
+      int leverage = (int)AccountInfoInteger(ACCOUNT_LEVERAGE);
       
       SetText("BalVal", StringFormat("%.2f USD", bal));
       SetText("EqVal", StringFormat("%.2f", eq));
@@ -2032,10 +2049,16 @@ void CheckDrawdownClose(string symbol, int type)
    double point = SymbolInfoDouble(symbol, SYMBOL_POINT);
    double profit_per_lot = total_pl / total_lot / (0.01);
    
-   double &peak_pl = (type == POSITION_TYPE_BUY) ? g_buy_peak_pl : g_sell_peak_pl;
+   double peak_pl = (type == POSITION_TYPE_BUY) ? g_buy_peak_pl : g_sell_peak_pl;
    
    if(profit_per_lot > peak_pl)
+   {
       peak_pl = profit_per_lot;
+      if(type == POSITION_TYPE_BUY)
+         g_buy_peak_pl = peak_pl;
+      else
+         g_sell_peak_pl = peak_pl;
+   }
    
    if(peak_pl >= InpDrawdownTrigger)
    {
@@ -2050,7 +2073,10 @@ void CheckDrawdownClose(string symbol, int type)
             g_engine.CloseAllPositions(symbol, type);
          
          g_win_trades++;
-         peak_pl = 0;
+         if(type == POSITION_TYPE_BUY)
+            g_buy_peak_pl = 0;
+         else
+            g_sell_peak_pl = 0;
          g_risk.ResetTrail();
          
          if(type == POSITION_TYPE_BUY)
@@ -2062,7 +2088,12 @@ void CheckDrawdownClose(string symbol, int type)
    
    int pos_count = g_engine.GetPositionCount(symbol, type);
    if(pos_count == 0)
-      peak_pl = 0;
+   {
+      if(type == POSITION_TYPE_BUY)
+         g_buy_peak_pl = 0;
+      else
+         g_sell_peak_pl = 0;
+   }
 }
 
 //+------------------------------------------------------------------+
@@ -2101,11 +2132,11 @@ void CheckTimeClose(string symbol, int buy_count, int sell_count)
       {
          int count = g_engine.GetPositions(symbol, POSITION_TYPE_BUY, info);
          datetime now = TimeCurrent();
-         int bars_per_day = 24 * 60 / PeriodMinutes();
+         int period_sec = (int)Period() * 60;
          
          for(int i = count - 1; i >= 0; i--)
          {
-            int bars_held = (int)((now - info[i].open_time) / (PeriodSeconds()));
+            int bars_held = (int)((now - info[i].open_time) / period_sec);
             if(bars_held >= InpMaxHoldBars)
             {
                g_engine.ClosePosition(info[i].ticket);
@@ -2117,10 +2148,11 @@ void CheckTimeClose(string symbol, int buy_count, int sell_count)
       {
          int count = g_engine.GetPositions(symbol, POSITION_TYPE_SELL, info);
          datetime now = TimeCurrent();
+         int period_sec = (int)Period() * 60;
          
          for(int i = count - 1; i >= 0; i--)
          {
-            int bars_held = (int)((now - info[i].open_time) / (PeriodSeconds()));
+            int bars_held = (int)((now - info[i].open_time) / period_sec);
             if(bars_held >= InpMaxHoldBars)
             {
                g_engine.ClosePosition(info[i].ticket);
