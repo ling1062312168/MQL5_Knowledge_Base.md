@@ -1221,3 +1221,201 @@ void OnTick() {
 ---
 
 > **使用方式**: 每次编写 MQL5 代码前阅读此文件；每次修复新错误后在此追加记录。
+
+---
+
+# 第十四部分：多核对冲EA设计
+
+## 31. 金戈铁马X3D 多核对冲EA架构
+
+### 整体架构
+```
+┌─────────────────────────────────────────┐
+│           金戈铁马X3D EA v2.00          │
+├─────────────────────────────────────────┤
+│  信号系统  │  交易引擎  │  风控系统  │ 面板  │
+├─────────────────────────────────────────┤
+│  多周期指标  │  开仓管理  │  移动止盈  │ 拖拽  │
+│  自适应布林  │  加仓系统  │  浮亏保护  │ 统计  │
+│  RSI+MA     │  平仓逻辑  │  时间过滤  │ 监控  │
+├─────────────────────────────────────────┤
+│           尾单对冲首单系统               │
+└─────────────────────────────────────────┘
+```
+
+### 输入参数组织（group分区）
+```cpp
+input group "=== 基础设置 ==="
+input ENUM_TRADE_MODE  InpTradeMode   = MODE_STEADY;
+input double           InpInitialLot  = 0.01;
+
+input group "=== 自定义开仓设置 ==="
+input int              InpOpenPeriod     = 14;
+input double           InpSignalStrength = 0.618;
+input bool             InpUseAdaptive    = true;
+
+input group "=== 自定义加仓设置 ==="
+input ENUM_ADD_TYPE    InpAddType     = ADD_MARTIN;
+input int              InpAddSpacing  = 500;
+input double           InpMartinMult  = 1.5;
+```
+
+### 信号系统（多核）
+```cpp
+class CSignalSystem {
+   // M1/M5 自适应布林
+   int GetAdaptiveSignal(string symbol) {
+      // 接近上轨 → 做空信号
+      // 接近下轨 → 做多信号
+   }
+   
+   // 主信号：MA趋势 + RSI超买超卖 + K线确认
+   int GetMainSignal(string symbol) {
+      // trend_up + rsi_buy + confirm_bars → BUY
+      // trend_down + rsi_sell + confirm_bars → SELL
+   }
+};
+```
+
+### 加仓系统（三种模式）
+```cpp
+enum ENUM_ADD_TYPE {
+   ADD_MARTIN,     // 马丁倍率：lot *= multiplier
+   ADD_INCREASE,   // 递增手数：lot += fixed_amount
+   ADD_CUSTOM      // 自定义列表：从预定义数组取
+};
+
+// 马丁倍率加仓
+double GetNextLot(double current, int count) {
+   return current * InpMartinMult * InpAddCoeff;
+}
+
+// 单K线限制
+bool CheckKLineLimit(string symbol) {
+   // 统计当前K线已加仓次数
+   // 超过InpKDepth则禁止加仓
+}
+```
+
+### 风控系统
+```cpp
+class CRiskControl {
+   // 1. 浮亏全平保护
+   bool CheckFloatProtect() {
+      return (AccountProfit() <= -InpFloatProtectVal);
+   }
+   
+   // 2. 均价移动止盈
+   void CheckTrailingStop(string symbol, double &buy_sl, double &sell_sl) {
+      // 盈利超过激活距离 → 启动追踪
+      // 从峰值回撤锁定距离 → 设置止损
+   }
+   
+   // 3. 回撤计算
+   double GetDrawdown() {
+      return (PeakEquity - CurrentEquity) / PeakEquity * 100;
+   }
+};
+```
+
+### 尾单对冲首单
+```cpp
+class CPairHedge {
+   // 原理：首单+尾单组合盈利达到一定值后
+   // 回撤即平仓首尾两单
+   
+   void Update(string symbol) {
+      // 计算首单和尾单的组合盈亏
+      double combo_pl = FirstPL + LastPL;
+      
+      if(combo_pl >= InpHedgeStartPL) {
+         // 激活对冲追踪
+         if(PeakComboPL - combo_pl >= InpHedgePullback) {
+            CloseFirstAndLast();  // 平首尾两单
+         }
+      }
+   }
+};
+```
+
+### 时间过滤
+```cpp
+bool IsTradeTimeAllowed() {
+   // 1. 时区偏移计算
+   // 2. 开启时间段检查
+   // 3. 禁止时间段检查
+   
+   int cur_min = dt.hour * 60 + dt.min;
+   // 处理跨天时间（如22:00-06:00）
+   if(start_min > end_min) { // 跨天
+      if(cur_min < start_min && cur_min > end_min) return false;
+   }
+}
+```
+
+### 面板UI设计（暗色金戈主题）
+```cpp
+// 配色方案
+color TITLE_BG    = C'35,30,25';   // 暗金背景
+color TITLE_TEXT  = C'200,180,120'; // 金色文字
+color PROFIT_BG   = C'20,25,20';   // 深绿背景
+color PROFIT_TEXT = clrLimeGreen;   // 盈利绿
+color LOSS_TEXT   = clrRed;         // 亏损红
+color RISK_BG     = C'30,20,20';   // 暗红背景
+
+// 布局层次
+// 1. 标题栏（引擎名称+副标题+品种+魔术数字+状态）
+// 2. 收益区（今日/昨日/累积）
+// 3. 账户概览（余额/净值/保证金/比例）
+// 4. 持仓监控（多单/空单/总盈亏）
+// 5. 对冲状态（触发条件/当前状态）
+// 6. 风控信息（浮盈亏/回撤）
+// 7. 底部状态栏
+```
+
+### 收益统计持久化
+```cpp
+// 保存到文件（FILE_COMMON共享目录）
+void SaveProfitHistory() {
+   string filepath = "GoldenHorse\\GH_" + Magic + ".dat";
+   int handle = FileOpen(filepath, FILE_WRITE|FILE_COMMON|FILE_BIN);
+   FileWriteDouble(handle, g_total_profit);
+   FileWriteInteger(handle, g_total_trades);
+   FileClose(handle);
+}
+
+// 每日收益计算
+void UpdateProfitStats() {
+   static datetime last_day = 0;
+   datetime cur_day = TimeCurrent() / 86400 * 86400;
+   if(cur_day != last_day) {
+      g_yesterday_profit = g_today_profit;
+      g_today_profit = 0;
+      last_day = cur_day;
+   }
+   // 从HistoryDeals统计今日收益
+}
+```
+
+---
+
+## 📝 更新日志
+
+| 日期 | 更新内容 |
+|------|---------|
+| 2026-07-07 | 初始创建：记录10类常见错误及解决方案 |
+| 2026-07-07 | 新增20条：从30+个成品源码中提取的最佳实践 |
+| 2026-07-07 | 使用CTrade标准库替代原生OrderSend |
+| 2026-07-07 | 添加时间过滤功能和移动止损功能 |
+| 2026-07-07 | 修复CTrade平仓方法名：PositionClose() |
+| 2026-07-07 | 修复时间函数：MQL5需用TimeToStruct() |
+| 2026-07-07 | **重构：按12大分类重新组织知识库** |
+| 2026-07-08 | 新增BUG快速索引表，7个历史BUG全收录 |
+| 2026-07-08 | 新增拖拽无法停止BUG修复方案（MOUSE_MOVE检测sparam） |
+| 2026-07-08 | 新增Z轴置顶方案（OBJPROP_BACK=false） |
+| 2026-07-08 | 新增订单号显示不全解决方案（独立列布局） |
+| 2026-07-08 | 新增输入框无法输入BUG修复（ENDEDIT事件+READONLY设置） |
+| 2026-07-08 | 新增持仓页空数据标签显示问题（SwitchTab后调用UpdatePositions） |
+| 2026-07-08 | **修正拖拽方案**：改用CHARTEVENT_CLICK结束拖拽，废弃sparam检测方案 |
+| 2026-07-08 | 新增面板边界限制，防止拖出屏幕 |
+| 2026-07-08 | 新增多核对冲EA完整架构设计（信号/交易/风控/对冲/面板） |
