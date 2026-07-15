@@ -578,7 +578,7 @@ public:
       
       if(InpUseSpacingATR)
       {
-         double atr = iATR(m_symbol, PERIOD_CURRENT, InpATRPeriod, 0);
+         double atr = iATR(m_symbol, PERIOD_CURRENT, InpATRPeriod, MODE_SMA, PRICE_CLOSE, 0);
          if(atr > 0)
             spacing = atr * InpATRMult;
       }
@@ -948,7 +948,7 @@ public:
       
       double atr_val = 0;
       if(InpTrailingType == TRAIL_ATR)
-         atr_val = iATR(symbol, PERIOD_CURRENT, InpATRPeriod, 0);
+         atr_val = iATR(symbol, PERIOD_CURRENT, InpATRPeriod, MODE_SMA, PRICE_CLOSE, 0);
       
       if(buy_lot > 0 && buy_avg > 0)
       {
@@ -1985,7 +1985,7 @@ void CheckMultiTargetClose(string symbol, int type)
    static int buy_target_reached = 0;
    static int sell_target_reached = 0;
    
-   int &reached = (type == POSITION_TYPE_BUY) ? buy_target_reached : sell_target_reached;
+   int reached = (type == POSITION_TYPE_BUY) ? buy_target_reached : sell_target_reached;
    
    for(int i = reached; i < ArraySize(targets) && i < ArraySize(ratios); i++)
    {
@@ -1999,14 +1999,22 @@ void CheckMultiTargetClose(string symbol, int type)
             g_win_trades++;
          }
          
-         reached = i + 1;
+         if(type == POSITION_TYPE_BUY)
+            buy_target_reached = i + 1;
+         else
+            sell_target_reached = i + 1;
       }
       else break;
    }
    
    int pos_count = g_engine.GetPositionCount(symbol, type);
    if(pos_count == 0)
-      reached = 0;
+   {
+      if(type == POSITION_TYPE_BUY)
+         buy_target_reached = 0;
+      else
+         sell_target_reached = 0;
+   }
 }
 
 //+------------------------------------------------------------------+
