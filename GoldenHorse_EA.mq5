@@ -77,136 +77,136 @@ enum ENUM_PROFIT_CLOSE_MODE
 //| Section1: 基础设置                                                 |
 //+------------------------------------------------------------------+
 input group    "=== 基础设置 ==="
-input ENUM_TRADE_MODE     InpTradeMode      = MODE_STEADY;
-input double              InpInitialLot     = 0.01;
-input ENUM_DECIMAL_PLACE  InpDecimalPlace   = DEC_2;
-input int                 InpMagicNumber    = 888888;
-input int                 InpSlippage       = 30;
-input bool                InpAllowBothDir   = true;
+input ENUM_TRADE_MODE     InpTradeMode      = MODE_STEADY;    // 交易模式（保守/稳健/激进/自定义）
+input double              InpInitialLot     = 0.01;           // 初始手数
+input ENUM_DECIMAL_PLACE  InpDecimalPlace   = DEC_2;          // 手数小数位（2位/3位）
+input int                 InpMagicNumber    = 888888;         // 魔术号（区分不同EA）
+input int                 InpSlippage       = 30;             // 允许滑点（点）
+input bool                InpAllowBothDir   = true;           // 允许多空双向持仓
 
 //+------------------------------------------------------------------+
 //| Section2: 自定义开仓设置                                           |
 //+------------------------------------------------------------------+
 input group    "=== 自定义开仓设置 ==="
-input int                 InpOpenPeriod     = 14;
-input double              InpSignalStrength = 0.618;
-input int                 InpConfirmBars    = 2;
-input ENUM_TIMEFRAMES     InpOpenTimeFrame  = PERIOD_M5;
-input int                 InpOpenIndicator  = 60;
-input double              InpOpenCoeff      = 2.0;
-input bool                InpUseAdaptive    = true;
-input int                 InpBBM1Period     = 20;
-input double              InpBBM1Dev        = 1.5;
-input int                 InpBBM5Period     = 20;
-input double              InpBBM5Dev        = 2.0;
-input double              InpBBProximity    = 0.25;
-input int                 InpOpenPeriod2    = 3;
+input int                 InpOpenPeriod     = 14;             // 均线周期
+input double              InpSignalStrength = 0.618;          // 信号强度阈值（0-1）
+input int                 InpConfirmBars    = 2;              // K线确认根数
+input ENUM_TIMEFRAMES     InpOpenTimeFrame  = PERIOD_M5;     // 开仓时间周期
+input int                 InpOpenIndicator  = 60;            // RSI指标周期
+input double              InpOpenCoeff      = 2.0;            // 开仓系数
+input bool                InpUseAdaptive    = true;           // 启用自适应布林带
+input int                 InpBBM1Period     = 20;            // M1布林带周期
+input double              InpBBM1Dev        = 1.5;            // M1布林带标准差
+input int                 InpBBM5Period     = 20;            // M5布林带周期
+input double              InpBBM5Dev        = 2.0;            // M5布林带标准差
+input double              InpBBProximity    = 0.25;           // 布林带接近度阈值
+input int                 InpOpenPeriod2    = 3;             // 辅助开仓周期
 
 //+------------------------------------------------------------------+
 //| Section3: 自定义加仓设置                                           |
 //+------------------------------------------------------------------+
 input group    "=== 自定义加仓设置 ==="
-input int                 InpAddDelay       = 0;
-input double              InpAddCoeff        = 1.0;
-input ENUM_ADD_TYPE       InpAddType         = ADD_MARTIN;
-input ENUM_ADD_DIRECTION  InpAddDirection    = ADD_REVERSE;
-input int                 InpAddSpacing     = 500;
-input double              InpAddSpacingMult = 1.2;
-input bool                InpUseSpacingATR  = false;
-input double              InpATRMult        = 1.5;
-input int                 InpATRPeriod      = 14;
-input double              InpMartinMult     = 1.5;
-input double              InpIncreaseLot    = 0.01;
-input string              InpCustomLots     = "0.01,0.02,0.03,0.05,0.08,0.13,0.21,0.34,0.55,0.89";
-input double              InpMaxAddLot      = 2.0;
-input double              InpMaxTotalLot    = 5.0;
-input int                 InpMaxAddCount    = 10;
-input bool                InpUseAddFilter   = true;
-input int                 InpAddFilterBars  = 1;
-input bool                InpUseAddSLReset  = true;
-input bool                InpUseAddTPReset  = false;
+input int                 InpAddDelay       = 0;             // 加仓延迟（秒，0=不延迟）
+input double              InpAddCoeff        = 1.0;           // 加仓系数
+input ENUM_ADD_TYPE       InpAddType         = ADD_MARTIN;    // 加仓方式（马丁/递增/自定义/斐波那契）
+input ENUM_ADD_DIRECTION  InpAddDirection    = ADD_REVERSE;   // 加仓方向（双向/顺势/逆势）
+input int                 InpAddSpacing     = 500;            // 加仓间距（点）
+input double              InpAddSpacingMult = 1.2;            // 间距递增倍数
+input bool                InpUseSpacingATR  = false;           // 启用ATR动态间距
+input double              InpATRMult        = 1.5;            // ATR倍数
+input int                 InpATRPeriod      = 14;            // ATR周期
+input double              InpMartinMult     = 1.5;            // 马丁倍率
+input double              InpIncreaseLot    = 0.01;           // 每次递增手数
+input string              InpCustomLots     = "0.01,0.02,0.03,0.05,0.08,0.13,0.21,0.34,0.55,0.89"; // 自定义手数列表（逗号分隔）
+input double              InpMaxAddLot      = 2.0;            // 单笔最大加仓手数
+input double              InpMaxTotalLot    = 5.0;            // 总手数上限
+input int                 InpMaxAddCount    = 10;            // 最大加仓层数
+input bool                InpUseAddFilter   = true;           // 启用加仓过滤
+input int                 InpAddFilterBars  = 1;             // 加仓过滤K线数
+input bool                InpUseAddSLReset  = true;           // 加仓后重置止损到新均价
+input bool                InpUseAddTPReset  = false;           // 加仓后重置止盈
 
 //+------------------------------------------------------------------+
 //| Section4: 自定义单K线加仓限制                                      |
 //+------------------------------------------------------------------+
 input group    "=== 自定义单K线加仓限制 ==="
-input int                 InpKDepth         = 5;
-input bool                InpUseKLimit      = true;
-input ENUM_TIMEFRAMES     InpKLimitTF       = PERIOD_CURRENT;
+input int                 InpKDepth         = 5;             // 单根K线最大加仓次数
+input bool                InpUseKLimit      = true;           // 启用单K线限制
+input ENUM_TIMEFRAMES     InpKLimitTF       = PERIOD_CURRENT; // 限制周期
 
 //+------------------------------------------------------------------+
 //| Section5: 自定义平仓设置                                           |
 //+------------------------------------------------------------------+
 input group    "=== 自定义平仓设置 ==="
-input ENUM_PROFIT_CLOSE_MODE InpProfitCloseMode = PC_SINGLE_TARGET;
-input double              InpProfitOptCoeff  = 1.0;
-input int                 InpCloseFilter     = 1;
-input double              InpProfitPer001Lot = 1.0;
-input string              InpMultiTargets    = "0.5,1.0,2.0";
-input string              InpMultiRatios     = "0.3,0.3,0.4";
-input double              InpDrawdownTrigger = 2.0;
-input double              InpDrawdownPercent = 30.0;
-input bool                InpUseFloatProtect = false;
-input double              InpFloatProtectVal = 10000.0;
-input bool                InpUseSignalClose  = true;
-input int                 InpSignalCloseBar  = 2;
-input bool                InpUsePartialClose = false;
-input double              InpPartialRatio   = 0.5;
-input bool                InpUseTimeClose   = false;
-input int                 InpMaxHoldBars    = 100;
-input int                 InpCloseHour      = 23;
-input int                 InpCloseMinute    = 55;
+input ENUM_PROFIT_CLOSE_MODE InpProfitCloseMode = PC_SINGLE_TARGET; // 平仓模式（单目标/阶梯/回撤）
+input double              InpProfitOptCoeff  = 1.0;           // 盈利优化系数
+input int                 InpCloseFilter     = 1;            // 平仓过滤K线数
+input double              InpProfitPer001Lot = 1.0;           // 每0.01手目标盈利（美元）
+input string              InpMultiTargets    = "0.5,1.0,2.0"; // 阶梯止盈目标列表
+input string              InpMultiRatios     = "0.3,0.3,0.4"; // 阶梯平仓比例列表
+input double              InpDrawdownTrigger = 2.0;           // 回撤触发盈利（美元/0.01手）
+input double              InpDrawdownPercent = 30.0;          // 回撤平仓百分比
+input bool                InpUseFloatProtect = false;           // 启用浮亏全平保护
+input double              InpFloatProtectVal = 10000.0;      // 浮亏全平阈值（美元）
+input bool                InpUseSignalClose  = true;           // 启用信号平仓
+input int                 InpSignalCloseBar  = 2;            // 信号平仓K线数
+input bool                InpUsePartialClose = false;           // 启用分批平仓
+input double              InpPartialRatio   = 0.5;            // 分批平仓比例
+input bool                InpUseTimeClose   = false;           // 启用时间平仓
+input int                 InpMaxHoldBars    = 100;            // 最大持仓K线数
+input int                 InpCloseHour      = 23;            // 每日平仓小时
+input int                 InpCloseMinute    = 55;            // 每日平仓分钟
 
 //+------------------------------------------------------------------+
 //| Section5b: 均价移动止盈设置                                        |
 //+------------------------------------------------------------------+
 input group    "=== 均价移动止盈设置 ==="
-input bool                InpUseTrailing     = true;
-input ENUM_TRAILING_TYPE  InpTrailingType    = TRAIL_FIXED;
-input int                 InpTrailActive     = 500;
-input int                 InpTrailLock       = 300;
-input int                 InpTrailStep       = 50;
-input double              InpTrailATRMult      = 2.0;
-input bool                InpUseBreakeven    = true;
-input int                 InpBreakevenDist   = 200;
-input bool                InpUseStepProfit  = false;
-input string              InpStepLevels       = "200,400,600,800,1000";
-input string              InpStepLocks       = "100,200,300,400,500";
+input bool                InpUseTrailing     = true;           // 启用移动止盈
+input ENUM_TRAILING_TYPE  InpTrailingType    = TRAIL_FIXED;   // 止盈类型（固定/ATR/阶梯）
+input int                 InpTrailActive     = 500;            // 移动止盈激活点数
+input int                 InpTrailLock       = 300;            // 锁定点数
+input int                 InpTrailStep       = 50;            // 阶梯步进点数
+input double              InpTrailATRMult      = 2.0;           // ATR止盈倍数
+input bool                InpUseBreakeven    = true;           // 启用保本止损
+input int                 InpBreakevenDist   = 200;            // 保本触发点数
+input bool                InpUseStepProfit  = false;           // 启用阶梯止盈档位
+input string              InpStepLevels       = "200,400,600,800,1000"; // 阶梯档位列表（点）
+input string              InpStepLocks       = "100,200,300,400,500";    // 阶梯锁利列表（点）
 
 //+------------------------------------------------------------------+
 //| Section6: 自定义时间过滤设置                                       |
 //+------------------------------------------------------------------+
 input group    "=== 自定义时间过滤设置 ==="
-input int                 InpTimeOffset     = 0;
-input bool                InpUseTradeTime   = false;
-input string              InpTradeStartTime = "00:00";
-input string              InpTradeEndTime   = "23:59";
-input bool                InpUseBlockTime   = false;
-input string              InpBlockStartTime = "00:00";
-input string              InpBlockEndTime   = "00:00";
-input bool                InpUseNewsFilter  = false;
+input int                 InpTimeOffset     = 0;             // 时区偏移（小时）
+input bool                InpUseTradeTime   = false;           // 启用交易时段
+input string              InpTradeStartTime = "00:00";         // 交易开始时间
+input string              InpTradeEndTime   = "23:59";         // 交易结束时间
+input bool                InpUseBlockTime   = false;           // 启用禁止时段
+input string              InpBlockStartTime = "00:00";         // 禁止开始时间
+input string              InpBlockEndTime   = "00:00";         // 禁止结束时间
+input bool                InpUseNewsFilter  = false;           // 启用新闻过滤
 
 //+------------------------------------------------------------------+
 //| SectionPairHedge: 尾单对冲首单移动止盈                             |
 //+------------------------------------------------------------------+
 input group    "=== 尾单对冲首单移动止盈 ==="
-input bool                InpUsePairHedge   = true;
-input double              InpHedgeStartPL   = 1.5;
-input double              InpHedgePullback  = 0.5;
-input bool                InpHedgeBlockAdd  = false;
-input int                 InpHedgeMinPos    = 2;
-input bool                InpUseNetClose    = true;
-input double              InpNetClosePL     = 5.0;
+input bool                InpUsePairHedge   = true;           // 启用尾单对冲
+input double              InpHedgeStartPL   = 1.5;            // 对冲触发盈利（美元）
+input double              InpHedgePullback  = 0.5;            // 对冲回撤平仓（美元）
+input bool                InpHedgeBlockAdd  = false;           // 对冲激活时禁止加仓
+input int                 InpHedgeMinPos    = 2;             // 对冲最小持仓数
+input bool                InpUseNetClose    = true;           // 启用净盈亏全平
+input double              InpNetClosePL     = 5.0;            // 净盈亏全平阈值（美元）
 
 //+------------------------------------------------------------------+
 //| Section8: 托管模式设置                                             |
 //+------------------------------------------------------------------+
 input group    "=== 托管模式设置 ==="
-input bool                InpShowPanel      = true;
-input int                 InpPanelX         = 10;
-input int                 InpPanelY         = 30;
-input int                 InpPanelWidth     = 420;
-input int                 InpPanelHeight    = 580;
+input bool                InpShowPanel      = true;           // 显示面板
+input int                 InpPanelX         = 10;            // 面板X坐标
+input int                 InpPanelY         = 30;            // 面板Y坐标
+input int                 InpPanelWidth     = 420;            // 面板宽度
+input int                 InpPanelHeight    = 580;            // 面板高度
 
 //+------------------------------------------------------------------+
 //| 全局变量与实例                                                     |
