@@ -1397,6 +1397,199 @@ void UpdateProfitStats() {
 }
 ```
 
+## 32. v2.1增强：加仓系统完善
+
+### 加仓模式扩展（4种+方向控制）
+```cpp
+enum ENUM_ADD_TYPE {
+   ADD_MARTIN,     // 马丁倍率
+   ADD_INCREASE,   // 递增手数
+   ADD_CUSTOM,     // 自定义列表
+   ADD_FIBONACCI   // 斐波那契数列
+};
+
+enum ENUM_ADD_DIRECTION {
+   ADD_BOTH,       // 双向加仓
+   ADD_TREND,      // 顺势加仓（信号同向才加）
+   ADD_REVERSE     // 逆势加仓（信号反向才加，马丁常用）
+};
+```
+
+### ATR动态间距
+```cpp
+double GetAddSpacing(int add_count)
+{
+   double spacing = InpAddSpacing * m_point;
+   
+   if(InpUseSpacingATR) {
+      double atr = iATR(m_symbol, PERIOD_CURRENT, InpATRPeriod, 0);
+      if(atr > 0) spacing = atr * InpATRMult;
+   }
+   
+   if(add_count > 0)
+      spacing *= MathPow(InpAddSpacingMult, add_count);
+   
+   return spacing;
+}
+```
+
+### 总手数限制 + 加仓后重置止损
+```cpp
+bool CheckTotalLotLimit(string symbol, double add_lot)
+{
+   if(InpMaxTotalLot <= 0) return true;
+   double current_total = GetTotalLotAll(symbol);
+   return (current_total + add_lot <= InpMaxTotalLot);
+}
+
+void ResetAllSL(string symbol, int type)
+{
+   if(!InpUseAddSLReset) return;
+   double avg_price = GetAvgPrice(symbol, type);
+   if(avg_price <= 0) return;
+   double new_sl = (type == POSITION_TYPE_BUY) ? 
+                   avg_price - sl_dist : avg_price + sl_dist;
+   ModifySL(symbol, type, new_sl);
+}
+```
+
+## 33. v2.1增强：平仓系统完善
+
+### 7种平仓模式汇总
+| 模式 | 触发条件 | 适用场景 |
+|------|---------|---------|
+| 单目标止盈 | 单笔盈利达目标 | 简单策略 |
+| 阶梯止盈 | 多目标分批止盈 | 趋势跟踪 |
+| 回撤止盈 | 盈利达峰值后回撤X% | 保护利润 |
+| 信号平仓 | 反向信号出现 | 趋势反转 |
+| 时间平仓 | 持仓时间/定时平仓 | 日内交易 |
+| 对冲平仓 | 多空均价对冲盈利 | 震荡行情 |
+| 移动止盈 | 跟随价格移动止损 | 趋势保护 |
+
+### 盈利回撤平仓（核心逻辑）
+```cpp
+void CheckDrawdownClose(string symbol, int type)
+{
+   double total_pl = GetTotalProfit(symbol, type);
+   double profit_per_lot = total_pl / total_lot / 0.01;
+   
+   double &peak_pl = (type == BUY) ? g_buy_peak_pl : g_sell_peak_pl;
+   if(profit_per_lot > peak_pl) peak_pl = profit_per_lot;
+   
+   if(peak_pl >= InpDrawdownTrigger) {
+      double drawdown_pct = (peak_pl - profit_per_lot) / peak_pl * 100;
+      if(drawdown_pct >= InpDrawdownPercent) {
+         CloseAllPositions(symbol, type);
+         peak_pl = 0;
+      }
+   }
+}
+```
+
+### 阶梯止盈（多目标分批）
+```cpp
+// 输入: InpMultiTargets = "0.5,1.0,2.0"
+// 输入: InpMultiRatios = "0.3,0.3,0.4"
+void CheckMultiTargetClose(string symbol, int type)
+{
+   static int target_reached = 0;
+   
+   for(int i = target_reached; i < targets.Size(); i++) {
+      if(profit_per_lot >= targets[i]) {
+         ClosePartial(symbol, type, ratios[i]);
+         target_reached = i + 1;
+      }
+   }
+}
+```
+
+### 时间平仓（两种方式）
+```cpp
+// 1. 定时平仓（每日固定时间）
+if(cur_min == close_min) CloseAll();
+
+// 2. 持仓K线数限制
+int bars_held = (now - open_time) / PeriodSeconds();
+if(bars_held >= InpMaxHoldBars) ClosePosition(ticket);
+```
+
+### 均价对冲平仓
+```cpp
+bool CheckAvgHedgeClose(string symbol, CTradeEngine &engine)
+{
+   double buy_avg = engine.GetAvgPrice(symbol, POSITION_TYPE_BUY);
+   double sell_avg = engine.GetAvgPrice(symbol, POSITION_TYPE_SELL);
+   
+   if(sell_avg > buy_avg) {
+      double hedge_profit = (sell_avg - buy_avg) * min_lot / point;
+      if(hedge_profit >= target) {
+         // 同时平掉多空等量仓位
+         ClosePartial(BUY, 0.5);
+         ClosePartial(SELL, 0.5);
+         return true;
+      }
+   }
+   return false;
+}
+```
+
+## 34. v2.1增强：移动止盈3种模式
+
+```cpp
+enum ENUM_TRAILING_TYPE {
+   TRAIL_FIXED,   // 固定间距（最常用）
+   TRAIL_ATR,     // ATR动态间距（自适应波动）
+   TRAIL_STEP     // 阶梯式（盈利越多锁利越多）
+};
+
+// ATR动态止盈
+if(InpTrailingType == TRAIL_ATR) {
+   double atr = iATR(symbol, PERIOD_CURRENT, 14, 0);
+   lock_dist = atr * InpTrailATRMult;
+}
+
+// 阶梯式止盈
+else if(InpTrailingType == TRAIL_STEP) {
+   lock_dist = MathFloor(profit_points / step) * step * point;
+}
+
+// 阶梯止盈（另一种：预设档位）
+// InpStepLevels = "200,400,600,800,1000"
+// InpStepLocks  = "100,200,300,400,500"
+```
+
+## 35. v2.1增强：面板升级（420x580）
+
+### 面板区块布局（共8大区块）
+```
+┌──────────────────────────────────────┐
+│ 标题区（68px）：标题+周期+状态        │
+├──────────────────────────────────────┤
+│ 斩获区（56px）：今日/昨日/累计        │
+├──────────────────────────────────────┤
+│ 账户区（80px）：余额/净值/保证金/胜率  │
+├──────────────────────────────────────┤
+│ 持仓区（86px）：多/空单+均价+峰值      │
+├──────────────────────────────────────┤
+│ 对冲区（72px）：多空/净盈亏/止盈方式   │
+├──────────────────────────────────────┤
+│ 加仓区（64px）：方式/方向/层数/限制    │
+├──────────────────────────────────────┤
+│ 风控区（60px）：浮盈亏/回撤/模式      │
+├──────────────────────────────────────┤
+│ 底部（24px）：版权提示                │
+└──────────────────────────────────────┘
+```
+
+### 新增显示字段
+- 周期显示（M5/M15等）
+- 交易次数 + 胜率 + 盈亏比
+- 多单/空单/净盈亏 峰值盈利
+- 加仓方向（顺势/逆势/双向）
+- 总手数限制
+- 平仓模式（单目标/阶梯/回撤）
+- 止盈类型（固定/ATR/阶梯）
+
 ---
 
 ## 📝 更新日志
@@ -1419,3 +1612,6 @@ void UpdateProfitStats() {
 | 2026-07-08 | **修正拖拽方案**：改用CHARTEVENT_CLICK结束拖拽，废弃sparam检测方案 |
 | 2026-07-08 | 新增面板边界限制，防止拖出屏幕 |
 | 2026-07-08 | 新增多核对冲EA完整架构设计（信号/交易/风控/对冲/面板） |
+| 2026-07-08 | **v2.1增强**：加仓4模式+方向控制+ATR间距+总手限 |
+| 2026-07-08 | **v2.1增强**：平仓7种模式（单目标/阶梯/回撤/信号/时间/对冲/移动止盈） |
+| 2026-07-08 | **v2.1增强**：面板调至420x580，新增峰值/胜率/交易次数显示 |
