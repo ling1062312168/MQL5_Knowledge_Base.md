@@ -71,8 +71,26 @@ extern int   Leverage=100  ;    //平台杠杆限制
 extern string EA_StartTime="00:00"  ;   //EA开始时间
 extern string EA_StopTime="24:00"  ;   //EA结束时间
 
-bool      g_allowBuy = true;
-bool      g_allowSell = true;
+//========================= 突破EA参数 =========================
+input bool   Flag_Stop              = false;    // 是否停止新增挂单（可用面板切换）
+input bool   HidePanel              = true;     // 是否隐藏左上角Comment文字
+input bool   EnableChartPanel       = true;     // 显示图表操作面板
+input int    PanelStartX            = 16;       // 按钮面板X(像素)
+input int    PanelStartY            = 18;       // 按钮面板Y(像素)
+
+input group "新闻过滤"
+input bool   EnableHighImpactNewsPause = true;  // 启用高影响新闻暂停
+input int    NewsLeadMinutes           = 180;   // 新闻前暂停分钟
+input int    NewsCooldownMinutes       = 180;   // 新闻后暂停分钟
+
+input group "Session"
+input bool   EnableTradingSessionWindow = true;  // 启用工作时间段控制
+input bool   EnableDailyWrapUpPhase     = true;  // 启用日内收尾阶段
+input string DailyWrapUpStartTime       = "20:00"; // 收尾开始(服务器时间)
+input string DailyWrapUpStopTime        = "24:00"; // 收尾结束(服务器时间)
+input bool   EnableDailyProfitTarget     = true;  // 启用每日盈利目标
+input double DailyProfitTarget          = 500.0;  // 每日盈利目标
+
 int       g_timeframe = 1;
 int       g_maxVolatility = 0;
 int       g_fontSize = 10;
@@ -141,6 +159,57 @@ datetime  g_da67 = 0;
 datetime  g_da68 = 0;
 int       g_in69 = 0;
 
+//========================= 面板状态 =========================
+string   g_panel_prefix        = "Amazing.";
+bool     g_panel_open          = false;
+int      g_panel_x             = 16;
+int      g_panel_y             = 18;
+bool     g_panel_dragging      = false;
+int      g_panel_drag_offset_x = 0;
+int      g_panel_drag_offset_y = 0;
+datetime g_last_panel_refresh  = 0;
+bool     g_allow_buy           = true;
+bool     g_allow_sell          = true;
+bool     g_stop_new_orders     = false;
+
+struct EAStats
+{
+   int    buy_positions;
+   int    sell_positions;
+   int    buy_pending;
+   int    sell_pending;
+   double buy_lots;
+   double sell_lots;
+   double buy_profit;
+   double sell_profit;
+   double total_profit;
+};
+
+struct PanelMetrics
+{
+   int margin_x;
+   int margin_y;
+   int width;
+   int pad;
+   int section_gap;
+   int header_h;
+   int row_h;
+   int gap;
+   int button_h;
+   int inner_w;
+   int half_w;
+   int card_status_h;
+   int card_metrics_h;
+   int card_actions_h;
+   int button_font;
+   int font_xs;
+   int font_sm;
+   int font_md;
+   int font_lg;
+   int toggle_w;
+   int panel_h;
+};
+
 
 //+------------------------------------------------------------------+
 //|                                                                  |
@@ -179,175 +248,6 @@ int init()
      {
       MinDistance = g_minSpreadStep ;
      }
-   if(g_showButtons)
-     {
-      ObjectCreate(0,g_btnBuyName,OBJ_BUTTON,0,0,0.0);
-      ObjectSetInteger(0,g_btnBuyName,OBJPROP_CORNER,2);
-      ObjectSetInteger(0,g_btnBuyName,OBJPROP_COLOR,16777215);
-      ObjectSetInteger(0,g_btnBuyName,OBJPROP_BGCOLOR,6908265);
-      ObjectSetInteger(0,g_btnBuyName,OBJPROP_BORDER_COLOR,16777215);
-      ObjectSetInteger(0,g_btnBuyName,OBJPROP_XDISTANCE,0);
-      ObjectSetInteger(0,g_btnBuyName,OBJPROP_YDISTANCE,30);
-      ObjectSetInteger(0,g_btnBuyName,OBJPROP_XSIZE,55);
-      ObjectSetInteger(0,g_btnBuyName,OBJPROP_YSIZE,30);
-      ObjectSetString(0,g_btnBuyName,OBJPROP_FONT,"黑体");
-      ObjectSetString(0,g_btnBuyName,OBJPROP_TEXT,"C buy");
-      ObjectSetInteger(0,g_btnBuyName,OBJPROP_FONTSIZE,15);
-      ObjectSetInteger(0,g_btnBuyName,OBJPROP_SELECTABLE,1);
-      ObjectSetInteger(0,g_btnBuyName,OBJPROP_SELECTED,0);
-      ObjectCreate(0,g_btnSellName,OBJ_BUTTON,0,0,0.0);
-      ObjectSetInteger(0,g_btnSellName,OBJPROP_CORNER,2);
-      ObjectSetInteger(0,g_btnSellName,OBJPROP_COLOR,16777215);
-      ObjectSetInteger(0,g_btnSellName,OBJPROP_BGCOLOR,6908265);
-      ObjectSetInteger(0,g_btnSellName,OBJPROP_BORDER_COLOR,16777215);
-      ObjectSetInteger(0,g_btnSellName,OBJPROP_XDISTANCE,60);
-      ObjectSetInteger(0,g_btnSellName,OBJPROP_YDISTANCE,30);
-      ObjectSetInteger(0,g_btnSellName,OBJPROP_XSIZE,55);
-      ObjectSetInteger(0,g_btnSellName,OBJPROP_YSIZE,30);
-      ObjectSetString(0,g_btnSellName,OBJPROP_FONT,"黑体");
-      ObjectSetString(0,g_btnSellName,OBJPROP_TEXT,"C sel");
-      ObjectSetInteger(0,g_btnSellName,OBJPROP_FONTSIZE,15);
-      ObjectSetInteger(0,g_btnSellName,OBJPROP_SELECTABLE,1);
-      ObjectSetInteger(0,g_btnSellName,OBJPROP_SELECTED,0);
-      ObjectCreate(0,g_btnCloseName,OBJ_BUTTON,0,0,0.0);
-      ObjectSetInteger(0,g_btnCloseName,OBJPROP_CORNER,2);
-      ObjectSetInteger(0,g_btnCloseName,OBJPROP_COLOR,16777215);
-      ObjectSetInteger(0,g_btnCloseName,OBJPROP_BGCOLOR,6908265);
-      ObjectSetInteger(0,g_btnCloseName,OBJPROP_BORDER_COLOR,16777215);
-      ObjectSetInteger(0,g_btnCloseName,OBJPROP_XDISTANCE,30);
-      ObjectSetInteger(0,g_btnCloseName,OBJPROP_YDISTANCE,70);
-      ObjectSetInteger(0,g_btnCloseName,OBJPROP_XSIZE,55);
-      ObjectSetInteger(0,g_btnCloseName,OBJPROP_YSIZE,30);
-      ObjectSetString(0,g_btnCloseName,OBJPROP_FONT,"黑体");
-      ObjectSetString(0,g_btnCloseName,OBJPROP_TEXT,"Close");
-      ObjectSetInteger(0,g_btnCloseName,OBJPROP_FONTSIZE,15);
-      ObjectSetInteger(0,g_btnCloseName,OBJPROP_SELECTABLE,1);
-      ObjectSetInteger(0,g_btnCloseName,OBJPROP_SELECTED,0);
-     }
-   int panelW = 420;
-   int panelH = 500;
-   int panelX = 10;
-   int panelY = 50;
-   
-   ObjectCreate(0,"PanelBG",OBJ_RECTANGLE_LABEL,0,0,0.0);
-   ObjectSetInteger(0,"PanelBG",OBJPROP_CORNER,CORNER_LEFT_UPPER);
-   ObjectSetInteger(0,"PanelBG",OBJPROP_XDISTANCE,panelX);
-   ObjectSetInteger(0,"PanelBG",OBJPROP_YDISTANCE,panelY);
-   ObjectSetInteger(0,"PanelBG",OBJPROP_XSIZE,panelW);
-   ObjectSetInteger(0,"PanelBG",OBJPROP_YSIZE,panelH);
-   ObjectSetInteger(0,"PanelBG",OBJPROP_BGCOLOR,C'25,25,30');
-   ObjectSetInteger(0,"PanelBG",OBJPROP_BORDER_TYPE,BORDER_FLAT);
-   ObjectSetInteger(0,"PanelBG",OBJPROP_COLOR,C'80,60,30');
-   ObjectSetInteger(0,"PanelBG",OBJPROP_WIDTH,1);
-   ObjectSetInteger(0,"PanelBG",OBJPROP_BACK,false);
-   
-   int y = 0;
-   int pad = 8;
-   
-   ObjectCreate(0,"TitleBG",OBJ_RECTANGLE_LABEL,0,0,0.0);
-   ObjectSetInteger(0,"TitleBG",OBJPROP_CORNER,CORNER_LEFT_UPPER);
-   ObjectSetInteger(0,"TitleBG",OBJPROP_XDISTANCE,panelX);
-   ObjectSetInteger(0,"TitleBG",OBJPROP_YDISTANCE,panelY + y);
-   ObjectSetInteger(0,"TitleBG",OBJPROP_XSIZE,panelW);
-   ObjectSetInteger(0,"TitleBG",OBJPROP_YSIZE,55);
-   ObjectSetInteger(0,"TitleBG",OBJPROP_BGCOLOR,C'35,30,25');
-   ObjectSetInteger(0,"TitleBG",OBJPROP_BACK,false);
-   
-   LabelCreate("Title1","Amazing3.1 双向网格对冲引擎",panelX+pad,panelY+y+5,300,18,C'200,180,120',12);
-   LabelCreate("Title2","BIDIRECTIONAL GRID HEDGE v3.1",panelX+pad,panelY+y+28,350,10,C'150,130,80',8);
-   y += 60;
-   
-   ObjectCreate(0,"AcctBG",OBJ_RECTANGLE_LABEL,0,0,0.0);
-   ObjectSetInteger(0,"AcctBG",OBJPROP_CORNER,CORNER_LEFT_UPPER);
-   ObjectSetInteger(0,"AcctBG",OBJPROP_XDISTANCE,panelX+5);
-   ObjectSetInteger(0,"AcctBG",OBJPROP_YDISTANCE,panelY+y);
-   ObjectSetInteger(0,"AcctBG",OBJPROP_XSIZE,panelW-10);
-   ObjectSetInteger(0,"AcctBG",OBJPROP_YSIZE,65);
-   ObjectSetInteger(0,"AcctBG",OBJPROP_BGCOLOR,C'20,20,25');
-   ObjectSetInteger(0,"AcctBG",OBJPROP_BACK,false);
-   
-   LabelCreate("AcctTitle","账户概览",panelX+pad,panelY+y+3,60,12,C'150,180,200',10);
-   int ay = y + 20;
-   LabelCreate("BalLbl","余额",panelX+pad,panelY+ay,28,10,clrSilver,9);
-   LabelCreate("BalVal","--",panelX+pad+35,panelY+ay,90,10,clrWhite,9);
-   LabelCreate("EqLbl","净值",panelX+pad+130,panelY+ay,28,10,clrSilver,9);
-   LabelCreate("EqVal","--",panelX+pad+162,panelY+ay,90,10,clrWhite,9);
-   LabelCreate("FreeLbl","可用",panelX+pad+260,panelY+ay,28,10,clrSilver,9);
-   LabelCreate("FreeVal","--",panelX+pad+292,panelY+ay,90,10,clrWhite,9);
-   ay += 18;
-   LabelCreate("MarLbl","保证金",panelX+pad,panelY+ay,40,10,clrSilver,9);
-   LabelCreate("MarVal","--",panelX+pad+45,panelY+ay,75,10,clrWhite,9);
-   LabelCreate("LevLbl","杠杆",panelX+pad+130,panelY+ay,28,10,clrSilver,9);
-   LabelCreate("LevVal","--",panelX+pad+162,panelY+ay,60,10,clrWhite,9);
-   LabelCreate("SpreadLbl","点差",panelX+pad+260,panelY+ay,28,10,clrSilver,9);
-   LabelCreate("SpreadVal","--",panelX+pad+292,panelY+ay,60,10,clrWhite,9);
-   y += 70;
-   
-   ObjectCreate(0,"PosBG",OBJ_RECTANGLE_LABEL,0,0,0.0);
-   ObjectSetInteger(0,"PosBG",OBJPROP_CORNER,CORNER_LEFT_UPPER);
-   ObjectSetInteger(0,"PosBG",OBJPROP_XDISTANCE,panelX+5);
-   ObjectSetInteger(0,"PosBG",OBJPROP_YDISTANCE,panelY+y);
-   ObjectSetInteger(0,"PosBG",OBJPROP_XSIZE,panelW-10);
-   ObjectSetInteger(0,"PosBG",OBJPROP_YSIZE,80);
-   ObjectSetInteger(0,"PosBG",OBJPROP_BGCOLOR,C'25,20,20');
-   ObjectSetInteger(0,"PosBG",OBJPROP_BACK,false);
-   
-   LabelCreate("PosTitle","持仓监控",panelX+pad,panelY+y+3,60,12,C'200,150,150',10);
-   int py = y + 20;
-   LabelCreate("BuyLbl","多单",panelX+pad,panelY+py,28,10,clrSilver,9);
-   LabelCreate("BuyVal","0单/0.00手",panelX+pad+35,panelY+py,80,10,clrWhite,9);
-   LabelCreate("BuyPL","0.00",panelX+pad+120,panelY+py,60,10,C'0,255,0',9);
-   LabelCreate("BuyAvgLbl","均价",panelX+pad+185,panelY+py,28,10,clrSilver,9);
-   LabelCreate("BuyAvgVal","--",panelX+pad+215,panelY+py,170,10,clrWhite,9);
-   py += 18;
-   LabelCreate("SellLbl","空单",panelX+pad,panelY+py,28,10,clrSilver,9);
-   LabelCreate("SellVal","0单/0.00手",panelX+pad+35,panelY+py,80,10,clrWhite,9);
-   LabelCreate("SellPL","0.00",panelX+pad+120,panelY+py,60,10,clrRed,9);
-   LabelCreate("SellAvgLbl","均价",panelX+pad+185,panelY+py,28,10,clrSilver,9);
-   LabelCreate("SellAvgVal","--",panelX+pad+215,panelY+py,170,10,clrWhite,9);
-   py += 18;
-   LabelCreate("TotalPLLbl","总盈亏",panelX+pad,panelY+py,40,10,clrSilver,9);
-   LabelCreate("TotalPLVal","0.00",panelX+pad+45,panelY+py,80,10,clrWhite,10);
-   LabelCreate("TotalLotsLbl","总手数",panelX+pad+130,panelY+py,40,10,clrSilver,9);
-   LabelCreate("TotalLotsVal","0.00",panelX+pad+175,panelY+py,60,10,clrWhite,10);
-   y += 85;
-   
-   ObjectCreate(0,"ParamBG",OBJ_RECTANGLE_LABEL,0,0,0.0);
-   ObjectSetInteger(0,"ParamBG",OBJPROP_CORNER,CORNER_LEFT_UPPER);
-   ObjectSetInteger(0,"ParamBG",OBJPROP_XDISTANCE,panelX+5);
-   ObjectSetInteger(0,"ParamBG",OBJPROP_YDISTANCE,panelY+y);
-   ObjectSetInteger(0,"ParamBG",OBJPROP_XSIZE,panelW-10);
-   ObjectSetInteger(0,"ParamBG",OBJPROP_YSIZE,65);
-   ObjectSetInteger(0,"ParamBG",OBJPROP_BGCOLOR,C'20,25,20');
-   ObjectSetInteger(0,"ParamBG",OBJPROP_BACK,false);
-   
-   LabelCreate("ParamTitle","策略参数",panelX+pad,panelY+y+3,60,12,C'150,200,150',10);
-   int sy = y + 20;
-   LabelCreate("LotLbl","起始手数",panelX+pad,panelY+sy,45,10,clrSilver,9);
-   LabelCreate("LotVal",DoubleToString(lot,2)+"手",panelX+pad+55,panelY+sy,60,10,C'180,220,180',9);
-   LabelCreate("StepLbl","补单间距",panelX+pad+125,panelY+sy,45,10,clrSilver,9);
-   LabelCreate("StepVal",IntegerToString(Step)+"点",panelX+pad+175,panelY+sy,60,10,C'180,220,180',9);
-   LabelCreate("KlotLbl","倍率",panelX+pad+245,panelY+sy,30,10,clrSilver,9);
-   LabelCreate("KlotVal",DoubleToString(K_Lot,2),panelX+pad+280,panelY+sy,60,10,C'180,220,180',9);
-   sy += 18;
-   LabelCreate("CloseLbl","平仓金额",panelX+pad,panelY+sy,50,10,clrSilver,9);
-   LabelCreate("CloseVal",DoubleToString(CloseAll,2),panelX+pad+55,panelY+sy,60,10,C'180,220,180',9);
-   LabelCreate("MaxLbl","最大手数",panelX+pad+125,panelY+sy,50,10,clrSilver,9);
-   LabelCreate("MaxVal",DoubleToString(Maxlot,2)+"手",panelX+pad+180,panelY+sy,60,10,C'180,220,180',9);
-   LabelCreate("StatusLbl","状态",panelX+pad+255,panelY+sy,30,10,clrSilver,9);
-   LabelCreate("StatusVal","允许交易",panelX+pad+290,panelY+sy,100,10,C'0,255,0',9);
-   y += 70;
-   
-   ObjectCreate(0,"FooterBG",OBJ_RECTANGLE_LABEL,0,0,0.0);
-   ObjectSetInteger(0,"FooterBG",OBJPROP_CORNER,CORNER_LEFT_UPPER);
-   ObjectSetInteger(0,"FooterBG",OBJPROP_XDISTANCE,panelX);
-   ObjectSetInteger(0,"FooterBG",OBJPROP_YDISTANCE,panelY+y);
-   ObjectSetInteger(0,"FooterBG",OBJPROP_XSIZE,panelW);
-   ObjectSetInteger(0,"FooterBG",OBJPROP_YSIZE,20);
-   ObjectSetInteger(0,"FooterBG",OBJPROP_BGCOLOR,C'30,25,20');
-   ObjectSetInteger(0,"FooterBG",OBJPROP_BACK,false);
-   
-   LabelCreate("Footer","Amazing3.1 · 双向网格对冲策略",panelX+pad,panelY+y+3,350,10,C'180,160,100',8);
    initFlag = false ;
    initStr = "Paramfalse" ;
    MaxLossCloseAll = -(MaxLossCloseAll);
@@ -358,8 +258,8 @@ int init()
    if(g_eaName  !=  WindowExpertName())
      {
       Comment("");
-      g_allowBuy = false ;
-      g_allowSell = false ;
+      g_allow_buy = false ;
+      g_allow_sell = false ;
       ObjectsDeleteAll(-1,-1);
       if(ObjectFind(g_spreadLabel) <  0)
         {
@@ -395,6 +295,13 @@ int init()
       Limit_StopTime = "23:59:59" ;
      }
    start();
+   if(EnableChartPanel)
+   {
+      g_panel_open = true;
+      InitPanelPosition();
+      RefreshPanel(true);
+   }
+   ChartSetInteger(0, CHART_EVENT_MOUSE_MOVE, true);
    return(0);
   }
 //init
@@ -825,8 +732,8 @@ int start()
    lowRangePoints = MathAbs(lowRange / Point()) ;
    if((AccountLeverage() < Leverage || IsTradeAllowed() == false || IsExpertEnabled() == false || IsStopped() || buyCount + sellCount >= Totals || MarketInfo(Symbol(),13)>MaxSpread || (g_maxVolatility != 0 && highRangePoints>=g_maxVolatility) || (g_maxVolatility != 0 && lowRangePoints>=g_maxVolatility)))
      {
-      g_allowBuy = false ;
-      g_allowSell = false ;
+      g_allow_buy = false ;
+      g_allow_sell = false ;
       fontStr1 = "Arial";
       stopMsg1 = "This EA has stop work ! ";
       if(ObjectFind("Stop") == -1)
@@ -840,8 +747,8 @@ int start()
      }
    else
      {
-      g_allowBuy = true ;
-      g_allowSell = true ;
+      g_allow_buy = true ;
+      g_allow_sell = true ;
       fontStr2 = "Arial";
       stopMsg2 = "";
       if(ObjectFind("Stop") == -1)
@@ -894,8 +801,8 @@ int start()
      }
    if(g_eaName  !=  WindowExpertName())
      {
-      g_allowBuy = false ;
-      g_allowSell = false ;
+      g_allow_buy = false ;
+      g_allow_sell = false ;
       fontStr4 = "Arial";
       stopMsg4 = "This EA has stop work ! ";
       if(ObjectFind("Stop") == -1)
@@ -937,8 +844,8 @@ int start()
         }
       if(inEaWindow2)
         {
-         g_allowBuy = false ;
-         g_allowSell = false ;
+         g_allow_buy = false ;
+         g_allow_sell = false ;
          fontStr5 = "Arial";
          stopMsg5 = "This EA has stop work " + string(NextTime) + "second! ";
          if(ObjectFind("Stop") == -1)
@@ -953,11 +860,11 @@ int start()
      }
    if(Over == 1 && buyCount == 0)
      {
-      g_allowBuy = false ;
+      g_allow_buy = false ;
      }
    if(Over == 1 && sellCount == 0)
      {
-      g_allowSell = false ;
+      g_allow_sell = false ;
      }
    ObjectDelete("SLb");
    ObjectDelete("SLs");
@@ -979,8 +886,8 @@ int start()
    totalProfit = buyProfit + sellProfit ;
    if(Over == 1 && totalProfit>=CloseAll)
      {
-      g_allowBuy = false ;
-      g_allowSell = false ;
+      g_allow_buy = false ;
+      g_allow_sell = false ;
       sortKey1 = "Ticket";
       sortDir1 = "sell";
       maxTicket1 = 0;
@@ -1746,7 +1653,7 @@ int start()
 
    if(((OpenMode == 1 && g_lastBarTime != iTime(NULL,TimeZone,0)) || OpenMode == 2 || OpenMode == 3))
      {
-      if(buyStopCount == 0 && buyProfit > -MaxLoss && g_allowBuy)
+      if(buyStopCount == 0 && buyProfit > -MaxLoss && g_allow_buy)
         {
          if(buyCount == 0)
            {
@@ -2071,7 +1978,7 @@ int start()
            }
         }
 
-      if(sellStopCount == 0 && sellProfit > -MaxLoss && g_allowSell)
+      if(sellStopCount == 0 && sellProfit > -MaxLoss && g_allow_sell)
         {
          if(sellCount == 0)
            {
@@ -2452,11 +2359,11 @@ int start()
    ObjectSetText("KlotVal",DoubleToString(K_Lot,2),9,"Arial",C'180,220,180');
    ObjectSetText("CloseVal",DoubleToString(CloseAll,2),9,"Arial",C'180,220,180');
    ObjectSetText("MaxVal",DoubleToString(Maxlot,2)+"手",9,"Arial",C'180,220,180');
-   if(g_allowBuy && g_allowSell)
+   if(g_allow_buy && g_allow_sell)
      ObjectSetText("StatusVal","允许交易",9,"Arial",C'0,255,0');
    else
      ObjectSetText("StatusVal","已停止",9,"Arial",clrRed);
-   if(buyStopPrice!=0.0 && g_allowBuy)
+   if(buyStopPrice!=0.0 && g_allow_buy)
      {
       if(buyCount == 0)
         {
@@ -2505,7 +2412,7 @@ int start()
            }
         }
      }
-   if(sellStopPrice!=0.0 && g_allowSell)
+   if(sellStopPrice!=0.0 && g_allow_sell)
      {
       if(sellCount == 0)
         {
@@ -2556,6 +2463,7 @@ int start()
            }
         }
      }
+   RefreshPanel(false);
    return(0);
   }
 //start
@@ -2564,416 +2472,45 @@ int start()
 //+------------------------------------------------------------------+
 //|                                                                  |
 //+------------------------------------------------------------------+
-void OnChartEvent(const int eventID,const long &eventLParam,const double &eventDParam,const string &eventSParam)
-  {
-   int         errCode;
-   int retryCount = 0;
-   int         orderType_7;
-   int         remainingCount;
-   int         locInt_5;
-   int         orderIdx_7;
-   int         locInt_7;
-   int         buyCount;
-   int         sellCount;
-
-//----------------------------
-   string     tmpStr_1;
-   int        li10_type;
-   int        li10_ticket;
-   string     stopMsg1;
-   int        li10_idx;
-   int        tmpInt_6;
-   string     tmpStr_7;
-   int        tmpInt_8;
-   int        tmpInt_9;
-   int        tmpInt_10;
-   string     fontStr4;
-   int        tmpInt_12;
-   int        tmpInt_13;
-   string     tmpStr_14;
-   string     fontStr5;
-   int        tmpInt_16;
-   double     tmpDbl_17;
-   int        tmpInt_18;
-   double     tmpDbl_19;
-   int        tmpInt_20;
-   string     tmpStr_21;
-   string     tmpStr_22;
-   int        resultTicket1;
-   double     tmpDbl_24;
-   int        tmpInt_25;
-   double     tmpDbl_26;
-   string     tmpStr_27;
-   string     tmpStr_28;
-   int        tmpInt_29;
-   double     tmpDbl_30;
-   int        tmpInt_31;
-   double     tmpDbl_32;
-   int        tmpInt_33;
-   string     tmpStr_34;
-   string     tmpStr_35;
-   int        tmpInt_36;
-   double     tmpDbl_37;
-   int        tmpInt_38;
-   double     tmpDbl_39;
-
-   if(eventID == 1)
-     {
-      tmpStr_1 = "buy";
-      li10_type = 0;
-      for(li10_ticket = OrdersTotal() - 1 ; li10_ticket >= 0 ; li10_ticket = li10_ticket - 1)
-        {
-         g_in69 = OrderSelect(li10_ticket,SELECT_BY_POS,MODE_TRADES) ;
-         if(OrderSymbol() != Symbol() || OrderMagicNumber() != Magic || OrderSymbol() != Symbol() || OrderMagicNumber() != Magic)
-            continue;
-
-         if(tmpStr_1 == "buy" && OrderType() == 0)
-           {
-            li10_type = li10_type + 1;
-           }
-         if(tmpStr_1 == "sell" && OrderType() == 1)
-           {
-            li10_type = li10_type + 1;
-           }
-         if(tmpStr_1 == "buystop" && OrderType() == 4)
-           {
-            li10_type = li10_type + 1;
-           }
-         if(tmpStr_1 != "sellstop" || OrderType() != 5)
-            continue;
-         li10_type = li10_type + 1;
-        }
-      if(li10_type > 0)
-        {
-         errCode = 0 ;
-         if(eventSParam == "Button1" && g_showButtons == 1)
-           {
-            retryCount = MessageBox("点击确定(Y)表示将全部平多单!是否继续?","友情提醒：",52) ;
-            if(retryCount == 6)
-              {
-               for(orderType_7 = OrdersTotal() - 1 ; orderType_7 >= 0 ; orderType_7 = orderType_7 - 1)
-                 {
-                  g_in69 = OrderSelect(orderType_7,SELECT_BY_POS,MODE_TRADES) ;
-                  if(OrderSymbol() != Symbol() || OrderMagicNumber() != Magic)
-                     continue;
-
-                  if(OrderType() == 0)
-                    {
-                     errCode = OrderClose(OrderTicket(),OrderLots(),MarketInfo(OrderSymbol(),9),5,Red) ;
-                    }
-                  if(OrderType() == 4)
-                    {
-                     g_in69 = OrderDelete(OrderTicket(),0xFFFFFFFF) ;
-                    }
-                  if(errCode <= 0)
-                     continue;
-                  PlaySound("ok.wav");
-                 }
-              }
-           }
-        }
-     }
-   if(eventID == 1)
-     {
-      stopMsg1 = "sell";
-      li10_idx = 0;
-      for(tmpInt_6 = OrdersTotal() - 1 ; tmpInt_6 >= 0 ; tmpInt_6 = tmpInt_6 - 1)
-        {
-         g_in69 = OrderSelect(tmpInt_6,SELECT_BY_POS,MODE_TRADES) ;
-         if(OrderSymbol() != Symbol() || OrderMagicNumber() != Magic || OrderSymbol() != Symbol() || OrderMagicNumber() != Magic)
-            continue;
-
-         if(stopMsg1 == "buy" && OrderType() == 0)
-           {
-            li10_idx = li10_idx + 1;
-           }
-         if(stopMsg1 == "sell" && OrderType() == 1)
-           {
-            li10_idx = li10_idx + 1;
-           }
-         if(stopMsg1 == "buystop" && OrderType() == 4)
-           {
-            li10_idx = li10_idx + 1;
-           }
-         if(stopMsg1 != "sellstop" || OrderType() != 5)
-            continue;
-         li10_idx = li10_idx + 1;
-        }
-      if(li10_idx > 0)
-        {
-         remainingCount = 0 ;
-         if(eventSParam == "Button2" && g_showButtons == 1)
-           {
-            locInt_5 = MessageBox("点击确定(Y)表示将全部平空单!是否继续?","友情提醒：",52) ;
-            if(locInt_5 == 6)
-              {
-               for(orderIdx_7 = OrdersTotal() - 1 ; orderIdx_7 >= 0 ; orderIdx_7 = orderIdx_7 - 1)
-                 {
-                  g_in69 = OrderSelect(orderIdx_7,SELECT_BY_POS,MODE_TRADES) ;
-                  if(OrderSymbol() != Symbol() || OrderMagicNumber() != Magic)
-                     continue;
-
-                  if(OrderType() == 1)
-                    {
-                     remainingCount = OrderClose(OrderTicket(),OrderLots(),MarketInfo(OrderSymbol(),10),5,Red) ;
-                    }
-                  if(OrderType() == 5)
-                    {
-                     g_in69 = OrderDelete(OrderTicket(),0xFFFFFFFF) ;
-                    }
-                  if(remainingCount <= 0)
-                     continue;
-                  PlaySound("ok.wav");
-                 }
-              }
-           }
-        }
-     }
-   if(eventID != 1)
-      return;
-   tmpStr_7 = "buy";
-   tmpInt_8 = 0;
-   for(tmpInt_9 = OrdersTotal() - 1 ; tmpInt_9 >= 0 ; tmpInt_9 = tmpInt_9 - 1)
-     {
-      g_in69 = OrderSelect(tmpInt_9,SELECT_BY_POS,MODE_TRADES) ;
-      if(OrderSymbol() != Symbol() || OrderMagicNumber() != Magic || OrderSymbol() != Symbol() || OrderMagicNumber() != Magic)
-         continue;
-
-      if(tmpStr_7 == "buy" && OrderType() == 0)
-        {
-         tmpInt_8 = tmpInt_8 + 1;
-        }
-      if(tmpStr_7 == "sell" && OrderType() == 1)
-        {
-         tmpInt_8 = tmpInt_8 + 1;
-        }
-      if(tmpStr_7 == "buystop" && OrderType() == 4)
-        {
-         tmpInt_8 = tmpInt_8 + 1;
-        }
-      if(tmpStr_7 != "sellstop" || OrderType() != 5)
-         continue;
-      tmpInt_8 = tmpInt_8 + 1;
-     }
-   tmpInt_10 = tmpInt_8;
-   fontStr4 = "sell";
-   tmpInt_12 = 0;
-   for(tmpInt_13 = OrdersTotal() - 1 ; tmpInt_13 >= 0 ; tmpInt_13 = tmpInt_13 - 1)
-     {
-      g_in69 = OrderSelect(tmpInt_13,SELECT_BY_POS,MODE_TRADES) ;
-      if(OrderSymbol() != Symbol() || OrderMagicNumber() != Magic || OrderSymbol() != Symbol() || OrderMagicNumber() != Magic)
-         continue;
-
-      if(fontStr4 == "buy" && OrderType() == 0)
-        {
-         tmpInt_12 = tmpInt_12 + 1;
-        }
-      if(fontStr4 == "sell" && OrderType() == 1)
-        {
-         tmpInt_12 = tmpInt_12 + 1;
-        }
-      if(fontStr4 == "buystop" && OrderType() == 4)
-        {
-         tmpInt_12 = tmpInt_12 + 1;
-        }
-      if(fontStr4 != "sellstop" || OrderType() != 5)
-         continue;
-      tmpInt_12 = tmpInt_12 + 1;
-     }
-   if(tmpInt_10 + tmpInt_12 <= 0)
-      return;
-   locInt_7 = 0 ;
-   if(eventSParam != "Button5" || g_showButtons != 1)
-      return;
-   buyCount = MessageBox("点击确定(Y)表示将全部平仓!是否继续?","友情提醒：",52) ;
-   if(buyCount != 6)
-      return;
-   tmpStr_14 = "Ticket";
-   fontStr5 = "sell";
-   tmpInt_16 = 0;
-   tmpDbl_17 = 0.0;
-   for(tmpInt_18 = OrdersTotal() - 1 ; tmpInt_18 >= 0 ; tmpInt_18 = tmpInt_18 - 1)
-     {
-      if(!(OrderSelect(tmpInt_18,SELECT_BY_POS,MODE_TRADES)) || OrderSymbol() != Symbol() || OrderMagicNumber() != Magic)
-         continue;
-
-      if(fontStr5 == "buy" && OrderType() == 0 && OrderTicket() > tmpInt_16)
-        {
-         OrderOpenTime();
-         OrderOpenPrice();
-         tmpDbl_17 = OrderLots();
-         tmpInt_16 = OrderTicket();
-        }
-      if(fontStr5 != "sell" || OrderType() != 1 || OrderTicket() <= tmpInt_16)
-         continue;
-      OrderOpenTime();
-      OrderOpenPrice();
-      tmpDbl_17 = OrderLots();
-      tmpInt_16 = OrderTicket();
-     }
-   if(tmpStr_14 == "Ticket")
-     {
-      tmpDbl_19 = tmpInt_16;
-     }
-   else
-     {
-      if(tmpStr_14 == "Lots")
-        {
-         tmpDbl_19 = tmpDbl_17;
-        }
+void OnChartEvent(const int id,const long &lparam,const double &dparam,const string &sparam)
+{
+   if(id == CHARTEVENT_CLICK)
+   {
+      int click_x = (int)lparam;
+      int click_y = (int)dparam;
+      
+      if(!g_panel_dragging)
+      {
+         if(IsClickOnPanelDragArea(click_x,click_y))
+         {
+            g_panel_dragging = true;
+            g_panel_drag_offset_x = click_x - g_panel_x;
+            g_panel_drag_offset_y = click_y - g_panel_y;
+            SetPanelDragHighlight(true);
+            ChartRedraw(0);
+         }
+      }
       else
-        {
-         tmpDbl_19 = 0.0;
-        }
-     }
-   tmpInt_20 = (int)tmpDbl_19;
-   tmpStr_21 = "Ticket";
-   tmpStr_22 = "buy";
-   resultTicket1 = 0;
-   tmpDbl_24 = 0.0;
-   for(tmpInt_25 = OrdersTotal() - 1 ; tmpInt_25 >= 0 ; tmpInt_25 = tmpInt_25 - 1)
-     {
-      if(!(OrderSelect(tmpInt_25,SELECT_BY_POS,MODE_TRADES)) || OrderSymbol() != Symbol() || OrderMagicNumber() != Magic)
-         continue;
-
-      if(tmpStr_22 == "buy" && OrderType() == 0 && OrderTicket() > resultTicket1)
-        {
-         OrderOpenTime();
-         OrderOpenPrice();
-         tmpDbl_24 = OrderLots();
-         resultTicket1 = OrderTicket();
-        }
-      if(tmpStr_22 != "sell" || OrderType() != 1 || OrderTicket() <= resultTicket1)
-         continue;
-      OrderOpenTime();
-      OrderOpenPrice();
-      tmpDbl_24 = OrderLots();
-      resultTicket1 = OrderTicket();
-     }
-   if(tmpStr_21 == "Ticket")
-     {
-      tmpDbl_26 = resultTicket1;
-     }
-   else
-     {
-      if(tmpStr_21 == "Lots")
-        {
-         tmpDbl_26 = tmpDbl_24;
-        }
-      else
-        {
-         tmpDbl_26 = 0.0;
-        }
-     }
-
-   if(对冲平仓开关)
-      if(OrderCloseBy((int)tmpDbl_26,tmpInt_20,0xFFFFFFFF))
-        {
-         do
-           {
-            tmpStr_27 = "Ticket";
-            tmpStr_28 = "sell";
-            tmpInt_29 = 0;
-            tmpDbl_30 = 0.0;
-            for(tmpInt_31 = OrdersTotal() - 1 ; tmpInt_31 >= 0 ; tmpInt_31 = tmpInt_31 - 1)
-              {
-               if(!(OrderSelect(tmpInt_31,SELECT_BY_POS,MODE_TRADES)) || OrderSymbol() != Symbol() || OrderMagicNumber() != Magic)
-                  continue;
-
-               if(tmpStr_28 == "buy" && OrderType() == 0 && OrderTicket() > tmpInt_29)
-                 {
-                  OrderOpenTime();
-                  OrderOpenPrice();
-                  tmpDbl_30 = OrderLots();
-                  tmpInt_29 = OrderTicket();
-                 }
-               if(tmpStr_28 != "sell" || OrderType() != 1 || OrderTicket() <= tmpInt_29)
-                  continue;
-               OrderOpenTime();
-               OrderOpenPrice();
-               tmpDbl_30 = OrderLots();
-               tmpInt_29 = OrderTicket();
-              }
-            if(tmpStr_27 == "Ticket")
-              {
-               tmpDbl_32 = tmpInt_29;
-              }
-            else
-              {
-               if(tmpStr_27 == "Lots")
-                 {
-                  tmpDbl_32 = tmpDbl_30;
-                 }
-               else
-                 {
-                  tmpDbl_32 = 0.0;
-                 }
-              }
-            tmpInt_33 = (int)tmpDbl_32;
-            tmpStr_34 = "Ticket";
-            tmpStr_35 = "buy";
-            tmpInt_36 = 0;
-            tmpDbl_37 = 0.0;
-            for(tmpInt_38 = OrdersTotal() - 1 ; tmpInt_38 >= 0 ; tmpInt_38 = tmpInt_38 - 1)
-              {
-               if(!(OrderSelect(tmpInt_38,SELECT_BY_POS,MODE_TRADES)) || OrderSymbol() != Symbol() || OrderMagicNumber() != Magic)
-                  continue;
-
-               if(tmpStr_35 == "buy" && OrderType() == 0 && OrderTicket() > tmpInt_36)
-                 {
-                  OrderOpenTime();
-                  OrderOpenPrice();
-                  tmpDbl_37 = OrderLots();
-                  tmpInt_36 = OrderTicket();
-                 }
-               if(tmpStr_35 != "sell" || OrderType() != 1 || OrderTicket() <= tmpInt_36)
-                  continue;
-               OrderOpenTime();
-               OrderOpenPrice();
-               tmpDbl_37 = OrderLots();
-               tmpInt_36 = OrderTicket();
-              }
-            if(tmpStr_34 == "Ticket")
-              {
-               tmpDbl_39 = tmpInt_36;
-              }
-            else
-              {
-               if(tmpStr_34 == "Lots")
-                 {
-                  tmpDbl_39 = tmpDbl_37;
-                 }
-               else
-                 {
-                  tmpDbl_39 = 0.0;
-                 }
-              }
-           }
-         while(OrderCloseBy((int)tmpDbl_39,tmpInt_33,0xFFFFFFFF));
-        }
-   for(sellCount = OrdersTotal() - 1 ; sellCount >= 0 ; sellCount = sellCount - 1)
-     {
-      g_in69 = OrderSelect(sellCount,SELECT_BY_POS,MODE_TRADES) ;
-      if(OrderSymbol() != Symbol() || OrderMagicNumber() != Magic)
-         continue;
-
-      if(OrderType() == 0)
-        {
-         locInt_7 = OrderClose(OrderTicket(),OrderLots(),MarketInfo(OrderSymbol(),9),5,Red) ;
-        }
-      if(OrderType() == 1)
-        {
-         locInt_7 = OrderClose(OrderTicket(),OrderLots(),MarketInfo(OrderSymbol(),10),5,Red) ;
-        }
-      if((OrderType() == 4 || OrderType() == 5))
-        {
-         g_in69 = OrderDelete(OrderTicket(),0xFFFFFFFF) ;
-        }
-      if(locInt_7 <= 0)
-         continue;
-      PlaySound("ok.wav");
-     }
-  }
+      {
+         g_panel_dragging = false;
+         SetPanelDragHighlight(false);
+         ChartRedraw(0);
+      }
+      return;
+   }
+   
+   if(id == CHARTEVENT_MOUSE_MOVE && g_panel_dragging)
+   {
+      int new_x = (int)lparam - g_panel_drag_offset_x;
+      int new_y = (int)dparam - g_panel_drag_offset_y;
+      ClampPanelPosition(new_x,new_y);
+      MovePanelTo(new_x,new_y);
+      return;
+   }
+   
+   if(id != CHARTEVENT_OBJECT_CLICK) return;
+   HandlePanelButtonClick(sparam);
+}
 //OnChartEvent
 //---------------------  ----------------------------------------
 
@@ -2989,6 +2526,7 @@ int deinit()
    ObjectDelete("HLINE_SHORTII");
    ObjectDelete("HLINE_LONG");
    ObjectDelete("HLINE_SHORT");
+   DeleteObjectsByPrefix(g_panel_prefix);
    ObjectsDeleteAll(0,-1);
    return(0);
   }
@@ -4202,4 +3740,491 @@ void LabelCreate(string name,string text,int x,int y,int width,int height,color 
    ObjectSetInteger(0,name,OBJPROP_BACK,false);
    ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
   }
+//+------------------------------------------------------------------+
+//| 面板UI函数                                                       |
+//+------------------------------------------------------------------+
+void BuildPanelMetrics(PanelMetrics &m)
+{
+   m.margin_x = g_panel_x;
+   m.margin_y = g_panel_y;
+   m.width = 420;
+   m.pad = 14;
+   m.section_gap = 10;
+   m.header_h = 56;
+   m.row_h = 18;
+   m.gap = 8;
+   m.button_h = 30;
+   m.inner_w = m.width - m.pad * 2;
+   m.half_w = (m.inner_w - m.gap) / 2;
+   m.card_status_h = 184;
+   m.card_metrics_h = 236;
+   m.card_actions_h = m.pad * 2 + 22 + m.gap + m.button_h * 6 + m.gap * 5;
+   m.button_font = 9;
+   m.font_xs = 9;
+   m.font_sm = 10;
+   m.font_md = 11;
+   m.font_lg = 15;
+   m.toggle_w = 64;
+   m.panel_h = m.header_h + m.section_gap + m.card_status_h + m.section_gap + m.card_metrics_h + m.section_gap + m.card_actions_h;
+}
+
+void EnsureRectangle(const string name,int x,int y,int w,int h,color bg,color border)
+{
+   if(ObjectFind(0,name) < 0)
+      ObjectCreate(0,name,OBJ_RECTANGLE_LABEL,0,0,0);
+   ObjectSetInteger(0,name,OBJPROP_CORNER,CORNER_LEFT_UPPER);
+   ObjectSetInteger(0,name,OBJPROP_XDISTANCE,x);
+   ObjectSetInteger(0,name,OBJPROP_YDISTANCE,y);
+   ObjectSetInteger(0,name,OBJPROP_XSIZE,w);
+   ObjectSetInteger(0,name,OBJPROP_YSIZE,h);
+   ObjectSetInteger(0,name,OBJPROP_BGCOLOR,bg);
+   ObjectSetInteger(0,name,OBJPROP_COLOR,border);
+   ObjectSetInteger(0,name,OBJPROP_BORDER_TYPE,BORDER_FLAT);
+   ObjectSetInteger(0,name,OBJPROP_WIDTH,1);
+   ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
+   ObjectSetInteger(0,name,OBJPROP_SELECTED,false);
+   ObjectSetInteger(0,name,OBJPROP_BACK,false);
+}
+
+void EnsureLabel(const string name,const string text,int x,int y,int font_size,color clr)
+{
+   if(ObjectFind(0,name) < 0)
+      ObjectCreate(0,name,OBJ_LABEL,0,0,0);
+   ObjectSetInteger(0,name,OBJPROP_CORNER,CORNER_LEFT_UPPER);
+   ObjectSetInteger(0,name,OBJPROP_XDISTANCE,x);
+   ObjectSetInteger(0,name,OBJPROP_YDISTANCE,y);
+   ObjectSetInteger(0,name,OBJPROP_COLOR,clr);
+   ObjectSetInteger(0,name,OBJPROP_FONTSIZE,font_size);
+   ObjectSetString(0,name,OBJPROP_FONT,"Microsoft YaHei");
+   ObjectSetString(0,name,OBJPROP_TEXT,text);
+   ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
+   ObjectSetInteger(0,name,OBJPROP_SELECTED,false);
+   ObjectSetInteger(0,name,OBJPROP_BACK,false);
+}
+
+void EnsureButton(const string name,const string text,int x,int y,int w,int h,color bg,color fg)
+{
+   if(ObjectFind(0,name) < 0)
+      ObjectCreate(0,name,OBJ_BUTTON,0,0,0);
+   ObjectSetInteger(0,name,OBJPROP_CORNER,CORNER_LEFT_UPPER);
+   ObjectSetInteger(0,name,OBJPROP_XDISTANCE,x);
+   ObjectSetInteger(0,name,OBJPROP_YDISTANCE,y);
+   ObjectSetInteger(0,name,OBJPROP_XSIZE,w);
+   ObjectSetInteger(0,name,OBJPROP_YSIZE,h);
+   ObjectSetInteger(0,name,OBJPROP_COLOR,fg);
+   ObjectSetInteger(0,name,OBJPROP_BGCOLOR,bg);
+   ObjectSetInteger(0,name,OBJPROP_BORDER_COLOR,bg);
+   ObjectSetInteger(0,name,OBJPROP_FONTSIZE,9);
+   ObjectSetString(0,name,OBJPROP_FONT,"Microsoft YaHei");
+   ObjectSetString(0,name,OBJPROP_TEXT,text);
+   ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
+   ObjectSetInteger(0,name,OBJPROP_SELECTED,false);
+   ObjectSetInteger(0,name,OBJPROP_BACK,false);
+}
+
+void InitPanelPosition()
+{
+   g_panel_x = PanelStartX;
+   g_panel_y = PanelStartY;
+}
+
+void ClampPanelPosition(int &panel_x,int &panel_y)
+{
+   PanelMetrics m;
+   BuildPanelMetrics(m);
+   long chart_width = ChartGetInteger(0,CHART_WIDTH_IN_PIXELS,0);
+   long chart_height = ChartGetInteger(0,CHART_HEIGHT_IN_PIXELS,0);
+   int max_x = (int)chart_width - m.width;
+   int max_y = (int)chart_height - m.panel_h;
+   if(max_x < 0) max_x = 0;
+   if(max_y < 0) max_y = 0;
+   if(panel_x < 0) panel_x = 0;
+   if(panel_y < 0) panel_y = 0;
+   if(panel_x > max_x) panel_x = max_x;
+   if(panel_y > max_y) panel_y = max_y;
+}
+
+bool IsClickOnPanelDragArea(int click_x,int click_y)
+{
+   if(!g_panel_open) return(false);
+   PanelMetrics m;
+   BuildPanelMetrics(m);
+   if(click_x < g_panel_x || click_x > g_panel_x + m.width) return(false);
+   if(click_y < g_panel_y || click_y > g_panel_y + m.header_h) return(false);
+   return(true);
+}
+
+void MovePanelTo(int new_x,int new_y)
+{
+   int delta_x = new_x - g_panel_x;
+   int delta_y = new_y - g_panel_y;
+   if(delta_x == 0 && delta_y == 0) return;
+
+   for(int i = ObjectsTotal(0) - 1; i >= 0; i--)
+   {
+      string name = ObjectName(i);
+      if(StringFind(name,g_panel_prefix,0) != 0) continue;
+      if(name == g_panel_prefix + "toggle_panel") continue;
+
+      int x = (int)ObjectGet(name,OBJPROP_XDISTANCE);
+      int y = (int)ObjectGet(name,OBJPROP_YDISTANCE);
+      ObjectSet(name,OBJPROP_XDISTANCE,x + delta_x);
+      ObjectSet(name,OBJPROP_YDISTANCE,y + delta_y);
+   }
+   g_panel_x = new_x;
+   g_panel_y = new_y;
+   ChartRedraw(0);
+}
+
+void SetPanelDragHighlight(bool active)
+{
+   string panel_name = g_panel_prefix + "panel";
+   if(ObjectFind(0,panel_name) < 0) return;
+   if(active)
+   {
+      ObjectSet(panel_name,OBJPROP_COLOR,C'66,153,225');
+      ObjectSet(panel_name,OBJPROP_WIDTH,2);
+   }
+   else
+   {
+      ObjectSet(panel_name,OBJPROP_COLOR,C'45,58,74');
+      ObjectSet(panel_name,OBJPROP_WIDTH,1);
+   }
+}
+
+void DeletePanelContentObjects()
+{
+   for(int i = ObjectsTotal(0) - 1; i >= 0; i--)
+   {
+      string name = ObjectName(i);
+      if(StringFind(name,g_panel_prefix,0) != 0) continue;
+      if(name == g_panel_prefix + "toggle_panel") continue;
+      ObjectDelete(0,name);
+   }
+}
+
+void DrawPanelToggleAnchor()
+{
+   color accent = C'66,153,225';
+   int anchor_w = 64;
+   int anchor_h = 30;
+   int anchor_x = 16;
+   int anchor_y = 35;
+   string toggle_text = g_panel_open ? "隐藏" : "展开";
+   EnsureButton(g_panel_prefix + "toggle_panel",toggle_text,anchor_x,anchor_y,anchor_w,anchor_h,accent,White);
+}
+
+void CollectStats(EAStats &stats)
+{
+   stats.buy_positions = 0;
+   stats.sell_positions = 0;
+   stats.buy_pending = 0;
+   stats.sell_pending = 0;
+   stats.buy_lots = 0.0;
+   stats.sell_lots = 0.0;
+   stats.buy_profit = 0.0;
+   stats.sell_profit = 0.0;
+   stats.total_profit = 0.0;
+
+   for(int i = OrdersTotal() - 1; i >= 0; i--)
+   {
+      if(!OrderSelect(i,SELECT_BY_POS,MODE_TRADES)) continue;
+      if(OrderSymbol() != Symbol()) continue;
+      if(OrderMagicNumber() != Magic) continue;
+
+      int type = OrderType();
+      double lots = OrderLots();
+      double profit = OrderProfit() + OrderSwap() + OrderCommission();
+
+      if(type == OP_BUY)
+      {
+         stats.buy_positions++;
+         stats.buy_lots += lots;
+         stats.buy_profit += profit;
+      }
+      else if(type == OP_SELL)
+      {
+         stats.sell_positions++;
+         stats.sell_lots += lots;
+         stats.sell_profit += profit;
+      }
+      else if(type == OP_BUYSTOP || type == OP_BUYLIMIT)
+      {
+         stats.buy_pending++;
+      }
+      else if(type == OP_SELLSTOP || type == OP_SELLLIMIT)
+      {
+         stats.sell_pending++;
+      }
+   }
+   stats.total_profit = stats.buy_profit + stats.sell_profit;
+}
+
+string BoolText(bool enabled,string on_text,string off_text)
+{
+   return(enabled ? on_text : off_text);
+}
+
+string FormatSignedMoney(double value)
+{
+   string sign = (value > 0.0) ? "+" : "";
+   return(sign + DoubleToString(value,2));
+}
+
+string ClipText(string text,int max_chars)
+{
+   if(max_chars <= 0) return("");
+   if(StringLen(text) <= max_chars) return(text);
+   if(max_chars <= 3) return(StringSubstr(text,0,max_chars));
+   return(StringSubstr(text,0,max_chars - 3) + "...");
+}
+
+void DrawPanel(EAStats &stats)
+{
+   if(!g_panel_open) { DeletePanelContentObjects(); DrawPanelToggleAnchor(); return; }
+
+   PanelMetrics m;
+   BuildPanelMetrics(m);
+
+   color panel_bg = C'15,20,27';
+   color panel_border = C'45,58,74';
+   color header_bg = C'20,29,40';
+   color card_bg = C'24,33,45';
+   color muted = C'150,164,181';
+   color ok_color = C'88,199,135';
+   color warn_color = C'255,183,77';
+   color bad_color = C'239,100,97';
+   color accent = C'66,153,225';
+   color accent_alt = C'34,197,154';
+   color cream = C'244,248,252';
+
+   int x = m.margin_x;
+   int inner_x = x + m.pad;
+   int inner_x2 = inner_x + m.half_w + m.gap;
+
+   double balance = AccountBalance();
+   double equity = AccountEquity();
+   double margin = AccountMargin();
+   double margin_level = (margin > 0.0) ? equity / margin * 100.0 : 0.0;
+   double spread_pts = (Ask - Bid) / Point();
+
+   EnsureRectangle(g_panel_prefix + "panel",x,m.margin_y,m.width,m.panel_h,panel_bg,panel_border);
+   EnsureRectangle(g_panel_prefix + "header",x,m.margin_y,m.width,m.header_h,header_bg,panel_border);
+   EnsureLabel(g_panel_prefix + "title","Amazing3.1 双向网格",inner_x + 6,m.margin_y + 10,m.font_lg,cream);
+   EnsureLabel(g_panel_prefix + "subtitle",Symbol() + " | " + IntegerToString(Period()) + "min | " + AccountCurrency(),inner_x + 6,m.margin_y + 31,m.font_sm,muted);
+
+   int y = m.margin_y + m.header_h + m.section_gap;
+   EnsureRectangle(g_panel_prefix + "card_status",x,y,m.width,m.card_status_h,card_bg,panel_border);
+   EnsureLabel(g_panel_prefix + "status_title","工作状态",inner_x,y + m.pad - 1,m.font_md,cream);
+
+   string work_state = "工作中";
+   color work_color = ok_color;
+   if(!g_allow_buy && !g_allow_sell) { work_state = "手动暂停"; work_color = bad_color; }
+   else if(!g_allow_buy || !g_allow_sell) { work_state = "单边运行"; work_color = accent_alt; }
+
+   EnsureLabel(g_panel_prefix + "status_line1","当前  " + work_state,inner_x,y + m.pad + 20,m.font_sm,work_color);
+   EnsureLabel(g_panel_prefix + "status_line2","交易  " + BoolText(g_allow_buy,"多开","多停") + "/" + BoolText(g_allow_sell,"空开","空停"),inner_x,y + m.pad + 40,m.font_sm,cream);
+   EnsureLabel(g_panel_prefix + "status_line3","时段  " + EA_StartTime + "-" + EA_StopTime,inner_x,y + m.pad + 60,m.font_sm,muted);
+   EnsureLabel(g_panel_prefix + "status_line4","点差  " + DoubleToString(spread_pts,1) + " 点",inner_x,y + m.pad + 80,m.font_xs,muted);
+   EnsureLabel(g_panel_prefix + "status_line5","杠杆  " + IntegerToString(AccountLeverage()) + "x",inner_x,y + m.pad + 100,m.font_xs,muted);
+   EnsureLabel(g_panel_prefix + "status_line6","Magic  " + IntegerToString(Magic),inner_x,y + m.pad + 120,m.font_xs,muted);
+   EnsureLabel(g_panel_prefix + "status_line7","停止挂单  " + BoolText(Flag_Stop,"是","否"),inner_x,y + m.pad + 140,m.font_xs,Flag_Stop ? warn_color : muted);
+
+   y += m.card_status_h + m.section_gap;
+   EnsureRectangle(g_panel_prefix + "card_metrics",x,y,m.width,m.card_metrics_h,card_bg,panel_border);
+   EnsureLabel(g_panel_prefix + "metrics_title","今日目标与账户",inner_x,y + m.pad - 1,m.font_md,cream);
+
+   int line_y = y + m.pad + 22;
+   EnsureLabel(g_panel_prefix + "metrics_a_l","Buy  " + IntegerToString(stats.buy_positions) + "单  " + DoubleToString(stats.buy_lots,2) + "手",inner_x,line_y,m.font_sm,cream);
+   EnsureLabel(g_panel_prefix + "metrics_a_r","Sell  " + IntegerToString(stats.sell_positions) + "单  " + DoubleToString(stats.sell_lots,2) + "手",inner_x2,line_y,m.font_sm,cream);
+   line_y += m.row_h + m.gap / 2;
+   EnsureLabel(g_panel_prefix + "metrics_b_l","Buy浮盈  " + FormatSignedMoney(stats.buy_profit),inner_x,line_y,m.font_sm,stats.buy_profit >= 0.0 ? ok_color : bad_color);
+   EnsureLabel(g_panel_prefix + "metrics_b_r","Sell浮盈  " + FormatSignedMoney(stats.sell_profit),inner_x2,line_y,m.font_sm,stats.sell_profit >= 0.0 ? ok_color : bad_color);
+   line_y += m.row_h + m.gap / 2;
+   EnsureLabel(g_panel_prefix + "metrics_c_l","EA浮盈亏  " + FormatSignedMoney(stats.total_profit),inner_x,line_y,m.font_sm,stats.total_profit >= 0.0 ? ok_color : bad_color);
+   EnsureLabel(g_panel_prefix + "metrics_c_r","挂单  " + IntegerToString(stats.buy_pending + stats.sell_pending) + "个",inner_x2,line_y,m.font_sm,muted);
+   line_y += m.row_h + m.gap / 2;
+   EnsureLabel(g_panel_prefix + "metrics_d_l","余额  " + DoubleToString(balance,2),inner_x,line_y,m.font_sm,cream);
+   EnsureLabel(g_panel_prefix + "metrics_d_r","净值  " + DoubleToString(equity,2),inner_x2,line_y,m.font_sm,accent_alt);
+   line_y += m.row_h + m.gap / 2;
+   EnsureLabel(g_panel_prefix + "metrics_e_l","保证金  " + DoubleToString(margin,2),inner_x,line_y,m.font_sm,muted);
+   EnsureLabel(g_panel_prefix + "metrics_e_r","保证金比  " + DoubleToString(margin_level,1) + "%",inner_x2,line_y,m.font_sm,margin_level >= 200.0 ? ok_color : warn_color);
+   line_y += m.row_h + m.gap / 2;
+   EnsureLabel(g_panel_prefix + "metrics_f_l","可用  " + DoubleToString(AccountFreeMargin(),2),inner_x,line_y,m.font_sm,cream);
+   EnsureLabel(g_panel_prefix + "metrics_f_r","累计手数  " + DoubleToString(stats.buy_lots + stats.sell_lots,2),inner_x2,line_y,m.font_sm,muted);
+
+   y += m.card_metrics_h + m.section_gap;
+   EnsureRectangle(g_panel_prefix + "card_actions",x,y,m.width,m.card_actions_h,card_bg,panel_border);
+   EnsureLabel(g_panel_prefix + "actions_title","快捷操作",inner_x,y + m.pad - 1,m.font_md,cream);
+
+   int button_y = y + m.pad + 24;
+   EnsureButton(g_panel_prefix + "stop_all",BoolText(g_allow_buy || g_allow_sell,"停止交易","开启交易"),inner_x,button_y,m.inner_w,m.button_h,(g_allow_buy || g_allow_sell) ? bad_color : accent_alt,White);
+   button_y += m.button_h + m.gap;
+   EnsureButton(g_panel_prefix + "stop_buy",BoolText(g_allow_buy,"停止做多","开启做多"),inner_x,button_y,m.half_w,m.button_h,g_allow_buy ? warn_color : accent_alt,White);
+   EnsureButton(g_panel_prefix + "stop_sell",BoolText(g_allow_sell,"停止做空","开启做空"),inner_x2,button_y,m.half_w,m.button_h,g_allow_sell ? warn_color : accent_alt,White);
+   button_y += m.button_h + m.gap;
+   EnsureButton(g_panel_prefix + "close_all_buy","全平多单",inner_x,button_y,m.half_w,m.button_h,C'29,78,216',White);
+   EnsureButton(g_panel_prefix + "close_all_sell","全平空单",inner_x2,button_y,m.half_w,m.button_h,C'185,74,72',White);
+   button_y += m.button_h + m.gap;
+   EnsureButton(g_panel_prefix + "close_profit_buy","全平盈利多单",inner_x,button_y,m.half_w,m.button_h,accent_alt,White);
+   EnsureButton(g_panel_prefix + "close_profit_sell","全平盈利空单",inner_x2,button_y,m.half_w,m.button_h,accent_alt,White);
+   button_y += m.button_h + m.gap;
+   EnsureButton(g_panel_prefix + "close_loss_buy","全平亏损多单",inner_x,button_y,m.half_w,m.button_h,bad_color,White);
+   EnsureButton(g_panel_prefix + "close_loss_sell","全平亏损空单",inner_x2,button_y,m.half_w,m.button_h,bad_color,White);
+   button_y += m.button_h + m.gap;
+   EnsureButton(g_panel_prefix + "close_all_ea","一键全平仓",inner_x,button_y,m.inner_w,m.button_h,C'121,89,214',White);
+
+   DrawPanelToggleAnchor();
+}
+
+void RefreshPanel(bool force)
+{
+   datetime now_second = TimeCurrent();
+   if(!force && now_second == g_last_panel_refresh) return;
+
+   EAStats stats;
+   CollectStats(stats);
+   DrawPanel(stats);
+   if(g_panel_dragging) SetPanelDragHighlight(true);
+   g_last_panel_refresh = now_second;
+   ChartRedraw(0);
+}
+
+void DeleteObjectsByPrefix(string prefix)
+{
+   for(int i = ObjectsTotal(0) - 1; i >= 0; i--)
+   {
+      string name = ObjectName(i);
+      if(StringFind(name,prefix,0) == 0)
+         ObjectDelete(0,name);
+   }
+}
+
+bool ShowConfirmDialog(string message)
+{
+   return(MessageBox(message,"确认操作",MB_YESNO | MB_ICONQUESTION) == IDYES);
+}
+
+void ResetPanelButtonState(string button_name)
+{
+   if(button_name == "") return;
+   if(ObjectFind(0,button_name) < 0) return;
+   ObjectSetInteger(0,button_name,OBJPROP_STATE,false);
+}
+
+void HandlePanelButtonClick(string key)
+{
+   EAStats stats;
+   CollectStats(stats);
+
+   if(key == g_panel_prefix + "toggle_panel")
+   {
+      ResetPanelButtonState(key);
+      g_panel_open = !g_panel_open;
+      g_panel_dragging = false;
+      SetPanelDragHighlight(false);
+      RefreshPanel(true);
+      return;
+   }
+
+   if(key == g_panel_prefix + "stop_all")
+   {
+      ResetPanelButtonState(key);
+      bool currently_on = (g_allow_buy || g_allow_sell);
+      if(currently_on)
+      {
+         if(!ShowConfirmDialog("确定要停止全部交易吗？\n将暂停多空新开单，已有持仓保留。")) return;
+      }
+      else
+      {
+         if(!ShowConfirmDialog("确定要开启全部交易吗？")) return;
+      }
+      g_allow_buy = !currently_on;
+      g_allow_sell = !currently_on;
+      RefreshPanel(true);
+      return;
+   }
+
+   if(key == g_panel_prefix + "stop_buy")
+   {
+      ResetPanelButtonState(key);
+      if(g_allow_buy) { if(!ShowConfirmDialog("确定要停止做多吗？")) return; }
+      else { if(!ShowConfirmDialog("确定要开启做多吗？")) return; }
+      g_allow_buy = !g_allow_buy;
+      RefreshPanel(true);
+      return;
+   }
+
+   if(key == g_panel_prefix + "stop_sell")
+   {
+      ResetPanelButtonState(key);
+      if(g_allow_sell) { if(!ShowConfirmDialog("确定要停止做空吗？")) return; }
+      else { if(!ShowConfirmDialog("确定要开启做空吗？")) return; }
+      g_allow_sell = !g_allow_sell;
+      RefreshPanel(true);
+      return;
+   }
+
+   if(key == g_panel_prefix + "close_all_buy")
+   {
+      ResetPanelButtonState(key);
+      if(!ShowConfirmDialog("确定要全平 " + Symbol() + " 上本EA的全部多单吗？\nMagic=" + IntegerToString(Magic) + "\n当前多单：" + IntegerToString(stats.buy_positions) + " 单，" + DoubleToString(stats.buy_lots,2) + " 手")) return;
+      CloseAllOrders(1);
+      RefreshPanel(true);
+      return;
+   }
+
+   if(key == g_panel_prefix + "close_all_sell")
+   {
+      ResetPanelButtonState(key);
+      if(!ShowConfirmDialog("确定要全平 " + Symbol() + " 上本EA的全部空单吗？\nMagic=" + IntegerToString(Magic) + "\n当前空单：" + IntegerToString(stats.sell_positions) + " 单，" + DoubleToString(stats.sell_lots,2) + " 手")) return;
+      CloseAllOrders(-1);
+      RefreshPanel(true);
+      return;
+   }
+
+   if(key == g_panel_prefix + "close_profit_buy")
+   {
+      ResetPanelButtonState(key);
+      if(!ShowConfirmDialog("确定要全平 " + Symbol() + " 上本EA的盈利多单吗？")) return;
+      CloseProfitLossOrders(0,Magic,0,1);
+      RefreshPanel(true);
+      return;
+   }
+
+   if(key == g_panel_prefix + "close_profit_sell")
+   {
+      ResetPanelButtonState(key);
+      if(!ShowConfirmDialog("确定要全平 " + Symbol() + " 上本EA的盈利空单吗？")) return;
+      CloseProfitLossOrders(1,Magic,0,1);
+      RefreshPanel(true);
+      return;
+   }
+
+   if(key == g_panel_prefix + "close_loss_buy")
+   {
+      ResetPanelButtonState(key);
+      if(!ShowConfirmDialog("确定要全平 " + Symbol() + " 上本EA的亏损多单吗？")) return;
+      CloseProfitLossOrders(0,Magic,0,2);
+      RefreshPanel(true);
+      return;
+   }
+
+   if(key == g_panel_prefix + "close_loss_sell")
+   {
+      ResetPanelButtonState(key);
+      if(!ShowConfirmDialog("确定要全平 " + Symbol() + " 上本EA的亏损空单吗？")) return;
+      CloseProfitLossOrders(1,Magic,0,2);
+      RefreshPanel(true);
+      return;
+   }
+
+   if(key == g_panel_prefix + "close_all_ea")
+   {
+      ResetPanelButtonState(key);
+      if(!ShowConfirmDialog("确定要一键全平 " + Symbol() + " 上本EA的全部持仓与挂单吗？\nMagic=" + IntegerToString(Magic) + "\n当前：" + IntegerToString(stats.buy_positions + stats.sell_positions) + " 单持仓")) return;
+      CloseAllOrders(0);
+      RefreshPanel(true);
+   }
+}
 //+------------------------------------------------------------------+
