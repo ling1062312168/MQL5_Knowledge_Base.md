@@ -670,8 +670,10 @@ int start()
    lowRange = iLow(Symbol(),g_timeframe,0) - iHigh(Symbol(),g_timeframe,5) ;
    highRangePoints = int(highRange / Point()) ;
    lowRangePoints = MathAbs(lowRange / Point()) ;
-   
-   double spreadPts = MarketInfo(Symbol(),MODE_SPREAD) / g_lotCoeff;
+
+   int spreadRaw = (int)MarketInfo(Symbol(),MODE_SPREAD);
+   double spreadStd = spreadRaw / g_lotCoeff;
+   double spreadLimitStd = MaxSpread / g_lotCoeff;
    bool stopFlag = false;
    g_stop_reason = "";
    
@@ -685,8 +687,8 @@ int start()
      { stopFlag = true; g_stop_reason = "EA已停止"; }
    else if(buyCount + sellCount >= Totals)
      { stopFlag = true; g_stop_reason = "单量超限(" + IntegerToString(buyCount + sellCount) + ">=" + IntegerToString(Totals) + ")"; }
-   else if(MaxSpread > 0 && spreadPts > MaxSpread)
-     { stopFlag = true; g_stop_reason = "点差过大(" + DoubleToString(spreadPts,1) + ">" + IntegerToString(MaxSpread) + ")"; }
+   else if(MaxSpread > 0 && spreadRaw > MaxSpread)
+     { stopFlag = true; g_stop_reason = "点差过大(" + DoubleToString(spreadStd,1) + ">" + DoubleToString(spreadLimitStd,1) + "点)"; }
    else if(g_maxVolatility != 0 && (highRangePoints >= g_maxVolatility || lowRangePoints >= g_maxVolatility))
      { stopFlag = true; g_stop_reason = "波动率过高"; }
    
@@ -3913,7 +3915,7 @@ void DrawPanel(EAStats &stats)
    EnsureLabel(g_panel_prefix + "status_line1","当前  " + work_state,inner_x,y + m.pad + 20,m.font_sm,work_color);
    EnsureLabel(g_panel_prefix + "status_line2","交易  " + BoolText(g_allow_buy,"多开","多停") + "/" + BoolText(g_allow_sell,"空开","空停"),inner_x,y + m.pad + 40,m.font_sm,cream);
    EnsureLabel(g_panel_prefix + "status_line3","时段  " + EA_StartTime + "-" + EA_StopTime,inner_x,y + m.pad + 60,m.font_sm,muted);
-   EnsureLabel(g_panel_prefix + "status_line4","点差  " + DoubleToString(spread_pts,1) + " 点 / 上限 " + IntegerToString(MaxSpread),inner_x,y + m.pad + 80,m.font_xs,(MaxSpread > 0 && spread_pts > MaxSpread) ? warn_color : muted);
+   EnsureLabel(g_panel_prefix + "status_line4","点差  " + DoubleToString(spread_pts,1) + " 点 / 上限 " + DoubleToString(MaxSpread / g_lotCoeff,1),inner_x,y + m.pad + 80,m.font_xs,(MaxSpread > 0 && spread_pts > MaxSpread / g_lotCoeff) ? warn_color : muted);
    EnsureLabel(g_panel_prefix + "status_line5","杠杆  " + IntegerToString(AccountLeverage()) + "x / 要求 " + IntegerToString(Leverage),inner_x,y + m.pad + 100,m.font_xs,(Leverage > 0 && AccountLeverage() < Leverage) ? warn_color : muted);
    EnsureLabel(g_panel_prefix + "status_line6","单量  " + IntegerToString(stats.buy_positions + stats.sell_positions) + "/" + IntegerToString(Totals) + "  Magic " + IntegerToString(Magic),inner_x,y + m.pad + 120,m.font_xs,muted);
    EnsureLabel(g_panel_prefix + "status_line7","原因  " + ClipText(reason_text,38),inner_x,y + m.pad + 140,m.font_xs,(g_stop_reason != "") ? warn_color : muted);
