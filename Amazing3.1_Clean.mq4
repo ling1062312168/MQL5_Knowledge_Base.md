@@ -3860,7 +3860,7 @@ void MovePanelTo(int new_x,int new_y)
    int delta_y = new_y - g_panel_y;
    if(delta_x == 0 && delta_y == 0) return;
 
-   for(int i = ObjectsTotal(0) - 1; i >= 0; i--)
+   for(int i = ObjectsTotal() - 1; i >= 0; i--)
    {
       string name = ObjectName(i);
       if(StringFind(name,g_panel_prefix,0) != 0) continue;
@@ -3894,7 +3894,7 @@ void SetPanelDragHighlight(bool active)
 
 void DeletePanelContentObjects()
 {
-   for(int i = ObjectsTotal(0) - 1; i >= 0; i--)
+   for(int i = ObjectsTotal() - 1; i >= 0; i--)
    {
       string name = ObjectName(i);
       if(StringFind(name,g_panel_prefix,0) != 0) continue;
@@ -4092,7 +4092,7 @@ void RefreshPanel(bool force)
 
 void DeleteObjectsByPrefix(string prefix)
 {
-   for(int i = ObjectsTotal(0) - 1; i >= 0; i--)
+   for(int i = ObjectsTotal() - 1; i >= 0; i--)
    {
       string name = ObjectName(i);
       if(StringFind(name,prefix,0) == 0)
