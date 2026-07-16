@@ -120,23 +120,13 @@ int       g_closeProfitN = 1;
 int       g_closeLossN = 2;
 double    g_lotCoeff = 10.0;
 uint      g_colorDimGray = DimGray;
-string    g_spreadLabel  =  "Spread";
 int       g_in33 = 0;
-bool      g_showButtons = true;
-string    g_btnBuyName  =  "Button1";
-string    g_btnSellName  =  "Button2";
-string    g_btnCloseName  =  "Button5";
 int       g_colorBlueInt = 55295;
 int       g_colorWhiteInt = 16777215;
 int       g_arrowColor = 65280;
 int       g_colorGreenInt = 65280;
 int       g_colorYellowInt = 65535;
 int       g_colorGrayInt = 12632256;
-string    g_leverLabel  =  "Lever";
-string    g_spreadsLabel  =  "Spreads";
-int       g_labelCorner = 0;
-int       g_labelX = 25;
-int       g_labelY = 180;
 bool      g_bo49 = false;
 string    g_eaName  =  "Amazing3.1";
 double    g_do51 = 0.0;
@@ -261,17 +251,6 @@ int init()
       g_allow_buy = false ;
       g_allow_sell = false ;
       ObjectsDeleteAll(-1,-1);
-      if(ObjectFind(g_spreadLabel) <  0)
-        {
-         ObjectCreate(g_spreadLabel,OBJ_LABEL,0,0,0.0,0,0.0,0,0.0);
-         ObjectSet(g_spreadLabel,OBJPROP_CORNER,1.0);
-         ObjectSet(g_spreadLabel,OBJPROP_YDISTANCE,260.0);
-         ObjectSet(g_spreadLabel,OBJPROP_XDISTANCE,10.0);
-         ObjectSetText(g_spreadLabel,"Spread: " + DoubleToString((Ask - Bid) / g_lotCoeff,1) + " pips",13,"Arial",g_colorDimGray);
-        }
-      ObjectSetText(g_spreadLabel,"Spread: " + DoubleToString((Ask - Bid) / g_lotCoeff,1) + " pips",0,NULL,0xFFFFFFFF);
-      WindowRedraw();
-      WindowRedraw();
      }
    PlaySound("Starting.wav");
    StringReplace(EA_StartTime," ","");
@@ -352,10 +331,6 @@ int start()
    double      newOrderPrice;
    double      newOrderLots;
    int         loopIdx;
-   double      spreadPoints;
-   string      spreadText;
-   double      leverage;
-   string      leverageText;
    double      profitDiff;
    double      do33;
    bool        useSecondParam;
@@ -368,20 +343,10 @@ int start()
 //----------------------------
    datetime   checkTime1;
    bool       inLimitWindow1;
-   string     fontStr1;
-   string     stopMsg1;
-   string     fontStr2;
-   string     stopMsg2;
    datetime   checkTime2;
    bool       inEaWindow1;
-   string     fontStr3;
-   string     stopMsg3;
-   string     fontStr4;
-   string     stopMsg4;
    datetime   checkTime3;
    bool       inEaWindow2;
-   string     fontStr5;
-   string     stopMsg5;
    string     sortKey1;
    string     sortDir1;
    int        maxTicket1;
@@ -619,8 +584,6 @@ int start()
    newOrderPrice = 0.0 ;
    newOrderLots = 0.0 ;
    loopIdx = 0 ;
-   spreadPoints = 0.0 ;
-   leverage = 0.0 ;
    profitDiff = 0.0 ;
    do33 = 0.0 ;
    useSecondParam = false ;
@@ -682,30 +645,6 @@ int start()
         }
       sellProfit = OrderProfit() + OrderSwap() + OrderCommission() + sellProfit ;
      }
-   if(buyProfit>0.0)
-     {
-      ObjectSetInteger(0,g_btnBuyName,OBJPROP_BGCOLOR,17919);
-     }
-   else
-     {
-      ObjectSetInteger(0,g_btnBuyName,OBJPROP_BGCOLOR,6908265);
-     }
-   if(sellProfit>0.0)
-     {
-      ObjectSetInteger(0,g_btnSellName,OBJPROP_BGCOLOR,17919);
-     }
-   else
-     {
-      ObjectSetInteger(0,g_btnSellName,OBJPROP_BGCOLOR,6908265);
-     }
-   if(buyProfit + sellProfit>0.0)
-     {
-      ObjectSetInteger(0,g_btnCloseName,OBJPROP_BGCOLOR,17919);
-     }
-   else
-     {
-      ObjectSetInteger(0,g_btnCloseName,OBJPROP_BGCOLOR,6908265);
-     }
    if(buyTotalLots>0.0 && sellTotalLots / buyTotalLots>3.0 && sellTotalLots - buyTotalLots>0.2)
      {
       g_sellHeavy = true ;
@@ -734,31 +673,11 @@ int start()
      {
       g_allow_buy = false ;
       g_allow_sell = false ;
-      fontStr1 = "Arial";
-      stopMsg1 = "This EA has stop work ! ";
-      if(ObjectFind("Stop") == -1)
-        {
-         ObjectCreate("Stop",OBJ_LABEL,0,0,0.0,0,0.0,0,0.0);
-         ObjectSet("Stop",OBJPROP_CORNER,g_labelCorner);
-         ObjectSet("Stop",OBJPROP_XDISTANCE,g_labelX);
-         ObjectSet("Stop",OBJPROP_YDISTANCE,g_labelY + 30);
-        }
-      ObjectSetText("Stop",stopMsg1,g_fontSize,fontStr1,g_colorDimGray);
      }
    else
      {
       g_allow_buy = true ;
       g_allow_sell = true ;
-      fontStr2 = "Arial";
-      stopMsg2 = "";
-      if(ObjectFind("Stop") == -1)
-        {
-         ObjectCreate("Stop",OBJ_LABEL,0,0,0.0,0,0.0,0,0.0);
-         ObjectSet("Stop",OBJPROP_CORNER,g_labelCorner);
-         ObjectSet("Stop",OBJPROP_XDISTANCE,g_labelX);
-         ObjectSet("Stop",OBJPROP_YDISTANCE,g_labelY + 30);
-        }
-      ObjectSetText("Stop",stopMsg2,g_fontSize,fontStr2,g_colorDimGray);
      }
    checkTime2 = 0;
    if(IsTesting())
@@ -788,31 +707,11 @@ int start()
      }
    if(!(inEaWindow1))
      {
-      fontStr3 = "Arial";
-      stopMsg3 = "Time out,This EA has stop open order";
-      if(ObjectFind("Stop") == -1)
-        {
-         ObjectCreate("Stop",OBJ_LABEL,0,0,0.0,0,0.0,0,0.0);
-         ObjectSet("Stop",OBJPROP_CORNER,g_labelCorner);
-         ObjectSet("Stop",OBJPROP_XDISTANCE,g_labelX);
-         ObjectSet("Stop",OBJPROP_YDISTANCE,g_labelY + 30);
-        }
-      ObjectSetText("Stop",stopMsg3,g_fontSize,fontStr3,g_colorDimGray);
      }
    if(g_eaName  !=  WindowExpertName())
      {
       g_allow_buy = false ;
       g_allow_sell = false ;
-      fontStr4 = "Arial";
-      stopMsg4 = "This EA has stop work ! ";
-      if(ObjectFind("Stop") == -1)
-        {
-         ObjectCreate("Stop",OBJ_LABEL,0,0,0.0,0,0.0,0,0.0);
-         ObjectSet("Stop",OBJPROP_CORNER,g_labelCorner);
-         ObjectSet("Stop",OBJPROP_XDISTANCE,g_labelX);
-         ObjectSet("Stop",OBJPROP_YDISTANCE,g_labelY + 30);
-        }
-      ObjectSetText("Stop",stopMsg4,g_fontSize,fontStr4,g_colorDimGray);
      }
    if(TimeCurrent() <  g_nextTradeTime)
      {
@@ -846,16 +745,6 @@ int start()
         {
          g_allow_buy = false ;
          g_allow_sell = false ;
-         fontStr5 = "Arial";
-         stopMsg5 = "This EA has stop work " + string(NextTime) + "second! ";
-         if(ObjectFind("Stop") == -1)
-           {
-            ObjectCreate("Stop",OBJ_LABEL,0,0,0.0,0,0.0,0,0.0);
-            ObjectSet("Stop",OBJPROP_CORNER,g_labelCorner);
-            ObjectSet("Stop",OBJPROP_XDISTANCE,g_labelX);
-            ObjectSet("Stop",OBJPROP_YDISTANCE,g_labelY + 30);
-           }
-         ObjectSetText("Stop",stopMsg5,g_fontSize,fontStr5,g_colorDimGray);
         }
      }
    if(Over == 1 && buyCount == 0)
@@ -1052,17 +941,6 @@ int start()
             while(OrderCloseBy((int)tmpDbl_42,tmpInt_36,0xFFFFFFFF));
            }
       CloseAllOrders(0);
-      if(ObjectFind(g_spreadLabel) <  0)
-        {
-         ObjectCreate(g_spreadLabel,OBJ_LABEL,0,0,0.0,0,0.0,0,0.0);
-         ObjectSet(g_spreadLabel,OBJPROP_CORNER,1.0);
-         ObjectSet(g_spreadLabel,OBJPROP_YDISTANCE,260.0);
-         ObjectSet(g_spreadLabel,OBJPROP_XDISTANCE,10.0);
-         ObjectSetText(g_spreadLabel,"Spread: " + DoubleToString((Ask - Bid) / g_lotCoeff,1) + " pips",13,"Arial",g_colorDimGray);
-        }
-      ObjectSetText(g_spreadLabel,"Spread: " + DoubleToString((Ask - Bid) / g_lotCoeff,1) + " pips",0,NULL,0xFFFFFFFF);
-      WindowRedraw();
-      WindowRedraw();
      }
    if(Over == false)
      {
@@ -1544,20 +1422,6 @@ int start()
      {
       g_arrowColor = g_colorGrayInt ;
      }
-   spreadPoints = (Ask - Bid) / Point() ;
-   spreadText = Symbol() + ": " + DoubleToString(spreadPoints,1) + " pips" ;
-   ObjectCreate(g_spreadLabel,OBJ_LABEL,0,0,0.0,0,0.0,0,0.0);
-   ObjectSet(g_spreadLabel,OBJPROP_CORNER,1.0);
-   ObjectSet(g_spreadLabel,OBJPROP_YDISTANCE,340.0);
-   ObjectSet(g_spreadLabel,OBJPROP_XDISTANCE,10.0);
-   ObjectSetText(g_spreadLabel,spreadText,13,"Arial",g_colorDimGray);
-   leverage = AccountLeverage() ;
-   leverageText = "Lever: " + DoubleToString(leverage,0) + " multi" ;
-   ObjectCreate(g_leverLabel,OBJ_LABEL,0,0,0.0,0,0.0,0,0.0);
-   ObjectSet(g_leverLabel,OBJPROP_CORNER,1.0);
-   ObjectSet(g_leverLabel,OBJPROP_YDISTANCE,320.0);
-   ObjectSet(g_leverLabel,OBJPROP_XDISTANCE,10.0);
-   ObjectSetText(g_leverLabel,leverageText,13,"Arial",g_colorDimGray);
    if(CloseBuySell == 1)
      {
       profitDiff = SumTopNProfit(0,Magic,1,g_closeProfitN) - SumTopNProfit(0,Magic,2,g_closeLossN) ;
