@@ -161,6 +161,7 @@ datetime g_last_panel_refresh  = 0;
 bool     g_allow_buy           = true;
 bool     g_allow_sell          = true;
 bool     g_stop_new_orders     = false;
+string   g_stop_reason         = "";
 
 struct EAStats
 {
@@ -669,7 +670,27 @@ int start()
    lowRange = iLow(Symbol(),g_timeframe,0) - iHigh(Symbol(),g_timeframe,5) ;
    highRangePoints = int(highRange / Point()) ;
    lowRangePoints = MathAbs(lowRange / Point()) ;
-   if((AccountLeverage() < Leverage || IsTradeAllowed() == false || IsExpertEnabled() == false || IsStopped() || buyCount + sellCount >= Totals || MarketInfo(Symbol(),13)>MaxSpread || (g_maxVolatility != 0 && highRangePoints>=g_maxVolatility) || (g_maxVolatility != 0 && lowRangePoints>=g_maxVolatility)))
+   
+   double spreadPts = MarketInfo(Symbol(),MODE_SPREAD) / g_lotCoeff;
+   bool stopFlag = false;
+   g_stop_reason = "";
+   
+   if(Leverage > 0 && AccountLeverage() < Leverage)
+     { stopFlag = true; g_stop_reason = "杠杆不足(" + IntegerToString(AccountLeverage()) + "<" + IntegerToString(Leverage) + ")"; }
+   else if(IsTradeAllowed() == false)
+     { stopFlag = true; g_stop_reason = "账户禁止交易"; }
+   else if(IsExpertEnabled() == false)
+     { stopFlag = true; g_stop_reason = "EA未启用"; }
+   else if(IsStopped())
+     { stopFlag = true; g_stop_reason = "EA已停止"; }
+   else if(buyCount + sellCount >= Totals)
+     { stopFlag = true; g_stop_reason = "单量超限(" + IntegerToString(buyCount + sellCount) + ">=" + IntegerToString(Totals) + ")"; }
+   else if(MaxSpread > 0 && spreadPts > MaxSpread)
+     { stopFlag = true; g_stop_reason = "点差过大(" + DoubleToString(spreadPts,1) + ">" + IntegerToString(MaxSpread) + ")"; }
+   else if(g_maxVolatility != 0 && (highRangePoints >= g_maxVolatility || lowRangePoints >= g_maxVolatility))
+     { stopFlag = true; g_stop_reason = "波动率过高"; }
+   
+   if(stopFlag)
      {
       g_allow_buy = false ;
       g_allow_sell = false ;
@@ -3883,16 +3904,19 @@ void DrawPanel(EAStats &stats)
 
    string work_state = "工作中";
    color work_color = ok_color;
-   if(!g_allow_buy && !g_allow_sell) { work_state = "手动暂停"; work_color = bad_color; }
+   string reason_text = g_stop_reason;
+   if(reason_text == "") reason_text = "环境正常";
+   if(!g_allow_buy && !g_allow_sell && g_stop_reason != "") { work_state = "已暂停"; work_color = warn_color; }
+   else if(!g_allow_buy && !g_allow_sell) { work_state = "手动暂停"; work_color = bad_color; }
    else if(!g_allow_buy || !g_allow_sell) { work_state = "单边运行"; work_color = accent_alt; }
 
    EnsureLabel(g_panel_prefix + "status_line1","当前  " + work_state,inner_x,y + m.pad + 20,m.font_sm,work_color);
    EnsureLabel(g_panel_prefix + "status_line2","交易  " + BoolText(g_allow_buy,"多开","多停") + "/" + BoolText(g_allow_sell,"空开","空停"),inner_x,y + m.pad + 40,m.font_sm,cream);
    EnsureLabel(g_panel_prefix + "status_line3","时段  " + EA_StartTime + "-" + EA_StopTime,inner_x,y + m.pad + 60,m.font_sm,muted);
-   EnsureLabel(g_panel_prefix + "status_line4","点差  " + DoubleToString(spread_pts,1) + " 点",inner_x,y + m.pad + 80,m.font_xs,muted);
-   EnsureLabel(g_panel_prefix + "status_line5","杠杆  " + IntegerToString(AccountLeverage()) + "x",inner_x,y + m.pad + 100,m.font_xs,muted);
-   EnsureLabel(g_panel_prefix + "status_line6","Magic  " + IntegerToString(Magic),inner_x,y + m.pad + 120,m.font_xs,muted);
-   EnsureLabel(g_panel_prefix + "status_line7","停止挂单  " + BoolText(Flag_Stop,"是","否"),inner_x,y + m.pad + 140,m.font_xs,Flag_Stop ? warn_color : muted);
+   EnsureLabel(g_panel_prefix + "status_line4","点差  " + DoubleToString(spread_pts,1) + " 点 / 上限 " + IntegerToString(MaxSpread),inner_x,y + m.pad + 80,m.font_xs,(MaxSpread > 0 && spread_pts > MaxSpread) ? warn_color : muted);
+   EnsureLabel(g_panel_prefix + "status_line5","杠杆  " + IntegerToString(AccountLeverage()) + "x / 要求 " + IntegerToString(Leverage),inner_x,y + m.pad + 100,m.font_xs,(Leverage > 0 && AccountLeverage() < Leverage) ? warn_color : muted);
+   EnsureLabel(g_panel_prefix + "status_line6","单量  " + IntegerToString(stats.buy_positions + stats.sell_positions) + "/" + IntegerToString(Totals) + "  Magic " + IntegerToString(Magic),inner_x,y + m.pad + 120,m.font_xs,muted);
+   EnsureLabel(g_panel_prefix + "status_line7","原因  " + ClipText(reason_text,38),inner_x,y + m.pad + 140,m.font_xs,(g_stop_reason != "") ? warn_color : muted);
 
    y += m.card_status_h + m.section_gap;
    EnsureRectangle(g_panel_prefix + "card_metrics",x,y,m.width,m.card_metrics_h,card_bg,panel_border);
