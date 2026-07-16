@@ -611,9 +611,7 @@ int start()
    int        inLimit_s3;
    int        inLimit_s4;
    int        inLimit_s5;
-   int        inLimit_s6;
-   int        inLimit_s7;
-   int        inLimit_s8;
+
 
 
    /* 账户验证已移除 */
