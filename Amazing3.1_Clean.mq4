@@ -224,37 +224,130 @@ int init()
       ObjectSetInteger(0,g_btnCloseName,OBJPROP_SELECTABLE,1);
       ObjectSetInteger(0,g_btnCloseName,OBJPROP_SELECTED,0);
      }
-   errCode = g_fontSize + g_fontSize / 2;
-   ObjectCreate("Balance",OBJ_LABEL,0,0,0.0,0,0.0,0,0.0);
-   ObjectSet("Balance",OBJPROP_CORNER,1.0);
-   ObjectSet("Balance",OBJPROP_XDISTANCE,5.0);
-   ObjectSet("Balance",OBJPROP_YDISTANCE,errCode);
-   errCode = errCode + g_fontSize * 2;
-   ObjectCreate("Equity",OBJ_LABEL,0,0,0.0,0,0.0,0,0.0);
-   ObjectSet("Equity",OBJPROP_CORNER,1.0);
-   ObjectSet("Equity",OBJPROP_XDISTANCE,5.0);
-   ObjectSet("Equity",OBJPROP_YDISTANCE,errCode);
-   errCode = errCode + g_fontSize * 2;
-   ObjectCreate("FreeMargin",OBJ_LABEL,0,0,0.0,0,0.0,0,0.0);
-   ObjectSet("FreeMargin",OBJPROP_CORNER,1.0);
-   ObjectSet("FreeMargin",OBJPROP_XDISTANCE,5.0);
-   ObjectSet("FreeMargin",OBJPROP_YDISTANCE,errCode);
-   errCode = errCode + g_fontSize * 2;
-   ObjectCreate("ProfitB",OBJ_LABEL,0,0,0.0,0,0.0,0,0.0);
-   ObjectSet("ProfitB",OBJPROP_CORNER,1.0);
-   ObjectSet("ProfitB",OBJPROP_XDISTANCE,5.0);
-   ObjectSet("ProfitB",OBJPROP_YDISTANCE,errCode);
-   errCode = errCode + g_fontSize * 2;
-   ObjectCreate("ProfitS",OBJ_LABEL,0,0,0.0,0,0.0,0,0.0);
-   ObjectSet("ProfitS",OBJPROP_CORNER,1.0);
-   ObjectSet("ProfitS",OBJPROP_XDISTANCE,5.0);
-   ObjectSet("ProfitS",OBJPROP_YDISTANCE,errCode);
-   errCode = errCode + g_fontSize * 2;
-   ObjectCreate("Profit",OBJ_LABEL,0,0,0.0,0,0.0,0,0.0);
-   ObjectSet("Profit",OBJPROP_CORNER,1.0);
-   ObjectSet("Profit",OBJPROP_XDISTANCE,5.0);
-   ObjectSet("Profit",OBJPROP_YDISTANCE,errCode);
-   errCode = errCode + g_fontSize * 3;
+   int panelW = 420;
+   int panelH = 500;
+   int panelX = 10;
+   int panelY = 50;
+   
+   ObjectCreate(0,"PanelBG",OBJ_RECTANGLE_LABEL,0,0,0.0);
+   ObjectSetInteger(0,"PanelBG",OBJPROP_CORNER,CORNER_LEFT_UPPER);
+   ObjectSetInteger(0,"PanelBG",OBJPROP_XDISTANCE,panelX);
+   ObjectSetInteger(0,"PanelBG",OBJPROP_YDISTANCE,panelY);
+   ObjectSetInteger(0,"PanelBG",OBJPROP_XSIZE,panelW);
+   ObjectSetInteger(0,"PanelBG",OBJPROP_YSIZE,panelH);
+   ObjectSetInteger(0,"PanelBG",OBJPROP_BGCOLOR,C'25,25,30');
+   ObjectSetInteger(0,"PanelBG",OBJPROP_BORDER_TYPE,BORDER_FLAT);
+   ObjectSetInteger(0,"PanelBG",OBJPROP_COLOR,C'80,60,30');
+   ObjectSetInteger(0,"PanelBG",OBJPROP_WIDTH,1);
+   ObjectSetInteger(0,"PanelBG",OBJPROP_BACK,false);
+   
+   int y = 0;
+   int pad = 8;
+   
+   ObjectCreate(0,"TitleBG",OBJ_RECTANGLE_LABEL,0,0,0.0);
+   ObjectSetInteger(0,"TitleBG",OBJPROP_CORNER,CORNER_LEFT_UPPER);
+   ObjectSetInteger(0,"TitleBG",OBJPROP_XDISTANCE,panelX);
+   ObjectSetInteger(0,"TitleBG",OBJPROP_YDISTANCE,panelY + y);
+   ObjectSetInteger(0,"TitleBG",OBJPROP_XSIZE,panelW);
+   ObjectSetInteger(0,"TitleBG",OBJPROP_YSIZE,55);
+   ObjectSetInteger(0,"TitleBG",OBJPROP_BGCOLOR,C'35,30,25');
+   ObjectSetInteger(0,"TitleBG",OBJPROP_BACK,false);
+   
+   LabelCreate("Title1","Amazing3.1 双向网格对冲引擎",panelX+pad,panelY+y+5,300,18,C'200,180,120',12);
+   LabelCreate("Title2","BIDIRECTIONAL GRID HEDGE v3.1",panelX+pad,panelY+y+28,350,10,C'150,130,80',8);
+   y += 60;
+   
+   ObjectCreate(0,"AcctBG",OBJ_RECTANGLE_LABEL,0,0,0.0);
+   ObjectSetInteger(0,"AcctBG",OBJPROP_CORNER,CORNER_LEFT_UPPER);
+   ObjectSetInteger(0,"AcctBG",OBJPROP_XDISTANCE,panelX+5);
+   ObjectSetInteger(0,"AcctBG",OBJPROP_YDISTANCE,panelY+y);
+   ObjectSetInteger(0,"AcctBG",OBJPROP_XSIZE,panelW-10);
+   ObjectSetInteger(0,"AcctBG",OBJPROP_YSIZE,65);
+   ObjectSetInteger(0,"AcctBG",OBJPROP_BGCOLOR,C'20,20,25');
+   ObjectSetInteger(0,"AcctBG",OBJPROP_BACK,false);
+   
+   LabelCreate("AcctTitle","账户概览",panelX+pad,panelY+y+3,60,12,C'150,180,200',10);
+   int ay = y + 20;
+   LabelCreate("BalLbl","余额",panelX+pad,panelY+ay,28,10,clrSilver,9);
+   LabelCreate("BalVal","--",panelX+pad+35,panelY+ay,90,10,clrWhite,9);
+   LabelCreate("EqLbl","净值",panelX+pad+130,panelY+ay,28,10,clrSilver,9);
+   LabelCreate("EqVal","--",panelX+pad+162,panelY+ay,90,10,clrWhite,9);
+   LabelCreate("FreeLbl","可用",panelX+pad+260,panelY+ay,28,10,clrSilver,9);
+   LabelCreate("FreeVal","--",panelX+pad+292,panelY+ay,90,10,clrWhite,9);
+   ay += 18;
+   LabelCreate("MarLbl","保证金",panelX+pad,panelY+ay,40,10,clrSilver,9);
+   LabelCreate("MarVal","--",panelX+pad+45,panelY+ay,75,10,clrWhite,9);
+   LabelCreate("LevLbl","杠杆",panelX+pad+130,panelY+ay,28,10,clrSilver,9);
+   LabelCreate("LevVal","--",panelX+pad+162,panelY+ay,60,10,clrWhite,9);
+   LabelCreate("SpreadLbl","点差",panelX+pad+260,panelY+ay,28,10,clrSilver,9);
+   LabelCreate("SpreadVal","--",panelX+pad+292,panelY+ay,60,10,clrWhite,9);
+   y += 70;
+   
+   ObjectCreate(0,"PosBG",OBJ_RECTANGLE_LABEL,0,0,0.0);
+   ObjectSetInteger(0,"PosBG",OBJPROP_CORNER,CORNER_LEFT_UPPER);
+   ObjectSetInteger(0,"PosBG",OBJPROP_XDISTANCE,panelX+5);
+   ObjectSetInteger(0,"PosBG",OBJPROP_YDISTANCE,panelY+y);
+   ObjectSetInteger(0,"PosBG",OBJPROP_XSIZE,panelW-10);
+   ObjectSetInteger(0,"PosBG",OBJPROP_YSIZE,80);
+   ObjectSetInteger(0,"PosBG",OBJPROP_BGCOLOR,C'25,20,20');
+   ObjectSetInteger(0,"PosBG",OBJPROP_BACK,false);
+   
+   LabelCreate("PosTitle","持仓监控",panelX+pad,panelY+y+3,60,12,C'200,150,150',10);
+   int py = y + 20;
+   LabelCreate("BuyLbl","多单",panelX+pad,panelY+py,28,10,clrSilver,9);
+   LabelCreate("BuyVal","0单/0.00手",panelX+pad+35,panelY+py,80,10,clrWhite,9);
+   LabelCreate("BuyPL","0.00",panelX+pad+120,panelY+py,60,10,C'0,255,0',9);
+   LabelCreate("BuyAvgLbl","均价",panelX+pad+185,panelY+py,28,10,clrSilver,9);
+   LabelCreate("BuyAvgVal","--",panelX+pad+215,panelY+py,170,10,clrWhite,9);
+   py += 18;
+   LabelCreate("SellLbl","空单",panelX+pad,panelY+py,28,10,clrSilver,9);
+   LabelCreate("SellVal","0单/0.00手",panelX+pad+35,panelY+py,80,10,clrWhite,9);
+   LabelCreate("SellPL","0.00",panelX+pad+120,panelY+py,60,10,clrRed,9);
+   LabelCreate("SellAvgLbl","均价",panelX+pad+185,panelY+py,28,10,clrSilver,9);
+   LabelCreate("SellAvgVal","--",panelX+pad+215,panelY+py,170,10,clrWhite,9);
+   py += 18;
+   LabelCreate("TotalPLLbl","总盈亏",panelX+pad,panelY+py,40,10,clrSilver,9);
+   LabelCreate("TotalPLVal","0.00",panelX+pad+45,panelY+py,80,10,clrWhite,10);
+   LabelCreate("TotalLotsLbl","总手数",panelX+pad+130,panelY+py,40,10,clrSilver,9);
+   LabelCreate("TotalLotsVal","0.00",panelX+pad+175,panelY+py,60,10,clrWhite,10);
+   y += 85;
+   
+   ObjectCreate(0,"ParamBG",OBJ_RECTANGLE_LABEL,0,0,0.0);
+   ObjectSetInteger(0,"ParamBG",OBJPROP_CORNER,CORNER_LEFT_UPPER);
+   ObjectSetInteger(0,"ParamBG",OBJPROP_XDISTANCE,panelX+5);
+   ObjectSetInteger(0,"ParamBG",OBJPROP_YDISTANCE,panelY+y);
+   ObjectSetInteger(0,"ParamBG",OBJPROP_XSIZE,panelW-10);
+   ObjectSetInteger(0,"ParamBG",OBJPROP_YSIZE,65);
+   ObjectSetInteger(0,"ParamBG",OBJPROP_BGCOLOR,C'20,25,20');
+   ObjectSetInteger(0,"ParamBG",OBJPROP_BACK,false);
+   
+   LabelCreate("ParamTitle","策略参数",panelX+pad,panelY+y+3,60,12,C'150,200,150',10);
+   int sy = y + 20;
+   LabelCreate("LotLbl","起始手数",panelX+pad,panelY+sy,45,10,clrSilver,9);
+   LabelCreate("LotVal",DoubleToString(lot,2)+"手",panelX+pad+55,panelY+sy,60,10,C'180,220,180',9);
+   LabelCreate("StepLbl","补单间距",panelX+pad+125,panelY+sy,45,10,clrSilver,9);
+   LabelCreate("StepVal",IntegerToString(Step)+"点",panelX+pad+175,panelY+sy,60,10,C'180,220,180',9);
+   LabelCreate("KlotLbl","倍率",panelX+pad+245,panelY+sy,30,10,clrSilver,9);
+   LabelCreate("KlotVal",DoubleToString(K_Lot,2),panelX+pad+280,panelY+sy,60,10,C'180,220,180',9);
+   sy += 18;
+   LabelCreate("CloseLbl","平仓金额",panelX+pad,panelY+sy,50,10,clrSilver,9);
+   LabelCreate("CloseVal",DoubleToString(CloseAll,2),panelX+pad+55,panelY+sy,60,10,C'180,220,180',9);
+   LabelCreate("MaxLbl","最大手数",panelX+pad+125,panelY+sy,50,10,clrSilver,9);
+   LabelCreate("MaxVal",DoubleToString(Maxlot,2)+"手",panelX+pad+180,panelY+sy,60,10,C'180,220,180',9);
+   LabelCreate("StatusLbl","状态",panelX+pad+255,panelY+sy,30,10,clrSilver,9);
+   LabelCreate("StatusVal","允许交易",panelX+pad+290,panelY+sy,100,10,C'0,255,0',9);
+   y += 70;
+   
+   ObjectCreate(0,"FooterBG",OBJ_RECTANGLE_LABEL,0,0,0.0);
+   ObjectSetInteger(0,"FooterBG",OBJPROP_CORNER,CORNER_LEFT_UPPER);
+   ObjectSetInteger(0,"FooterBG",OBJPROP_XDISTANCE,panelX);
+   ObjectSetInteger(0,"FooterBG",OBJPROP_YDISTANCE,panelY+y);
+   ObjectSetInteger(0,"FooterBG",OBJPROP_XSIZE,panelW);
+   ObjectSetInteger(0,"FooterBG",OBJPROP_YSIZE,20);
+   ObjectSetInteger(0,"FooterBG",OBJPROP_BGCOLOR,C'30,25,20');
+   ObjectSetInteger(0,"FooterBG",OBJPROP_BACK,false);
+   
+   LabelCreate("Footer","Amazing3.1 · 双向网格对冲策略",panelX+pad,panelY+y+3,350,10,C'180,160,100',8);
    initFlag = false ;
    initStr = "Paramfalse" ;
    MaxLossCloseAll = -(MaxLossCloseAll);
@@ -1655,7 +1748,7 @@ int start()
 
    if(((OpenMode == 1 && g_lastBarTime != iTime(NULL,TimeZone,0)) || OpenMode == 2 || OpenMode == 3))
      {
-      if(buyStopCount == 0 && buyProfit>MaxLoss && g_allowBuy)
+      if(buyStopCount == 0 && buyProfit > -MaxLoss && g_allowBuy)
         {
          if(buyCount == 0)
            {
@@ -1980,7 +2073,7 @@ int start()
            }
         }
 
-      if(sellStopCount == 0 && sellProfit>MaxLoss && g_allowSell)
+      if(sellStopCount == 0 && sellProfit > -MaxLoss && g_allowSell)
         {
          if(sellCount == 0)
            {
@@ -2303,58 +2396,68 @@ int start()
         }
       g_lastBarTime = iTime(NULL,TimeZone,0) ;
      }
-   ObjectSetText("Balance",StringConcatenate("馀额 ",DoubleToString(AccountBalance(),2)),g_fontSize,"Arial",g_colorLime);
-   ObjectSetText("Equity",StringConcatenate("淨值 ",DoubleToString(AccountEquity(),2)),g_fontSize,"Arial",g_colorLime);
-   ObjectSetText("FreeMargin",StringConcatenate("可用保证金 ",DoubleToString(AccountFreeMargin(),2)),g_fontSize,"Arial",g_colorLime);
    do33 = buyProfit + sellProfit ;
-   if(buyTotalLots>0.0)
+   
+   ObjectSetText("BalVal",DoubleToString(AccountBalance(),2),9,"Arial",clrWhite);
+   ObjectSetText("EqVal",DoubleToString(AccountEquity(),2),9,"Arial",clrWhite);
+   ObjectSetText("FreeVal",DoubleToString(AccountFreeMargin(),2),9,"Arial",clrWhite);
+   ObjectSetText("MarVal",DoubleToString(AccountMargin(),2),9,"Arial",clrWhite);
+   ObjectSetText("LevVal",IntegerToString(AccountLeverage()),9,"Arial",clrWhite);
+   ObjectSetText("SpreadVal",DoubleToString((Ask - Bid)/Point(),1)+"点",9,"Arial",clrWhite);
+   
+   if(buyCount > 0)
      {
-      if(buyProfit>0.0)
-        {
-         inLimit_s6 = 255;
-        }
+      ObjectSetText("BuyVal",IntegerToString(buyCount)+"单/"+DoubleToString(buyTotalLots,2)+"手",9,"Arial",clrWhite);
+      if(buyProfit >= 0)
+        ObjectSetText("BuyPL",DoubleToString(buyProfit,2),9,"Arial",C'0,255,0');
       else
-        {
-         inLimit_s6 = 65280;
-        }
-      ObjectSetText("ProfitB",StringConcatenate("Buy ",buyCount,"单 , ",DoubleToString(buyTotalLots,2),"手,  盈亏= ",DoubleToString(buyProfit,2)),g_fontSize,"Arial",inLimit_s6);
+        ObjectSetText("BuyPL",DoubleToString(buyProfit,2),9,"Arial",clrRed);
+      if(buyAvgPrice > 0)
+        ObjectSetText("BuyAvgVal",DoubleToString(buyAvgPrice,Digits()),9,"Arial",clrWhite);
+      else
+        ObjectSetText("BuyAvgVal","--",9,"Arial",clrWhite);
      }
    else
      {
-      ObjectSetText("ProfitB","",g_fontSize,"Arial",Gray);
+      ObjectSetText("BuyVal","0单/0.00手",9,"Arial",clrWhite);
+      ObjectSetText("BuyPL","0.00",9,"Arial",C'0,255,0');
+      ObjectSetText("BuyAvgVal","--",9,"Arial",clrWhite);
      }
-   if(sellTotalLots>0.0)
+   
+   if(sellCount > 0)
      {
-      if(sellProfit>0.0)
-        {
-         inLimit_s7 = 255;
-        }
+      ObjectSetText("SellVal",IntegerToString(sellCount)+"单/"+DoubleToString(sellTotalLots,2)+"手",9,"Arial",clrWhite);
+      if(sellProfit >= 0)
+        ObjectSetText("SellPL",DoubleToString(sellProfit,2),9,"Arial",C'0,255,0');
       else
-        {
-         inLimit_s7 = 65280;
-        }
-      ObjectSetText("ProfitS",StringConcatenate("Sell ",sellCount,"单 , ",DoubleToString(sellTotalLots,2),"手,  盈亏= ",DoubleToString(sellProfit,2)),g_fontSize,"Arial",inLimit_s7);
+        ObjectSetText("SellPL",DoubleToString(sellProfit,2),9,"Arial",clrRed);
+      if(sellAvgPrice > 0)
+        ObjectSetText("SellAvgVal",DoubleToString(sellAvgPrice,Digits()),9,"Arial",clrWhite);
+      else
+        ObjectSetText("SellAvgVal","--",9,"Arial",clrWhite);
      }
    else
      {
-      ObjectSetText("ProfitS","",g_fontSize,"Arial",Gray);
+      ObjectSetText("SellVal","0单/0.00手",9,"Arial",clrWhite);
+      ObjectSetText("SellPL","0.00",9,"Arial",clrRed);
+      ObjectSetText("SellAvgVal","--",9,"Arial",clrWhite);
      }
-   if(sellTotalLots + buyTotalLots>0.0)
-     {
-      if(do33>0.0)
-        {
-         inLimit_s8 = 255;
-        }
-      else
-        {
-         inLimit_s8 = 65280;
-        }
-      ObjectSetText("Profit",StringConcatenate("总盈亏= ",DoubleToString(do33,2)),g_fontSize,"Arial",inLimit_s8);
-     }
+   
+   if(do33 >= 0)
+     ObjectSetText("TotalPLVal",DoubleToString(do33,2),10,"Arial",C'0,255,0');
    else
-     {
-      ObjectSetText("Profit","",g_fontSize,"Arial",White);
-     }
+     ObjectSetText("TotalPLVal",DoubleToString(do33,2),10,"Arial",clrRed);
+   ObjectSetText("TotalLotsVal",DoubleToString(buyTotalLots + sellTotalLots,2)+"手",10,"Arial",clrWhite);
+   
+   ObjectSetText("LotVal",DoubleToString(lot,2)+"手",9,"Arial",C'180,220,180');
+   ObjectSetText("StepVal",IntegerToString(Step)+"点",9,"Arial",C'180,220,180');
+   ObjectSetText("KlotVal",DoubleToString(K_Lot,2),9,"Arial",C'180,220,180');
+   ObjectSetText("CloseVal",DoubleToString(CloseAll,2),9,"Arial",C'180,220,180');
+   ObjectSetText("MaxVal",DoubleToString(Maxlot,2)+"手",9,"Arial",C'180,220,180');
+   if(g_allowBuy && g_allowSell)
+     ObjectSetText("StatusVal","允许交易",9,"Arial",C'0,255,0');
+   else
+     ObjectSetText("StatusVal","已停止",9,"Arial",clrRed);
    if(buyStopPrice!=0.0 && g_allowBuy)
      {
       if(buyCount == 0)
@@ -4084,5 +4187,21 @@ void 画直线(string e,int type,double b,datetime c,color d,int type2,int width
    ObjectSet(e,OBJPROP_COLOR,d);
    ObjectSet(e,OBJPROP_STYLE,type2);
    ObjectSet(e,OBJPROP_WIDTH,width);
+  }
+
+void LabelCreate(string name,string text,int x,int y,int width,int height,color clr,int fontSize)
+  {
+   ObjectCreate(0,name,OBJ_LABEL,0,0,0.0);
+   ObjectSetInteger(0,name,OBJPROP_CORNER,CORNER_LEFT_UPPER);
+   ObjectSetInteger(0,name,OBJPROP_XDISTANCE,x);
+   ObjectSetInteger(0,name,OBJPROP_YDISTANCE,y);
+   ObjectSetInteger(0,name,OBJPROP_XSIZE,width);
+   ObjectSetInteger(0,name,OBJPROP_YSIZE,height);
+   ObjectSetString(0,name,OBJPROP_TEXT,text);
+   ObjectSetString(0,name,OBJPROP_FONT,"Arial");
+   ObjectSetInteger(0,name,OBJPROP_FONTSIZE,fontSize);
+   ObjectSetInteger(0,name,OBJPROP_COLOR,clr);
+   ObjectSetInteger(0,name,OBJPROP_BACK,false);
+   ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
   }
 //+------------------------------------------------------------------+
