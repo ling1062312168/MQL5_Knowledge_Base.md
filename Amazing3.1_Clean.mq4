@@ -969,7 +969,7 @@ int start()
         }
 
       if(对冲平仓开关)
-         if(OrderCloseBy(sortResult2,resultTicket1,0xFFFFFFFF))
+         if(OrderCloseBy((int)sortResult2,resultTicket1,0xFFFFFFFF))
            {
             do
               {
@@ -1051,7 +1051,7 @@ int start()
                     }
                  }
               }
-            while(OrderCloseBy(tmpDbl_42,tmpInt_36,0xFFFFFFFF));
+            while(OrderCloseBy((int)tmpDbl_42,tmpInt_36,0xFFFFFFFF));
            }
       CloseAllOrders(0);
       if(ObjectFind(g_spreadLabel) <  0)
@@ -1235,7 +1235,7 @@ int start()
               }
 
             if(对冲平仓开关)
-               if(OrderCloseBy(trailVal_b4,trailIdx_b2,0xFFFFFFFF))
+               if(OrderCloseBy((int)trailVal_b4,trailIdx_b2,0xFFFFFFFF))
                  {
                   do
                     {
@@ -1317,7 +1317,7 @@ int start()
                           }
                        }
                     }
-                  while(OrderCloseBy(trailVal_b8,trailIdx_b6,0xFFFFFFFF));
+                  while(OrderCloseBy((int)trailVal_b8,trailIdx_b6,0xFFFFFFFF));
                  }
             CloseAllOrders(0);
             if(NextTime > 0)
@@ -1408,7 +1408,7 @@ int start()
            }
 
          if(对冲平仓开关)
-            if(OrderCloseBy(trailVal_b12,trailIdx_b11,0xFFFFFFFF))
+            if(OrderCloseBy((int)trailVal_b12,trailIdx_b11,0xFFFFFFFF))
               {
                do
                  {
@@ -1490,7 +1490,7 @@ int start()
                        }
                     }
                  }
-               while(OrderCloseBy(trailVal_s2,trailIdx_b16,0xFFFFFFFF));
+               while(OrderCloseBy((int)trailVal_s2,trailIdx_b16,0xFFFFFFFF));
               }
          CloseAllOrders(0);
          if(NextTime > 0)
@@ -2766,7 +2766,7 @@ void OnChartEvent(const int eventID,const long &eventLParam,const double &eventD
      }
 
    if(对冲平仓开关)
-      if(OrderCloseBy(tmpDbl_26,tmpInt_20,0xFFFFFFFF))
+      if(OrderCloseBy((int)tmpDbl_26,tmpInt_20,0xFFFFFFFF))
         {
          do
            {
@@ -2848,7 +2848,7 @@ void OnChartEvent(const int eventID,const long &eventLParam,const double &eventD
                  }
               }
            }
-         while(OrderCloseBy(tmpDbl_39,tmpInt_33,0xFFFFFFFF));
+         while(OrderCloseBy((int)tmpDbl_39,tmpInt_33,0xFFFFFFFF));
         }
    for(sellCount = OrdersTotal() - 1 ; sellCount >= 0 ; sellCount = sellCount - 1)
      {
