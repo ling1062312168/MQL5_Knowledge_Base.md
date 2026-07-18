@@ -3508,8 +3508,7 @@ void MovePanelTo(int new_x,int new_y)
       string name = ObjectName(i);
       if(StringFind(name,g_panel_prefix,0) != 0) continue;
       if(name == g_panel_prefix + "toggle_panel") continue;
-      if(name == g_panel_prefix + "panel_size_plus") continue;
-      if(name == g_panel_prefix + "panel_size_minus") continue;
+      if(name == g_panel_prefix + "panel_size_cycle") continue;
 
       int x = (int)ObjectGet(name,OBJPROP_XDISTANCE);
       int y = (int)ObjectGet(name,OBJPROP_YDISTANCE);
@@ -3562,8 +3561,9 @@ void DrawPanelToggleAnchor()
    string toggle_text = g_panel_open ? "隐藏" : "展开";
    EnsureButton(g_panel_prefix + "toggle_panel",toggle_text,anchor_x,base_y,anchor_w,anchor_h,accent,White);
 
-   EnsureButton(g_panel_prefix + "panel_size_minus","-",anchor_x,base_y - anchor_h - 4,anchor_w,anchor_h,C'100,100,100',White);
-   EnsureButton(g_panel_prefix + "panel_size_plus","+",anchor_x,base_y - anchor_h * 2 - 8,anchor_w,anchor_h,C'100,100,100',White);
+   string size_labels[4] = {"尺寸:超小","尺寸:小","尺寸:中","尺寸:大"};
+   string size_label = size_labels[g_panel_size_mode];
+   EnsureButton(g_panel_prefix + "panel_size_cycle",size_label,anchor_x,base_y - anchor_h - 4,anchor_w,anchor_h,C'100,100,100',White);
 }
 
 void CollectStats(EAStats &stats)
@@ -3921,20 +3921,10 @@ void HandlePanelButtonClick(string key)
       return;
    }
 
-   if(key == g_panel_prefix + "panel_size_plus")
+   if(key == g_panel_prefix + "panel_size_cycle")
    {
       ResetPanelButtonState(key);
-      // 在0-3级之间循环放大，到最大后回到最小
       g_panel_size_mode = (g_panel_size_mode + 1) % 4;
-      RefreshPanel(true);
-      return;
-   }
-
-   if(key == g_panel_prefix + "panel_size_minus")
-   {
-      ResetPanelButtonState(key);
-      // 在0-3级之间循环缩小，到最小后回到最大
-      g_panel_size_mode = (g_panel_size_mode - 1 + 4) % 4;
       RefreshPanel(true);
       return;
    }
