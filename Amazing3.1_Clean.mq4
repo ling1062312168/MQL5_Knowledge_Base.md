@@ -3374,8 +3374,8 @@ void BuildPanelMetrics(PanelMetrics &m)
 
    m.inner_w = m.width - m.pad * 2;
    m.half_w = (m.inner_w - m.gap) / 2;
-   m.card_status_h = (g_panel_size_mode == 0) ? 170 : 200;
-   m.card_metrics_h = 160;
+   m.card_status_h = 170;
+   m.card_metrics_h = (g_panel_size_mode == 0) ? 160 : 200;
    m.card_actions_h = m.pad * 2 + 18 + m.gap + m.button_h * 7 + m.gap * 6;
    m.button_font = 8;
    m.toggle_w = 64;
