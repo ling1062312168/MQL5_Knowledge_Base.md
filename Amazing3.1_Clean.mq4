@@ -3343,39 +3343,68 @@ void BuildPanelMetrics(PanelMetrics &m)
    m.margin_x = g_panel_x;
    m.margin_y = g_panel_y;
 
-   if(g_panel_size_mode == 0)
+   // 4级尺寸: 0=超小 1=小 2=中 3=大
+   switch(g_panel_size_mode)
    {
-      m.width = 360;
-      m.pad = 10;
-      m.section_gap = 8;
-      m.header_h = 50;
-      m.row_h = 15;
-      m.gap = 5;
-      m.button_h = 24;
-      m.font_xs = 8;
-      m.font_sm = 8;
-      m.font_md = 9;
-      m.font_lg = 12;
-   }
-   else
-   {
-      m.width = 420;
-      m.pad = 14;
-      m.section_gap = 10;
-      m.header_h = 56;
-      m.row_h = 18;
-      m.gap = 8;
-      m.button_h = 30;
-      m.font_xs = 9;
-      m.font_sm = 10;
-      m.font_md = 11;
-      m.font_lg = 15;
+      case 0:  // 超小
+         m.width = 320;
+         m.pad = 8;
+         m.section_gap = 6;
+         m.header_h = 44;
+         m.row_h = 13;
+         m.gap = 4;
+         m.button_h = 20;
+         m.font_xs = 7;
+         m.font_sm = 7;
+         m.font_md = 8;
+         m.font_lg = 11;
+         break;
+      case 1:  // 小
+         m.width = 360;
+         m.pad = 10;
+         m.section_gap = 8;
+         m.header_h = 50;
+         m.row_h = 15;
+         m.gap = 5;
+         m.button_h = 24;
+         m.font_xs = 8;
+         m.font_sm = 8;
+         m.font_md = 9;
+         m.font_lg = 12;
+         break;
+      case 2:  // 中
+         m.width = 400;
+         m.pad = 12;
+         m.section_gap = 9;
+         m.header_h = 54;
+         m.row_h = 17;
+         m.gap = 7;
+         m.button_h = 27;
+         m.font_xs = 9;
+         m.font_sm = 9;
+         m.font_md = 10;
+         m.font_lg = 14;
+         break;
+      case 3:  // 大
+         m.width = 440;
+         m.pad = 14;
+         m.section_gap = 10;
+         m.header_h = 56;
+         m.row_h = 18;
+         m.gap = 8;
+         m.button_h = 30;
+         m.font_xs = 9;
+         m.font_sm = 10;
+         m.font_md = 11;
+         m.font_lg = 15;
+         break;
    }
 
    m.inner_w = m.width - m.pad * 2;
    m.half_w = (m.inner_w - m.gap) / 2;
-   m.card_status_h = 170;
-   m.card_metrics_h = (g_panel_size_mode == 0) ? 160 : 200;
+   // 卡片高度随尺寸级别递增
+   m.card_status_h = 160 + g_panel_size_mode * 10;     // 160/170/180/190
+   m.card_metrics_h = 150 + g_panel_size_mode * 15;    // 150/165/180/195
    m.card_actions_h = m.pad * 2 + 18 + m.gap + m.button_h * 7 + m.gap * 6;
    m.button_font = 8;
    m.toggle_w = 64;
@@ -3895,22 +3924,18 @@ void HandlePanelButtonClick(string key)
    if(key == g_panel_prefix + "panel_size_plus")
    {
       ResetPanelButtonState(key);
-      if(g_panel_size_mode == 0)
-      {
-         g_panel_size_mode = 1;
-         RefreshPanel(true);
-      }
+      // 在0-3级之间循环放大，到最大后回到最小
+      g_panel_size_mode = (g_panel_size_mode + 1) % 4;
+      RefreshPanel(true);
       return;
    }
 
    if(key == g_panel_prefix + "panel_size_minus")
    {
       ResetPanelButtonState(key);
-      if(g_panel_size_mode == 1)
-      {
-         g_panel_size_mode = 0;
-         RefreshPanel(true);
-      }
+      // 在0-3级之间循环缩小，到最小后回到最大
+      g_panel_size_mode = (g_panel_size_mode - 1 + 4) % 4;
+      RefreshPanel(true);
       return;
    }
 
