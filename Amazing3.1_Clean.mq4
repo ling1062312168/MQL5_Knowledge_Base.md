@@ -3350,8 +3350,8 @@ void BuildPanelMetrics(PanelMetrics &m)
    m.button_h = 24;
    m.inner_w = m.width - m.pad * 2;
    m.half_w = (m.inner_w - m.gap) / 2;
-   m.card_status_h = 140;
-   m.card_metrics_h = 200;
+   m.card_status_h = 160;
+   m.card_metrics_h = 160;
    m.card_actions_h = m.pad * 2 + 18 + m.gap + m.button_h * 7 + m.gap * 6;  // 7行按钮（含停止挂单+清除对象按钮）
    m.button_font = 8;
    m.font_xs = 8;
