@@ -22,6 +22,12 @@
 | 订单号显示不全 | 按钮文字被截断 | 按钮宽度不够，票号太长 | 订单号独立一列，按钮只显示"改/平" | 持仓Tab布局 |
 | 输入框无法输入 | 编辑框无法输入或值不保存 | 缺少CHARTEVENT_OBJECT_ENDEDIT处理和READONLY设置 | 添加ENDEDIT事件处理，设置OBJPROP_READONLY=false | 第27章 |
 | 持仓页显示"--" | 无订单时行标签仍显示-- | SwitchTab后未调用UpdatePositions清空 | SwitchTab时同时调用UpdatePositions | 持仓Tab布局 |
+| EA完全不开仓 | 设置了点差限制后完全不下单 | 开仓条件中MaxLoss正负号写反，`buyProfit > -MaxLoss`误写为`buyProfit > MaxLoss`的反面 | 检查init中是否已对MaxLoss取反，开仓条件保持与原版一致 | 第12章 |
+| 点差限制判断错误 | MaxSpread设为50仍不开仓 | 小点(MODE_SPREAD)与标准点单位不统一，比较时混用 | MaxSpread直接与MODE_SPREAD(小点)比较，面板显示时再除以g_lotCoeff转标准点 | 第21章 |
+| 手动停止按钮无效 | 点击"停止做多/做空"后状态被覆盖 | start()每次执行自动将g_allow_buy/sell设为true，覆盖用户手动设置 | 新增g_manual_stop_buy/sell变量保存手动状态，自动检查通过后再检查手动状态 | 第36章 |
+| 图表左上角异常数值 | 显示563122860.52等调试信息 | 代码中Comment()函数调用显示调试数据 | 全部注释掉Comment()调用，改用面板UI显示 | 第37章 |
+| 变量重复定义 | 'DailyProfitTarget' - variable already defined | extern与input同名变量冲突（第58行extern + 第80行input） | 删除extern定义，只保留input版本 | 第38章 |
+| 回测错误触发盈利目标 | 未开单就说满足每日盈利500目标 | 全局变量AMZ3_today_closed保留历史数据，回测时last_reset时间戳判断失效 | init()中添加IsTesting()检测，回测时重置所有全局变量 | 第39章 |
 
 ---
 
@@ -42,6 +48,7 @@
 | **输入框** | 编辑框创建、值读取 | 第27章 |
 | **按钮** | 按钮创建、事件处理 | 第28章 |
 | **调试与优化** | 日志输出、性能优化 | 第29-30章 |
+| **MT4网格EA专项修复** | 手动停止状态、Comment调试、变量重复、回测全局变量重置 | 第36-39章 |
 
 ---
 
@@ -1592,6 +1599,197 @@ else if(InpTrailingType == TRAIL_STEP) {
 
 ---
 
+# 第十二部分：MT4网格EA专项修复
+
+> 本章记录稳盈网格EA（Amazing3.1_Clean.mq4）修复过程中的4个关键BUG，适用于MT4/MQL4，但原理对MQL5同样适用。
+
+## 36. 手动停止按钮无效（状态被覆盖）
+
+### 错误现象
+点击"停止做多"或"停止做空"按钮后，按钮状态显示正确，但下一次start()执行时交易立即恢复，停止功能形同虚设。
+
+### 根因分析
+start()函数每次执行时，在风控检查通过后自动将`g_allow_buy`/`g_allow_sell`设为true：
+
+```cpp
+// ❌ 错误写法：自动覆盖手动状态
+if(!stopFlag)
+{
+   g_allow_buy = true;   // 每次都重置，覆盖用户手动停止
+   g_allow_sell = true;
+}
+```
+
+### 解决方案
+新增`g_manual_stop_buy`/`g_manual_stop_sell`变量保存用户手动状态，自动检查通过后再检查手动状态：
+
+```cpp
+// 全局变量
+bool g_manual_stop_buy  = false;  // 用户手动停止做多
+bool g_manual_stop_sell = false;  // 用户手动停止做空
+
+// ✅ 正确写法：手动状态优先
+if(stopFlag)
+{
+   g_allow_buy = false;
+   g_allow_sell = false;
+}
+else
+{
+   if(!g_manual_stop_buy)  g_allow_buy = true;
+   if(!g_manual_stop_sell) g_allow_sell = true;
+}
+```
+
+### 关键原则
+**自动检查逻辑不应直接覆盖用户手动状态**，必须分离为两层：
+1. 自动层：风控检查（点差/杠杆/单量等）
+2. 手动层：用户操作（停止做多/做空）
+手动层优先级高于自动层，但风控触发时两者都应停止。
+
+---
+
+## 37. 图表左上角显示异常数值
+
+### 错误现象
+图表左上角显示异常数值（如563122860.52和08:27:02），影响视觉。
+
+### 根因分析
+代码中有多处`Comment()`函数调用显示调试信息：
+
+```cpp
+// ❌ 错误写法：Comment显示调试信息
+Comment(CountOrders(OP_BUY,Magic,"")+" "+CountOrders(OP_SELL,Magic,""));
+Comment("Buy Profit ",buyProfit);
+Comment("Sell Profit ",sellProfit);
+Comment("Buy Loss ",buyProfit);
+Comment("Sell Loss ",sellProfit);
+```
+
+### 解决方案
+全部注释掉`Comment()`调用，改用面板UI显示：
+
+```cpp
+// ✅ 正确写法：注释掉Comment
+//Comment(CountOrders(OP_BUY,Magic,"")+" "+CountOrders(OP_SELL,Magic,""));
+//Comment("Buy Profit ",buyProfit);
+//Comment("Sell Profit ",sellProfit);
+```
+
+### 关键原则
+**禁止在start()中使用Comment()输出调试信息**，原因：
+1. 每次tick刷新，屏幕闪烁
+2. 显示未格式化的原始数据，视觉混乱
+3. 正式版应使用面板UI或Print()日志
+
+---
+
+## 38. 变量重复定义（extern与input冲突）
+
+### 错误现象
+```
+'DailyProfitTarget' - variable already defined
+Amazing修改1.mq4  93  14
+```
+
+### 根因分析
+同一变量名同时用`extern`和`input`声明，导致重复定义：
+
+```cpp
+// ❌ 错误写法：第58行extern + 第80行input，同名冲突
+extern double DailyProfitTarget = 500.0;  // 第58行
+// ...
+input double DailyProfitTarget = 500.0;  // 第80行（input组内）
+```
+
+### 解决方案
+删除`extern`定义，只保留`input`版本：
+
+```cpp
+// ✅ 正确写法：只保留input版本（推荐，input更严格）
+input group "Session"
+input bool   EnableDailyProfitTarget = true;
+input double DailyProfitTarget       = 500.0;  // 每日盈利目标
+```
+
+### extern vs input 对比
+
+| 特性 | extern | input |
+|------|--------|-------|
+| 作用域 | 全局 | 全局 |
+| 参数面板显示 | 是 | 是 |
+| 编译时检查 | 宽松 | 严格 |
+| 推荐度 | 旧版兼容 | **推荐** |
+| 重复定义报错 | 不报错 | 报错 |
+
+**建议**：新代码统一使用`input`，旧代码迁移时删除同名`extern`。
+
+---
+
+## 39. 回测错误触发每日盈利目标（全局变量未重置）
+
+### 错误现象
+开启历史数据回测，EA未开任何订单，却显示"每日目标已达成(553.69/500)"，停止开仓。
+
+### 根因分析
+`RecordCloseProfit`函数使用`GlobalVariableGet/Set`存储统计数据，这些全局变量在MT4中是持久化的，回测时不会被清除：
+
+```cpp
+void RecordCloseProfit(double profit)
+{
+   datetime today_start = StringToTime(TimeToStr(TimeCurrent(),TIME_DATE) + " 00:00:00");
+   datetime last_reset = (datetime)GlobalVariableGet("AMZ3_last_reset");
+
+   // ❌ 问题：回测时此判断失效
+   // last_reset = 2026年（之前测试的真实时间）
+   // today_start = 2023年（回测历史时间）
+   // 2026 < 2023 为 false，不会重置
+   if(last_reset < today_start)
+   {
+      GlobalVariableSet("AMZ3_today_closed", 0.0);  // 不会执行
+      GlobalVariableSet("AMZ3_last_reset", today_start);
+   }
+
+   GlobalVariableSet("AMZ3_today_closed",
+      GlobalVariableGet("AMZ3_today_closed") + profit);  // 保留了旧值553.69
+}
+```
+
+### 解决方案
+在`init()`函数开头添加回测模式检测，强制重置所有全局变量：
+
+```cpp
+int init()
+{
+   // ✅ 回测模式：重置全局变量
+   if(IsTesting())
+   {
+      GlobalVariableSet("AMZ3_today_closed", 0.0);
+      GlobalVariableSet("AMZ3_yesterday_closed", 0.0);
+      GlobalVariableSet("AMZ3_total_closed", 0.0);
+      GlobalVariableSet("AMZ3_last_reset", 0);
+      g_today_key = "";
+      g_daily_target_locked = false;
+   }
+   // ... 其他初始化代码
+}
+```
+
+### GlobalVariableSet持久化机制
+
+| 场景 | 行为 | 需要处理 |
+|------|------|----------|
+| 实盘运行 | 变量持久化保存，跨日使用 | ✅ 正常 |
+| Demo运行 | 变量持久化保存，跨日使用 | ✅ 正常 |
+| 回测启动 | 变量保留之前实盘/Demo的数据 | ❌ 需重置 |
+| 回测中 | 变量正常工作 | ✅ 正常 |
+| 优化模式 | 变量保留之前数据 | ❌ 需重置 |
+
+### 关键原则
+**任何使用GlobalVariableGet/Set的EA，在init()中必须检测IsTesting()并重置相关变量**。否则回测会继承历史数据，导致统计错误、错误触发目标、面板显示异常。
+
+---
+
 ## 📝 更新日志
 
 | 日期 | 更新内容 |
@@ -1615,3 +1813,8 @@ else if(InpTrailingType == TRAIL_STEP) {
 | 2026-07-08 | **v2.1增强**：加仓4模式+方向控制+ATR间距+总手限 |
 | 2026-07-08 | **v2.1增强**：平仓7种模式（单目标/阶梯/回撤/信号/时间/对冲/移动止盈） |
 | 2026-07-08 | **v2.1增强**：面板调至420x580，新增峰值/胜率/交易次数显示 |
+| 2026-07-18 | 新增第36章：手动停止按钮无效（手动状态被自动覆盖） |
+| 2026-07-18 | 新增第37章：图表左上角显示异常数值（Comment()调试信息） |
+| 2026-07-18 | 新增第38章：变量重复定义（extern与input冲突） |
+| 2026-07-18 | 新增第39章：回测错误触发每日盈利目标（全局变量未重置） |
+| 2026-07-18 | BUG索引表新增4条记录：手动停止/Comment异常/变量重复/回测全局变量 |
