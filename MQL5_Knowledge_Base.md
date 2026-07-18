@@ -49,6 +49,7 @@
 | **按钮** | 按钮创建、事件处理 | 第28章 |
 | **调试与优化** | 日志输出、性能优化 | 第29-30章 |
 | **MT4网格EA专项修复** | 手动停止状态、Comment调试、变量重复、回测全局变量重置 | 第36-39章 |
+| **MT4标准面板系统** | 所有EA通用面板模板、4级尺寸、拖拽、按钮、布局规范 | 第40-50章 |
 
 ---
 
@@ -1790,6 +1791,659 @@ int init()
 
 ---
 
+# 第十三部分：MT4标准面板系统（所有EA通用模板）
+
+> **所有EA必须统一使用此面板架构**，包括：数据结构、尺寸系统、交互逻辑、布局规范。  
+> 参考实现：Amazing3.1_Clean.mq4（稳盈网格）
+
+## 40. 面板系统整体架构
+
+### 核心设计原则
+1. **数据驱动**：所有尺寸、位置由PanelMetrics结构体统一计算，不硬编码
+2. **层级分离**：标题卡/状态卡/指标卡/操作卡，独立高度，纵向堆叠
+3. **4级尺寸**：超小/小/中/大，一键切换，按钮显示当前级别
+4. **锚点独立**：隐藏/展开、尺寸切换按钮固定在左下角，不跟随面板拖动
+5. **对象命名**：所有面板对象统一前缀 `SteadyGrid.`（可替换为EA标识）
+
+### 文件结构（单文件实现，无依赖）
+```
+//==== 数据结构 ====
+PanelMetrics结构体   // 所有尺寸参数
+EAStats结构体        // 统计数据
+
+//==== 全局变量 ====
+g_panel_* 系列       // 面板状态变量
+g_panel_size_mode    // 当前尺寸级别(0-3)
+
+//==== 核心函数 ====
+BuildPanelMetrics    // 计算所有尺寸（4级尺寸switch）
+RefreshPanel         // 重绘整个面板
+DrawPanel            // 绘制面板主体
+DrawPanelToggleAnchor // 绘制左下角锚点按钮
+MovePanelTo          // 拖动面板
+
+//==== 元素创建 ====
+EnsureRectangle      // 创建/更新矩形
+EnsureLabel          // 创建/更新标签
+EnsureButton         // 创建/更新按钮
+
+//==== 事件处理 ====
+OnChartEvent         // 总入口
+HandlePanelMouseDown // 按下-开始拖动
+HandlePanelMouseMove // 移动-拖动中
+HandlePanelMouseUp   // 松开-结束拖动
+HandlePanelButtonClick // 按钮点击
+```
+
+---
+
+## 41. 数据结构定义
+
+### PanelMetrics 面板尺寸结构体
+**所有尺寸由此结构体计算，禁止在绘制函数中硬编码**。
+
+```cpp
+struct PanelMetrics
+{
+   int margin_x;         // 面板左边距
+   int margin_y;         // 面板上边距
+   int width;            // 面板总宽度
+   int pad;              // 内边距
+   int section_gap;      // 卡片间距
+   int header_h;         // 标题卡片高度
+   int row_h;            // 数据行高度
+   int gap;              // 元素间距
+   int button_h;         // 按钮高度
+   int inner_w;          // 内容宽度 = width - pad*2
+   int half_w;           // 半宽 = (inner_w - gap) / 2
+   int card_status_h;    // 工作状态卡片高度
+   int card_metrics_h;   // 今日目标与账户卡片高度
+   int card_actions_h;   // 快捷操作卡片高度
+   int button_font;      // 按钮字号
+   int font_xs;          // 超小字号
+   int font_sm;          // 小字号
+   int font_md;          // 中字号
+   int font_lg;          // 大字号
+   int toggle_w;         // 开关按钮宽度
+   int panel_h;          // 面板总高度
+};
+```
+
+### EAStats 统计数据结构体
+```cpp
+struct EAStats
+{
+   int buy_positions;    // 多单持仓数
+   int sell_positions;   // 空单持仓数
+   double buy_lots;      // 多单手数
+   double sell_lots;     // 空单手数
+   double buy_float;     // 多单浮盈亏
+   double sell_float;    // 空单浮盈亏
+   int buy_pending;      // 多单挂单数
+   int sell_pending;     // 空单挂单数
+   double today_closed;  // 今日已平盈亏
+   double yesterday_closed; // 昨日已平盈亏
+   double total_closed;  // 累计已平盈亏
+   double margin;        // 保证金
+   double balance;       // 余额
+   double equity;        // 净值
+};
+```
+
+---
+
+## 42. 4级尺寸系统
+
+### 尺寸级别定义
+| 级别 | g_panel_size_mode | 宽度 | 适用场景 |
+|------|-------------------|------|---------|
+| 超小 | 0 | 320 | 小屏笔记本，最大化图表视野 |
+| 小 | 1 | 360 | 默认尺寸，平衡视野与信息 |
+| 中 | 2 | 400 | 中等屏幕，信息更清晰 |
+| 大 | 3 | 440 | 大屏显示器，最佳可读性 |
+
+### BuildPanelMetrics 实现模板
+```cpp
+void BuildPanelMetrics(PanelMetrics &m)
+{
+   m.margin_x = g_panel_x;
+   m.margin_y = g_panel_y;
+
+   // 4级尺寸: 0=超小 1=小 2=中 3=大
+   switch(g_panel_size_mode)
+   {
+      case 0:  // 超小
+         m.width = 320;
+         m.pad = 8;
+         m.section_gap = 6;
+         m.header_h = 44;
+         m.row_h = 13;
+         m.gap = 4;
+         m.button_h = 20;
+         m.font_xs = 7;
+         m.font_sm = 7;
+         m.font_md = 8;
+         m.font_lg = 11;
+         break;
+      case 1:  // 小（默认）
+         m.width = 360;
+         m.pad = 10;
+         m.section_gap = 8;
+         m.header_h = 50;
+         m.row_h = 15;
+         m.gap = 5;
+         m.button_h = 24;
+         m.font_xs = 8;
+         m.font_sm = 8;
+         m.font_md = 9;
+         m.font_lg = 12;
+         break;
+      case 2:  // 中
+         m.width = 400;
+         m.pad = 12;
+         m.section_gap = 9;
+         m.header_h = 54;
+         m.row_h = 17;
+         m.gap = 7;
+         m.button_h = 27;
+         m.font_xs = 9;
+         m.font_sm = 9;
+         m.font_md = 10;
+         m.font_lg = 14;
+         break;
+      case 3:  // 大
+         m.width = 440;
+         m.pad = 14;
+         m.section_gap = 10;
+         m.header_h = 56;
+         m.row_h = 18;
+         m.gap = 8;
+         m.button_h = 30;
+         m.font_xs = 9;
+         m.font_sm = 10;
+         m.font_md = 11;
+         m.font_lg = 15;
+         break;
+   }
+
+   m.inner_w = m.width - m.pad * 2;
+   m.half_w = (m.inner_w - m.gap) / 2;
+   // 卡片高度随尺寸级别递增
+   m.card_status_h = 160 + g_panel_size_mode * 10;     // 160/170/180/190
+   m.card_metrics_h = 150 + g_panel_size_mode * 15;    // 150/165/180/195
+   m.card_actions_h = m.pad * 2 + 18 + m.gap + m.button_h * N + m.gap * (N-1);  // N=按钮行数
+   m.button_font = m.font_sm;
+   m.toggle_w = 64;
+   m.panel_h = m.header_h + m.section_gap + m.card_status_h + m.section_gap + m.card_metrics_h + m.section_gap + m.card_actions_h;
+}
+```
+
+### 尺寸切换按钮
+```cpp
+// 左下角锚点：2个按钮垂直排列
+// [尺寸:小]   ← 点击循环切换，显示当前级别
+// [展开]      ← 显示/隐藏面板
+
+// 按钮文字
+string size_labels[4] = {"尺寸:超小","尺寸:小","尺寸:中","尺寸:大"};
+
+// 点击处理（循环切换）
+g_panel_size_mode = (g_panel_size_mode + 1) % 4;
+RefreshPanel(true);
+```
+
+### 关键全局变量
+```cpp
+string   g_panel_prefix        = "SteadyGrid.";  // 对象前缀（替换为EA标识）
+bool     g_panel_open          = false;          // 面板是否展开
+int      g_panel_x             = 16;             // 面板X坐标
+int      g_panel_y             = 18;             // 面板Y坐标
+bool     g_panel_dragging      = false;          // 是否正在拖动
+int      g_panel_drag_offset_x = 0;              // 拖动X偏移
+int      g_panel_drag_offset_y = 0;              // 拖动Y偏移
+datetime g_last_panel_refresh  = 0;              // 上次刷新时间
+int      g_panel_size_mode     = 1;              // 尺寸级别(0-3)，默认1=小
+```
+
+---
+
+## 43. 面板布局规范（7行指标）
+
+### 标准卡片结构（纵向堆叠）
+```
+┌─────────────────────────┐
+│  标题卡片 (header_h)     │
+├─────────────────────────┤
+│  间距 (section_gap)      │
+├─────────────────────────┤
+│  工作状态卡片             │
+│  (card_status_h)         │
+├─────────────────────────┤
+│  间距 (section_gap)      │
+├─────────────────────────┤
+│  今日目标与账户卡片        │
+│  (card_metrics_h)        │
+├─────────────────────────┤
+│  间距 (section_gap)      │
+├─────────────────────────┤
+│  快捷操作卡片             │
+│  (card_actions_h)        │
+└─────────────────────────┘
+```
+
+### 指标7行布局（标准模板）
+**工作状态卡片**（左/右两列）：
+| 行 | 左列 | 右列 |
+|----|------|------|
+| A | Buy N单 X.XX手 | Sell N单 X.XX手 |
+| B | Buy浮盈亏 +X.XX | Sell浮盈亏 -X.XX |
+| C | 总浮盈亏 +X.XX | 挂单 N个 |
+| D | EA状态：运行中 | 交易状态：正常 |
+
+**今日目标与账户卡片**（左/右两列）：
+| 行 | 左列 | 右列 |
+|----|------|------|
+| A | 今日进度 +X.XX (XX.X%) | 目标剩余 +X.XX |
+| B | 昨日已平 +X.XX | 累计已平 +X.XX |
+| C | 保证金 X.XX | 每天目标=500$ |
+| D | 余额 X.XX | 净值 X.XX |
+
+### 行布局计算函数
+```cpp
+// 获取第N行的Y坐标（数据区内）
+int RowY(int card_top, int pad, int row_h, int gap, int row_index)
+{
+   return card_top + pad + row_index * (row_h + gap);
+}
+
+// 左列X
+int LeftX(int card_left, int pad) { return card_left + pad; }
+
+// 右列X
+int RightX(int card_left, int pad, int half_w, int gap)
+{ return card_left + pad + half_w + gap; }
+```
+
+---
+
+## 44. 元素创建函数（Ensure系列）
+
+### 设计原则
+- **幂等性**：对象存在则更新属性，不存在则创建
+- **统一命名**：`g_panel_prefix + name`
+- **统一角落**：`CORNER_LEFT_UPPER`
+
+### EnsureRectangle
+```cpp
+void EnsureRectangle(const string name,int x,int y,int w,int h,color bg,color border)
+{
+   if(ObjectFind(0,name) < 0)
+      ObjectCreate(0,name,OBJ_RECTANGLE_LABEL,0,0,0);
+   ObjectSetInteger(0,name,OBJPROP_CORNER,CORNER_LEFT_UPPER);
+   ObjectSetInteger(0,name,OBJPROP_XDISTANCE,x);
+   ObjectSetInteger(0,name,OBJPROP_YDISTANCE,y);
+   ObjectSetInteger(0,name,OBJPROP_XSIZE,w);
+   ObjectSetInteger(0,name,OBJPROP_YSIZE,h);
+   ObjectSetInteger(0,name,OBJPROP_BGCOLOR,bg);
+   ObjectSetInteger(0,name,OBJPROP_BORDER_COLOR,border);
+   ObjectSetInteger(0,name,OBJPROP_BORDER_TYPE,BORDER_FLAT);
+   ObjectSetInteger(0,name,OBJPROP_BACK,false);
+   ObjectSetInteger(0,name,OBJPROP_ZORDER,0);
+}
+```
+
+### EnsureLabel
+```cpp
+void EnsureLabel(const string name,string text,int x,int y,int size,color clr,const string font="Microsoft YaHei",ENUM_ALIGN_MODE align=ALIGN_LEFT)
+{
+   if(ObjectFind(0,name) < 0)
+      ObjectCreate(0,name,OBJ_LABEL,0,0,0);
+   ObjectSetInteger(0,name,OBJPROP_CORNER,CORNER_LEFT_UPPER);
+   ObjectSetInteger(0,name,OBJPROP_XDISTANCE,x);
+   ObjectSetInteger(0,name,OBJPROP_YDISTANCE,y);
+   ObjectSetString(0,name,OBJPROP_TEXT,text);
+   ObjectSetString(0,name,OBJPROP_FONT,font);
+   ObjectSetInteger(0,name,OBJPROP_FONTSIZE,size);
+   ObjectSetInteger(0,name,OBJPROP_COLOR,clr);
+   ObjectSetInteger(0,name,OBJPROP_ALIGN,align);
+   ObjectSetInteger(0,name,OBJPROP_ZORDER,1);
+}
+```
+
+### EnsureButton
+```cpp
+void EnsureButton(const string name,string text,int x,int y,int w,int h,color bg,color text_clr)
+{
+   if(ObjectFind(0,name) < 0)
+      ObjectCreate(0,name,OBJ_BUTTON,0,0,0);
+   ObjectSetInteger(0,name,OBJPROP_CORNER,CORNER_LEFT_UPPER);
+   ObjectSetInteger(0,name,OBJPROP_XDISTANCE,x);
+   ObjectSetInteger(0,name,OBJPROP_YDISTANCE,y);
+   ObjectSetInteger(0,name,OBJPROP_XSIZE,w);
+   ObjectSetInteger(0,name,OBJPROP_YSIZE,h);
+   ObjectSetInteger(0,name,OBJPROP_BGCOLOR,bg);
+   ObjectSetString(0,name,OBJPROP_TEXT,text);
+   ObjectSetInteger(0,name,OBJPROP_COLOR,text_clr);
+   ObjectSetInteger(0,name,OBJPROP_FONTSIZE,8);
+   ObjectSetString(0,name,OBJPROP_FONT,"Microsoft YaHei");
+   ObjectSetInteger(0,name,OBJPROP_BORDER_COLOR,C'50,50,50');
+   ObjectSetInteger(0,name,OBJPROP_BORDER_TYPE,BORDER_FLAT);
+   ObjectSetInteger(0,name,OBJPROP_STATE,false);
+   ObjectSetInteger(0,name,OBJPROP_ZORDER,2);
+}
+```
+
+---
+
+## 45. 拖拽交互系统
+
+### 事件处理总入口
+```cpp
+void OnChartEvent(const int id, const long &lparam, const double &dparam, const string &sparam)
+{
+   if(id == CHARTEVENT_OBJECT_CLICK)
+   {
+      string clicked = sparam;
+      if(StringFind(clicked,g_panel_prefix,0) == 0)
+      {
+         if(clicked == g_panel_prefix + "title_bar" || clicked == g_panel_prefix + "title_bg")
+         {
+            // 点击标题栏 = 结束拖动（若之前在拖动中）
+            if(g_panel_dragging)
+            {
+               g_panel_dragging = false;
+               SetPanelDragHighlight(false);
+            }
+         }
+         else
+         {
+            HandlePanelButtonClick(clicked);
+         }
+      }
+   }
+   else if(id == CHARTEVENT_MOUSE_MOVE)
+   {
+      HandlePanelMouseMove((int)lparam, (int)dparam);
+   }
+}
+```
+
+### 开始拖动（按下鼠标）
+```cpp
+// 检测：点击标题栏区域时设置拖动状态
+// 在CHARTEVENT_OBJECT_CLICK中处理title_bg/title_bar
+g_panel_dragging = true;
+g_panel_drag_offset_x = mouse_x - g_panel_x;
+g_panel_drag_offset_y = mouse_y - g_panel_y;
+SetPanelDragHighlight(true);
+```
+
+### 拖动中（鼠标移动）
+```cpp
+void HandlePanelMouseMove(int mouse_x,int mouse_y)
+{
+   if(!g_panel_dragging) return;
+   int new_x = mouse_x - g_panel_drag_offset_x;
+   int new_y = mouse_y - g_panel_drag_offset_y;
+
+   // 边界限制
+   int chart_w = (int)ChartGetInteger(0, CHART_WIDTH_IN_PIXELS);
+   int chart_h = (int)ChartGetInteger(0, CHART_HEIGHT_IN_PIXELS);
+   PanelMetrics m; BuildPanelMetrics(m);
+   if(new_x < 0) new_x = 0;
+   if(new_y < 0) new_y = 0;
+   if(new_x + m.width > chart_w) new_x = chart_w - m.width;
+   if(new_y + m.panel_h > chart_h) new_y = chart_h - m.panel_h;
+
+   if(new_x != g_panel_x || new_y != g_panel_y)
+   {
+      MovePanelTo(new_x, new_y);
+      g_panel_x = new_x;
+      g_panel_y = new_y;
+   }
+}
+```
+
+### 结束拖动（松开鼠标）
+```cpp
+// 方式1：点击标题栏结束（CHARTEVENT_OBJECT_CLICK）
+// 方式2：鼠标移出面板区域检测
+
+g_panel_dragging = false;
+SetPanelDragHighlight(false);
+```
+
+### MovePanelTo 核心实现
+```cpp
+void MovePanelTo(int new_x,int new_y)
+{
+   int delta_x = new_x - g_panel_x;
+   int delta_y = new_y - g_panel_y;
+   if(delta_x == 0 && delta_y == 0) return;
+
+   for(int i = ObjectsTotal() - 1; i >= 0; i--)
+   {
+      string name = ObjectName(i);
+      if(StringFind(name,g_panel_prefix,0) != 0) continue;
+      // 排除锚点按钮（固定在左下角）
+      if(name == g_panel_prefix + "toggle_panel") continue;
+      if(name == g_panel_prefix + "panel_size_cycle") continue;
+
+      int x = (int)ObjectGet(name,OBJPROP_XDISTANCE);
+      int y = (int)ObjectGet(name,OBJPROP_YDISTANCE);
+      ObjectSet(name,OBJPROP_XDISTANCE,x + delta_x);
+      ObjectSet(name,OBJPROP_YDISTANCE,y + delta_y);
+   }
+}
+```
+
+### 拖动视觉反馈
+```cpp
+void SetPanelDragHighlight(bool active)
+{
+   color border = active ? C'255,200,0' : C'70,70,70';
+   ObjectSetInteger(0, g_panel_prefix + "panel_bg", OBJPROP_BORDER_COLOR, border);
+}
+```
+
+---
+
+## 46. 按钮系统
+
+### 按钮状态重置
+点击按钮后必须重置`OBJPROP_STATE`，否则按钮保持按下状态：
+```cpp
+void ResetPanelButtonState(string name)
+{
+   if(ObjectFind(0,name) >= 0)
+      ObjectSetInteger(0,name,OBJPROP_STATE,false);
+}
+```
+
+### 按钮点击处理流程
+```cpp
+void HandlePanelButtonClick(string key)
+{
+   // 锚点按钮（展开/隐藏、尺寸切换）
+   if(key == g_panel_prefix + "toggle_panel") { ... }
+   if(key == g_panel_prefix + "panel_size_cycle") { ... }
+
+   // 操作按钮（带确认对话框）
+   if(key == g_panel_prefix + "btn_close_all")
+   {
+      ResetPanelButtonState(key);
+      ShowConfirmDialog("确认一键全平？所有持仓单将被平仓。", "confirm_close_all");
+      return;
+   }
+
+   // 确认回调
+   if(StringFind(key, g_panel_prefix + "confirm_", 0) == 0)
+   {
+      string action = StringSubstr(key, StringLen(g_panel_prefix + "confirm_"));
+      HandleConfirmAction(action);
+      return;
+   }
+}
+```
+
+### 确认对话框（防误操作）
+```cpp
+void ShowConfirmDialog(string message, string action_id)
+{
+   PanelMetrics m; BuildPanelMetrics(m);
+   int cx = g_panel_x + m.width / 2 - 140;
+   int cy = g_panel_y + m.panel_h / 2 - 60;
+
+   EnsureRectangle(g_panel_prefix + "confirm_bg", cx, cy, 280, 120, C'40,40,40', C'255,100,100');
+   EnsureLabel(g_panel_prefix + "confirm_msg", message, cx+15, cy+20, 9, White);
+   EnsureButton(g_panel_prefix + "confirm_" + action_id, "确定", cx+30, cy+75, 100, 30, C'220,80,80', White);
+   EnsureButton(g_panel_prefix + "confirm_cancel", "取消", cx+150, cy+75, 100, 30, C'100,100,100', White);
+}
+```
+
+### 标准操作按钮清单
+| 按钮 | 功能 | 是否需确认 |
+|------|------|-----------|
+| 停止做多 / 启动做多 | 切换做多开关 | 否 |
+| 停止做空 / 启动做空 | 切换做空开关 | 否 |
+| 全平盈利多单 | 平掉盈利的多单 | 是 |
+| 全平亏损多单 | 平掉亏损的多单 | 是 |
+| 全平盈利空单 | 平掉盈利的空单 | 是 |
+| 全平亏损空单 | 平掉亏损的空单 | 是 |
+| 一键全平 | 平掉所有持仓 | 是 |
+| 清除图表对象 | 清除非EA对象 | 是 |
+
+---
+
+## 47. 面板刷新机制
+
+### 节流刷新
+避免每tick都重绘，设置最小刷新间隔：
+```cpp
+void RefreshPanel(bool force = false)
+{
+   datetime now = TimeCurrent();
+   if(!force && now - g_last_panel_refresh < 1) return;  // 1秒节流
+   g_last_panel_refresh = now;
+
+   // 重绘锚点按钮（尺寸按钮文字需更新）
+   DrawPanelToggleAnchor();
+
+   if(!g_panel_open) return;
+
+   // 重绘面板主体
+   ClearPanelObjects();
+   DrawPanel();
+}
+```
+
+### 面板展开/隐藏
+- 隐藏时：只保留锚点按钮，清除所有面板对象
+- 展开时：完整绘制所有卡片和按钮
+- 点击「展开/隐藏」按钮切换 `g_panel_open` 状态
+
+---
+
+## 48. 复制到新EA的步骤
+
+### 快速迁移清单（5步）
+1. **复制数据结构**：`PanelMetrics` + `EAStats` 结构体
+2. **复制全局变量**：`g_panel_*` 系列（共11个）
+3. **复制核心函数**：BuildPanelMetrics / Ensure系列 / Draw系列 / Handle系列
+4. **修改前缀**：将 `SteadyGrid.` 替换为新EA的标识
+5. **接入数据**：在 `CollectStats` 函数中填充EA的实际统计数据
+
+### 必须修改的地方
+- `g_panel_prefix`：替换为EA唯一标识
+- `BuildPanelMetrics` 中的卡片高度：根据实际内容行数调整
+- `DrawPanel` 中的指标行：替换为EA实际显示的内容
+- `HandlePanelButtonClick`：按钮回调替换为EA实际功能
+- `CollectStats`：统计数据替换为EA实际计算逻辑
+
+### init() 中必须调用
+```cpp
+int init()
+{
+   // 回测重置（如有全局变量统计）
+   if(IsTesting()) { /* 重置全局变量 */ }
+
+   // 初始化面板
+   g_panel_open = false;
+   g_panel_size_mode = 1;  // 默认小尺寸
+   DrawPanelToggleAnchor();
+   return(INIT_SUCCEEDED);
+}
+```
+
+### deinit() 中必须调用
+```cpp
+void deinit()
+{
+   // 清除所有面板对象
+   for(int i = ObjectsTotal() - 1; i >= 0; i--)
+   {
+      string name = ObjectName(i);
+      if(StringFind(name, g_panel_prefix, 0) == 0)
+         ObjectDelete(0, name);
+   }
+}
+```
+
+### start() / OnTick() 中必须调用
+```cpp
+RefreshPanel();  // 节流刷新面板数据
+```
+
+---
+
+## 49. 颜色规范
+
+### 标准配色方案（深色主题）
+| 元素 | 颜色 | 色值 |
+|------|------|------|
+| 面板背景 | 深灰 | C'32,34,37' |
+| 卡片背景 | 中灰 | C'45,47,50' |
+| 标题背景 | 蓝灰 | C'60,65,72' |
+| 主按钮 | 蓝色 | C'66,153,225' |
+| 危险按钮 | 红色 | C'220,80,80' |
+| 普通按钮 | 灰色 | C'100,100,100' |
+| 盈利文字 | 绿色 | C'80,200,120' |
+| 亏损文字 | 红色 | C'240,100,100' |
+| 正常文字 | 白色 | White |
+| 次要文字 | 浅灰 | C'180,180,180' |
+| 边框 | 深灰边 | C'70,70,70' |
+| 拖动高亮 | 金色 | C'255,200,0' |
+
+---
+
+## 50. 常见问题与解决方案
+
+### Q1: 面板被K线遮挡
+**原因**：`OBJPROP_BACK = true`  
+**解决**：所有矩形、标签、按钮统一设置 `OBJPROP_BACK = false`
+
+### Q2: 拖动后位置偏移
+**原因**：MovePanelTo遗漏了某些对象  
+**解决**：确保所有 `g_panel_prefix` 开头的对象都被移动（排除锚点按钮）
+
+### Q3: 按钮点击后保持按下状态
+**原因**：未重置 `OBJPROP_STATE`  
+**解决**：每个按钮点击处理第一行调用 `ResetPanelButtonState(key)`
+
+### Q4: 尺寸切换后按钮位置不对
+**原因**：使用旧的PanelMetrics计算  
+**解决**：切换尺寸后调用 `RefreshPanel(true)` 强制完整重绘
+
+### Q5: 回测后面板不显示
+**原因**：init()中未重新绘制锚点按钮  
+**解决**：init()中必须调用 `DrawPanelToggleAnchor()` 初始化锚点
+
+### Q6: 面板文字显示不全
+**原因**：行高不够或字号太大  
+**解决**：调整 `row_h` 与 `font_md` 的比例，推荐行高=字号+6~7px
+
+---
+
 ## 📝 更新日志
 
 | 日期 | 更新内容 |
@@ -1818,3 +2472,16 @@ int init()
 | 2026-07-18 | 新增第38章：变量重复定义（extern与input冲突） |
 | 2026-07-18 | 新增第39章：回测错误触发每日盈利目标（全局变量未重置） |
 | 2026-07-18 | BUG索引表新增4条记录：手动停止/Comment异常/变量重复/回测全局变量 |
+| 2026-07-18 | **新增第十三部分：MT4标准面板系统（第40-50章）**——所有EA通用模板 |
+| 2026-07-18 | 第40章：面板系统整体架构与5大设计原则 |
+| 2026-07-18 | 第41章：数据结构定义（PanelMetrics + EAStats） |
+| 2026-07-18 | 第42章：4级尺寸系统（超小/小/中/大）+ 切换按钮 |
+| 2026-07-18 | 第43章：面板布局规范（7行指标 + 卡片堆叠） |
+| 2026-07-18 | 第44章：元素创建函数（EnsureRectangle/Label/Button） |
+| 2026-07-18 | 第45章：拖拽交互系统（开始/移动/结束 + 边界限制 + 视觉反馈） |
+| 2026-07-18 | 第46章：按钮系统（状态重置 + 确认对话框 + 标准按钮清单） |
+| 2026-07-18 | 第47章：面板刷新机制（节流刷新 + 展开/隐藏） |
+| 2026-07-18 | 第48章：复制到新EA的5步迁移指南 |
+| 2026-07-18 | 第49章：颜色规范（深色主题12色标准配色） |
+| 2026-07-18 | 第50章：常见问题与解决方案（6类典型问题） |
+| 2026-07-18 | 目录索引新增：MT4标准面板系统分类 |
