@@ -118,6 +118,7 @@ bool     g_panel_dragging      = false;
 int      g_panel_drag_offset_x = 0;
 int      g_panel_drag_offset_y = 0;
 datetime g_last_panel_refresh  = 0;
+int      g_panel_size_mode     = 0;  // 0=小尺寸, 1=大尺寸
 bool     g_allow_buy           = true;
 bool     g_allow_sell          = true;
 bool     g_manual_stop_buy     = false;
@@ -3341,23 +3342,42 @@ void BuildPanelMetrics(PanelMetrics &m)
 {
    m.margin_x = g_panel_x;
    m.margin_y = g_panel_y;
-   m.width = 360;
-   m.pad = 10;
-   m.section_gap = 8;
-   m.header_h = 50;
-   m.row_h = 15;
-   m.gap = 5;
-   m.button_h = 24;
+
+   if(g_panel_size_mode == 0)
+   {
+      m.width = 360;
+      m.pad = 10;
+      m.section_gap = 8;
+      m.header_h = 50;
+      m.row_h = 15;
+      m.gap = 5;
+      m.button_h = 24;
+      m.font_xs = 8;
+      m.font_sm = 8;
+      m.font_md = 9;
+      m.font_lg = 12;
+   }
+   else
+   {
+      m.width = 420;
+      m.pad = 14;
+      m.section_gap = 10;
+      m.header_h = 56;
+      m.row_h = 18;
+      m.gap = 8;
+      m.button_h = 30;
+      m.font_xs = 9;
+      m.font_sm = 10;
+      m.font_md = 11;
+      m.font_lg = 15;
+   }
+
    m.inner_w = m.width - m.pad * 2;
    m.half_w = (m.inner_w - m.gap) / 2;
    m.card_status_h = 170;
    m.card_metrics_h = 160;
-   m.card_actions_h = m.pad * 2 + 18 + m.gap + m.button_h * 7 + m.gap * 6;  // 7行按钮（含停止挂单+清除对象按钮）
+   m.card_actions_h = m.pad * 2 + 18 + m.gap + m.button_h * 7 + m.gap * 6;
    m.button_font = 8;
-   m.font_xs = 8;
-   m.font_sm = 8;
-   m.font_md = 9;
-   m.font_lg = 12;
    m.toggle_w = 64;
    m.panel_h = m.header_h + m.section_gap + m.card_status_h + m.section_gap + m.card_metrics_h + m.section_gap + m.card_actions_h;
 }
@@ -3459,6 +3479,8 @@ void MovePanelTo(int new_x,int new_y)
       string name = ObjectName(i);
       if(StringFind(name,g_panel_prefix,0) != 0) continue;
       if(name == g_panel_prefix + "toggle_panel") continue;
+      if(name == g_panel_prefix + "panel_size_plus") continue;
+      if(name == g_panel_prefix + "panel_size_minus") continue;
 
       int x = (int)ObjectGet(name,OBJPROP_XDISTANCE);
       int y = (int)ObjectGet(name,OBJPROP_YDISTANCE);
@@ -3504,10 +3526,15 @@ void DrawPanelToggleAnchor()
    int anchor_h = 30;
    int anchor_x = 16;
    int chart_h = (int)ChartGetInteger(0, CHART_HEIGHT_IN_PIXELS);
-   int anchor_y = chart_h - anchor_h - 16;  // 左下角，距离底部16像素
-   if(anchor_y < 0) anchor_y = 0;
+
+   int base_y = chart_h - anchor_h - 16;
+   if(base_y < 0) base_y = 0;
+
    string toggle_text = g_panel_open ? "隐藏" : "展开";
-   EnsureButton(g_panel_prefix + "toggle_panel",toggle_text,anchor_x,anchor_y,anchor_w,anchor_h,accent,White);
+   EnsureButton(g_panel_prefix + "toggle_panel",toggle_text,anchor_x,base_y,anchor_w,anchor_h,accent,White);
+
+   EnsureButton(g_panel_prefix + "panel_size_minus","-",anchor_x,base_y - anchor_h - 4,anchor_w,anchor_h,C'100,100,100',White);
+   EnsureButton(g_panel_prefix + "panel_size_plus","+",anchor_x,base_y - anchor_h * 2 - 8,anchor_w,anchor_h,C'100,100,100',White);
 }
 
 void CollectStats(EAStats &stats)
@@ -3862,6 +3889,28 @@ void HandlePanelButtonClick(string key)
       g_panel_dragging = false;
       SetPanelDragHighlight(false);
       RefreshPanel(true);
+      return;
+   }
+
+   if(key == g_panel_prefix + "panel_size_plus")
+   {
+      ResetPanelButtonState(key);
+      if(g_panel_size_mode == 0)
+      {
+         g_panel_size_mode = 1;
+         RefreshPanel(true);
+      }
+      return;
+   }
+
+   if(key == g_panel_prefix + "panel_size_minus")
+   {
+      ResetPanelButtonState(key);
+      if(g_panel_size_mode == 1)
+      {
+         g_panel_size_mode = 0;
+         RefreshPanel(true);
+      }
       return;
    }
 
