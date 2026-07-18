@@ -680,7 +680,7 @@ int start()
    lowRangePoints = 0.0 ;
    highRange = iHigh(Symbol(),g_timeframe,0) - iLow(Symbol(),g_timeframe,5) ;
    lowRange = iLow(Symbol(),g_timeframe,0) - iHigh(Symbol(),g_timeframe,5) ;
-   highRangePoints = int(highRange / Point()) ;
+   highRangePoints = (int)(highRange / Point()) ;
    lowRangePoints = MathAbs(lowRange / Point()) ;
 
    int spreadRaw = (int)MarketInfo(Symbol(),MODE_SPREAD);
@@ -2591,57 +2591,50 @@ int ConvertTimeframe(int eventID)
 
 void CloseProfitLossOrders(int eventID,int eventLParam,int eventDParam,int eventSParam)
   {
-
-   int        li10_magic;
-   int        li10_type;
-   int        li10_ticket;
-   double     li10_profit;
-   int        li10_idx;
-
    while(eventDParam > 0)
      {
-      li10_magic = eventLParam;
-      li10_type = eventID;
-      li10_ticket = -1;
-      li10_profit = 0.0;
-      for(li10_idx = OrdersTotal() - 1 ; li10_idx >= 0 ; li10_idx = li10_idx - 1)
+      int    li10_ticket = -1;
+      double li10_profit = 0.0;
+      bool   found = false;
+
+      for(int li10_idx = OrdersTotal() - 1; li10_idx >= 0; li10_idx--)
         {
-         if(!(OrderSelect(li10_idx,SELECT_BY_POS,MODE_TRADES)) || OrderSymbol() != Symbol() || (OrderMagicNumber()  !=  li10_magic && li10_magic != -1) || (OrderType()  !=  li10_type && li10_type != -100))
+         if(!(OrderSelect(li10_idx,SELECT_BY_POS,MODE_TRADES)) || OrderSymbol() != Symbol() || (OrderMagicNumber() != eventLParam && eventLParam != -1) || (OrderType() != eventID && eventID != -100))
             continue;
 
-         if(eventSParam == 1 && li10_profit<OrderProfit())
+         double cur_profit = OrderProfit();
+
+         if(eventSParam == 1 && cur_profit >= 0.0)
            {
-            li10_profit = OrderProfit();
-            li10_ticket = OrderTicket();
+            if(!found || cur_profit > li10_profit)
+              {
+               li10_profit = cur_profit;
+               li10_ticket = OrderTicket();
+               found = true;
+              }
            }
-         if(eventSParam != 2 || (!(li10_profit>OrderProfit()) && !(li10_profit==0.0)))
-            continue;
-         li10_profit = OrderProfit();
-         li10_ticket = OrderTicket();
+         else if(eventSParam == 2 && cur_profit < 0.0)
+           {
+            if(!found || cur_profit < li10_profit)
+              {
+               li10_profit = cur_profit;
+               li10_ticket = OrderTicket();
+               found = true;
+              }
+           }
         }
+
+      if(!found) break;
+
       if(OrderSelect(li10_ticket,SELECT_BY_TICKET,MODE_TRADES))
         {
-         if(eventSParam == 1 && OrderProfit()>=0.0 && OrderClose(OrderTicket(),OrderLots(),OrderClosePrice(),0,0xFFFFFFFF))
-           {
+         if(OrderClose(OrderTicket(),OrderLots(),OrderClosePrice(),0,0xFFFFFFFF))
             eventDParam = eventDParam - 1;
-           }
-         if(eventSParam == 1 && OrderProfit()<0.0)
-           {
+         else
             eventDParam = eventDParam - 1;
-           }
-         if(eventSParam == 2 && OrderProfit()<0.0 && OrderClose(OrderTicket(),OrderLots(),OrderClosePrice(),0,0xFFFFFFFF))
-           {
-            eventDParam = eventDParam - 1;
-           }
-         if(eventSParam == 2 && OrderProfit()>=0.0)
-           {
-            eventDParam = eventDParam - 1;
-           }
         }
       else
-        {
-         eventDParam = eventDParam - 1;
-        }
+         break;
      }
   }
 //CloseProfitLossOrders
@@ -2663,17 +2656,23 @@ double SumTopNProfit(int eventID,int eventLParam,int eventDParam,int eventSParam
 
       if(eventDParam == 1 && OrderProfit()>=0.0)
         {
-         子_x[errCode] = OrderProfit();
-         errCode = errCode + 1;
+         if(errCode < 100)
+         {
+            子_x[errCode] = OrderProfit();
+            errCode = errCode + 1;
+         }
         }
       if(eventDParam != 2 || !(OrderProfit()<0.0))
          continue;
-      子_x[errCode] =  -(OrderProfit());
-      errCode = errCode + 1;
+      if(errCode < 100)
+      {
+         子_x[errCode] =  -(OrderProfit());
+         errCode = errCode + 1;
+      }
      }
    ArraySort(子_x,0,0,2);
    sellProfit = 0.0 ;
-   for(retryCount = 0 ; retryCount < eventSParam ; retryCount = retryCount + 1)
+   for(retryCount = 0 ; retryCount < eventSParam && retryCount < 100 ; retryCount = retryCount + 1)
      {
       sellProfit = sellProfit + 子_x[retryCount] ;
      }
@@ -3353,7 +3352,7 @@ void BuildPanelMetrics(PanelMetrics &m)
    m.half_w = (m.inner_w - m.gap) / 2;
    m.card_status_h = 184;
    m.card_metrics_h = 260;
-   m.card_actions_h = m.pad * 2 + 22 + m.gap + m.button_h * 6 + m.gap * 5;  // 6行按钮（含停止挂单按钮）
+   m.card_actions_h = m.pad * 2 + 22 + m.gap + m.button_h * 7 + m.gap * 6;  // 7行按钮（含停止挂单+清除对象按钮）
    m.button_font = 9;
    m.font_xs = 9;
    m.font_sm = 10;
@@ -3796,6 +3795,8 @@ void DrawPanel(EAStats &stats)
    EnsureButton(g_panel_prefix + "close_loss_sell","全平亏损空单",inner_x2,button_y,m.half_w,m.button_h,bad_color,White);
    button_y += m.button_h + m.gap;
    EnsureButton(g_panel_prefix + "close_all_ea","一键全平仓",inner_x,button_y,m.inner_w,m.button_h,C'121,89,214',White);
+   button_y += m.button_h + m.gap;
+   EnsureButton(g_panel_prefix + "clear_objects","清除图表对象",inner_x,button_y,m.inner_w,m.button_h,C'100,100,100',White);
 
    DrawPanelToggleAnchor();
 }
@@ -3821,6 +3822,20 @@ void DeleteObjectsByPrefix(string prefix)
       if(StringFind(name,prefix,0) == 0)
          ObjectDelete(0,name);
    }
+}
+
+void ClearChartObjects(string exclude_prefix)
+{
+   int deleted = 0;
+   for(int i = ObjectsTotal() - 1; i >= 0; i--)
+   {
+      string name = ObjectName(i);
+      if(name == "") continue;
+      if(exclude_prefix != "" && StringFind(name,exclude_prefix,0) == 0) continue;
+      if(ObjectDelete(0,name)) deleted++;
+   }
+   ChartRedraw(0);
+   Print("清除图表对象完成，共删除 " + IntegerToString(deleted) + " 个对象");
 }
 
 bool ShowConfirmDialog(string message)
@@ -3904,7 +3919,7 @@ void HandlePanelButtonClick(string key)
    {
       ResetPanelButtonState(key);
       if(!ShowConfirmDialog("确定要全平 " + Symbol() + " 上本EA的盈利多单吗？")) return;
-      CloseProfitLossOrders(0,Magic,0,1);
+      CloseProfitLossOrders(0,Magic,Totals,1);
       RefreshPanel(true);
       return;
    }
@@ -3913,7 +3928,7 @@ void HandlePanelButtonClick(string key)
    {
       ResetPanelButtonState(key);
       if(!ShowConfirmDialog("确定要全平 " + Symbol() + " 上本EA的盈利空单吗？")) return;
-      CloseProfitLossOrders(1,Magic,0,1);
+      CloseProfitLossOrders(1,Magic,Totals,1);
       RefreshPanel(true);
       return;
    }
@@ -3922,7 +3937,7 @@ void HandlePanelButtonClick(string key)
    {
       ResetPanelButtonState(key);
       if(!ShowConfirmDialog("确定要全平 " + Symbol() + " 上本EA的亏损多单吗？")) return;
-      CloseProfitLossOrders(0,Magic,0,2);
+      CloseProfitLossOrders(0,Magic,Totals,2);
       RefreshPanel(true);
       return;
    }
@@ -3931,7 +3946,7 @@ void HandlePanelButtonClick(string key)
    {
       ResetPanelButtonState(key);
       if(!ShowConfirmDialog("确定要全平 " + Symbol() + " 上本EA的亏损空单吗？")) return;
-      CloseProfitLossOrders(1,Magic,0,2);
+      CloseProfitLossOrders(1,Magic,Totals,2);
       RefreshPanel(true);
       return;
    }
@@ -3942,5 +3957,15 @@ void HandlePanelButtonClick(string key)
       if(!ShowConfirmDialog("确定要一键全平 " + Symbol() + " 上本EA的全部持仓与挂单吗？\nMagic=" + IntegerToString(Magic) + "\n当前：" + IntegerToString(stats.buy_positions + stats.sell_positions) + " 单持仓")) return;
       CloseAllOrders(0);
       RefreshPanel(true);
+      return;
+   }
+
+   if(key == g_panel_prefix + "clear_objects")
+   {
+      ResetPanelButtonState(key);
+      if(!ShowConfirmDialog("确定要清除图表上的所有对象吗？\n将保留本EA面板对象（前缀 " + g_panel_prefix + "）\n其他指标线、文字、箭头等将被删除。")) return;
+      ClearChartObjects(g_panel_prefix);
+      RefreshPanel(true);
+      return;
    }
 }
