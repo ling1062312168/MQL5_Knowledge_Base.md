@@ -1,70 +1,63 @@
 //+------------------------------------------------------------------+
 //|                                               均线策略网格系统.mq5  |
 //|                                    Copyright 2025, 打工仔         |
-//|                                    Version 2.52 — 对冲方向随趋势实时翻转                       |
+//|                                    Version 2.53 — D1 EMA14入场 + 多周期网格                       |
 //+------------------------------------------------------------------+
 #property copyright "打工仔"
-#property version   "2.52"
-#property description "均线策略网格系统 - D1 EMA14入场 + 跑马灯止盈 + 对冲随趋势翻转"
+#property version   "2.53"
+#property description "均线策略网格系统 - D1 EMA14入场 + 跑马灯止盈 + 多周期网格"
 #property description "入场: 天图 close > EMA14 开多 / close < EMA14 开空"
 #property description "逆势加仓: 7周期(H4/H1/30M/15M/5M/3M/M1) MA10方向 → 动态间距(浮动)"
 #property description "顺势加仓: 7周期MA10全部同向才允许, 固定间距"
 #property description "跑马灯止盈: 篮子加权均价±动态TP(层多收紧, 逆向放宽)"
-#property description "趋势转变: 自动切换魔术码, 对冲方向实时跟随D1趋势翻转"
-#property description "D1趋势对冲: 顺势盈利→消化逆势亏损 → 趋势一变, 目标立即切换"
 #include <Trade/Trade.mqh>
 #include <Trade/PositionInfo.mqh>
 //+------------------------------------------------------------------+
 //| 面板布局常量                                                       |
 //+------------------------------------------------------------------+
-#define PW              720       // 面板总宽度(加宽以容纳左右栏)
-#define PD              12        // 内边距 padding
+#define PW              640       // 面板总宽度(含外边框)
+#define PD              12        // 面板内边距(内容距离外边框)
 #define PG              6         // 行间距 gap
-#define HDR_H           54        // 标题栏高度
-#define SG              10        // 卡片间距 section_gap
+#define HDR_H           52        // 标题栏高度
+#define SG              8         // 卡片间距 section_gap
 #define LH              22        // 文本行高(含间距)
 #define BH              28        // 按钮高度
 #define EH              24        // 输入框高度
-// 左栏(参数设置)宽度
-#define LW              (PW*4/10 - PD)  // ~270
-// 右栏(手动平仓操作)宽度
-#define RW              (PW*6/10 - PD)  // ~402
+#define BD_W            2         // 外边框宽度
+#define CD_PD           10        // 卡片内边距
+// 左栏宽度
+#define LW              ((PW - PD*2 - PG)/2)
+// 右栏宽度
+#define RW              ((PW - PD*2 - PG)/2)
 #define HALF_W          ((LW - PG)/2)
 #define THIRD_W         ((LW - PG*2)/3)
+// 参数卡标签宽度(统一对齐)
+#define LBL_W           56        // 左栏标签列宽
+#define EDT_W           56        // 左栏输入框宽
 // 左栏卡片高度
-// 状态卡: 16头+18标题+8间隔+12数据行(12×22=264)+16底 = 322
-#define CH_STATUS       (16+18+8+12*LH+16)
-// 参数卡: 16头+18标题+8间隔+5输入行(5×22=110)+gap(6)+按钮行(28)+gap(6)+操作行(28)+16底 = 236
-#define CH_PARAMS       (16+18+8+5*LH+PG+BH+PG+BH+16)
-// 加仓控制卡: 16头+18标题+8间隔+2行按钮(2×34=68)+16底 = 126
-#define CH_GRID_CTRL   (16+18+8 + 2*(BH+PG) + 16)
-// 左栏总高(状态卡+间距+参数卡+间距+加仓卡)
-#define LEFT_COL_H      (CH_STATUS + SG + CH_PARAMS + SG + CH_GRID_CTRL)
+#define CH_STATUS       208       // 状态卡(7行数据)
+#define CH_PARAMS       248       // 参数设置卡(5行输入+2行按钮)
+// 左栏总高
+#define LEFT_COL_H      (CH_STATUS + SG + CH_PARAMS)
 
 // 右栏卡片高度
-// 仓位概览卡: 16头+18标题+8间隔+LH(PnL行)+PG+BH(一键平仓)+16底
-#define CH_OVERVIEW    (16+18+8+LH+PG+BH+16)
-// 平仓管理卡(多/空对称): 16头+18标题+8间隔+统计行(cp_RowH+PG)+按钮行(BH+PG)+3操作行(3*(cp_RowH+PG))+16底
-#define CH_ACT         (16+18+8 + cp_RowH+PG + BH+PG + 3*(cp_RowH+PG) + 16)
-// 运行信息卡: 16头+18标题+8间隔+4信息行(4×22=88)+16底
-#define CH_INFO         (16+18+8 + 4*LH + 16)
-// 右栏总高(概览卡+间距+多单卡+间距+空单卡+间距+信息卡)
-#define RIGHT_COL_H     (CH_OVERVIEW + SG + CH_ACT + SG + CH_ACT + SG + CH_INFO)
+#define CH_OVERVIEW     95        // 仓位概览卡
+#define CH_ACT          230       // 平仓管理卡(多/空)
+#define RIGHT_COL_H     (CH_OVERVIEW + SG + CH_ACT + SG + CH_ACT)
 
-// 总高 = 标题栏 + 间距 + max(左栏, 右栏)
-#define TOTAL_H   (HDR_H + SG + (LEFT_COL_H > RIGHT_COL_H ? LEFT_COL_H : RIGHT_COL_H))
-// 布局参数(平仓管理区)
-#define cp_LblW          90        // 标签列宽
-#define cp_EW1          64        // 输入框宽(大)
-#define cp_EW2          44        // 输入框宽(小)
-#define cp_BtnW          36        // 抽取按钮宽
+#define TOTAL_H   (HDR_H + SG + PD + (LEFT_COL_H > RIGHT_COL_H ? LEFT_COL_H : RIGHT_COL_H) + PD)
+// 平仓管理区
+#define cp_LblW          126       // 标签按钮宽
+#define cp_EW1          56        // 输入框宽(大)
+#define cp_EW2          42        // 输入框宽(小)
+#define cp_BtnW          38        // 抽取按钮宽
 #define cp_RowH          24        // 行高
 //+------------------------------------------------------------------+
 //| 输入参数                                                          |
 //+------------------------------------------------------------------+
 input group "== 交易参数 =="
 input double      InpLotSize        = 0.01;          // 手数(平投)
-input int         InpMagicNumber    = 111111;        // 魔术号(阶段1)
+input int         InpMagicNumber    = 111111;        // 魔术号
 input int         InpSlippage       = 30;            // 滑点
 input group "== 入场信号(D1 EMA14) =="
 input int               InpEMA_Period   = 14;          // EMA周期
@@ -75,13 +68,16 @@ input int               InpGridWithTrend = 100;        // 顺势同向间距(点
 input group "== 止盈止损(点数) =="
 input int         InpTakeProfit     = 200;           // 止盈点数(0=不启用)
 input int         InpStopLoss       = 200;           // 止损点数(0=不启用)
-input group "== 趋势转变对冲 =="
-input double      InpHedgeRatio     = 0.5;           // 盈利对冲比例(当前浮盈的多少%用于对冲旧仓)
-input double      InpHedgeMinProfit  = 5.0;           // 最小启动对冲盈利($)
-input double      InpHedgeMinLots    = 0.01;          // 每次最小对冲手数
+input group "== 加仓控制 =="
+input int         InpMaxGridLayers  = 10;            // 最大加仓层数
+input double      InpLotIncrement   = 0.01;          // 每层手数递增
+input group "== 风险防护 =="
+input double      InpMaxTotalLots    = 3.0;           // 最大总持仓手数(同方向)
+input double      InpMaxDrawdownUSD   = 500.0;         // 浮亏熔断阈值($,同方向浮亏超此值暂停逆势加仓)
+input double      InpGridExpFactor = 1.5;          // 逆势加仓指数间距倍数(每层间距=基数×倍数^深度)
 input group "== 面板位置 =="
-input int         InpPanelX         = 20;            // 面板X(像素)
-input int         InpPanelY         = 20;            // 面板Y(像素)
+input int         InpPanelX         = 10;            // 面板X(像素)
+input int         InpPanelY         = 10;            // 面板Y(像素)
 input group "== 颜色 =="
 input color       InpColorBuy       = C'66,153,225'; // 买入色
 input color       InpColorSell      = C'239,100,97'; // 卖出色
@@ -151,13 +147,9 @@ datetime       g_gridLastBar   = 0;   // 上根K线时间(递减计时)
 int            g_gridLastDepth  = 0;   // 上次逆向深度
 // ── 趋势转变 + 手数递增 ──
 int            g_lastTrend      = 0;   // 上次D1趋势方向
-int            g_magicPhase     = 1;   // 当前阶段: 1=111111, 2=222222
-int            g_currentMagic   = 111111; // 当前魔术码
-double         g_lotBase        = 0.01; // 当前阶段基础手数
-int            g_gridLayer      = 0;   // 当前阶段加仓层数(0=首单)
-// ── D1趋势导向对冲(顺势盈利→消化逆势亏损, 方向随趋势实时翻转) ──
-int            g_hedgeOldMagic  = 0;   // 面板显示用: 最近趋势翻转前的旧魔术码
-int            g_hedgeOldTrend  = 0;   // 面板显示用: 当前逆势方向(与g_trend相反)
+int            g_currentMagic   = 111111; // 当前魔术码(固定使用InpMagicNumber)
+double         g_lotBase        = 0.01; // 基础手数
+int            g_gridLayer      = 0;   // 加仓层数(0=首单)
 // ── 异步平仓系统 ──
 bool           g_cpAsync[2]    = {false, false};  // [0]=多单, [1]=空单
 int            g_cpAsyncMode[2] = {0, 0};       // 1=全平,2=平盈利,3=平亏损,4=百分比,5=固定手数,6=按序
@@ -166,11 +158,15 @@ int            g_cpAsyncIdx[2]   = {0, 0};       // 当前处理索引
 datetime       g_cpAsyncTkt[2]   = {0, 0};       // 上一单平仓时间(限速)
 // ── 按序平仓方向: true=从下向上(先平开仓价最低的), false=从上向下(先平开仓价最高的) ──
 bool           g_longCloseDir  = false;  // 多单默认: 从上向下(灰色)
-bool           g_shortCloseDir = false;  // 空单默认: 从下向上(灰色), 点击后变红
+bool           g_shortCloseDir = true;   // 空单默认: 从下向上(橙色)
 // ── 可面板修改的运行时参数(从input初始化, 面板可改) ──
 int            g_gridWithTrend  = 100;   // 顺势同向间距(点)
-double         g_hedgeRatio     = 0.5;   // 盈利对冲比例
-double         g_hedgeMinProfit = 5.0;   // 最小启动对冲盈利($)
+int            g_maxLayers      = 10;     // 最大加仓层数
+double         g_lotIncrement   = 0.01;   // 每层手数递增
+// ── 风险防护参数 ──
+double         g_maxTotalLots   = 3.0;    // 最大总持仓手数(同方向)
+double         g_maxDrawdownUSD = 500.0;   // 浮亏熔断阈值($)
+double         g_gridExpFactor  = 1.5;    // 逆势加仓指数间距倍数
 //+------------------------------------------------------------------+
 //| 字体缩放                                                          |
 //+------------------------------------------------------------------+
@@ -240,7 +236,7 @@ void ERect(string nm, int x, int y, int w, int h, color bg, color bd,
    ObjectSetInteger(0,nm,OBJPROP_BGCOLOR,bg);
    ObjectSetInteger(0,nm,OBJPROP_COLOR,bd);
    ObjectSetInteger(0,nm,OBJPROP_BORDER_TYPE,BORDER_FLAT);
-   ObjectSetInteger(0,nm,OBJPROP_WIDTH,1);
+   ObjectSetInteger(0,nm,OBJPROP_WIDTH,BD_W);
    ObjectSetInteger(0,nm,OBJPROP_SELECTABLE,false);
    ObjectSetInteger(0,nm,OBJPROP_HIDDEN,true);
    ObjectSetInteger(0,nm,OBJPROP_BACK,false);
@@ -290,8 +286,8 @@ void EEdt(string nm, string txt, int x, int y, int w, int h,
       ObjectSetInteger(0,nm,OBJPROP_FONTSIZE,F(10));
       ObjectSetInteger(0,nm,OBJPROP_ALIGN,ALIGN_CENTER);
       ObjectSetString(0,nm,OBJPROP_TEXT,txt);
-      ObjectSetInteger(0,nm,OBJPROP_BGCOLOR,C'40,42,52');
-      ObjectSetInteger(0,nm,OBJPROP_BORDER_COLOR,C'70,72,85');
+      ObjectSetInteger(0,nm,OBJPROP_BGCOLOR,C'34,38,52');
+      ObjectSetInteger(0,nm,OBJPROP_BORDER_COLOR,C'55,62,80');
       ObjectSetInteger(0,nm,OBJPROP_COLOR,cWhite);
       ObjectSetInteger(0,nm,OBJPROP_BORDER_TYPE,BORDER_FLAT);
       ObjectSetInteger(0,nm,OBJPROP_SELECTABLE,false);
@@ -352,7 +348,7 @@ void CpCollectStats(ENUM_POSITION_TYPE pt, CpStats &s)
       if((ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE)!=pt) continue;
       s.lots += PositionGetDouble(POSITION_VOLUME);
       s.cnt++;
-      s.pnl += PositionGetDouble(POSITION_PROFIT);
+      s.pnl += PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
    }
 }
 //+------------------------------------------------------------------+
@@ -451,14 +447,13 @@ void CpAsyncTick()
       // 收集需要平仓的ticket列表
       ulong tickets[100];
       int   tcnt = 0;
-      double remainLots = 0;  // 用于mode=5/6
       for(int i=PositionsTotal()-1;i>=0 && tcnt<100;i--)
       {
          if(PositionGetSymbol(i)=="") continue;
          if(PositionGetSymbol(i)!=_Symbol) continue;
          if((ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE)!=pt) continue;
          ulong ticket = PositionGetInteger(POSITION_IDENTIFIER);
-         double pnl  = PositionGetDouble(POSITION_PROFIT);
+         double pnl  = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
          double lots = PositionGetDouble(POSITION_VOLUME);
          bool needClose = false;
          switch(mode)
@@ -476,7 +471,6 @@ void CpAsyncTick()
          {
             tickets[tcnt] = ticket;
             tcnt++;
-            if(mode==5 || mode==6) remainLots += lots;
          }
       }
       if(tcnt == 0)
@@ -485,73 +479,106 @@ void CpAsyncTick()
          Print("[手动平仓] ", pt==POSITION_TYPE_BUY?"多单":"空单", " 异步平仓完成");
          continue;
       }
-      // mode=4: 百分比平仓 → 转换为固定手数
+      // mode=4: 百分比平仓 → 每单按百分比部分平仓
       if(mode == 4)
       {
-         double totalLots = 0;
-         for(int k=0;k<tcnt;k++)
+         double minLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+         double lotStep = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+         if(lotStep <= 0) lotStep = 0.01;
+         int curIdx = g_cpAsyncIdx[idx];
+         if(curIdx >= tcnt)
          {
-            if(PositionSelectByTicket(tickets[k]))
-               totalLots += PositionGetDouble(POSITION_VOLUME);
+            g_cpAsync[idx] = false;
+            Print("[手动平仓] 百分比平仓完成");
+            continue;
          }
-         double targetLots = totalLots * val / 100.0;
-         // 改为mode=5处理
-         g_cpAsyncMode[idx] = 5;
-         g_cpAsyncVal[idx]  = targetLots;
-         mode = 5;
-         val  = targetLots;
-         Print("[手动平仓] 百分比→固定手数: ", DoubleToString(targetLots,2), " 手");
-      }
-      // mode=5: 固定手数平仓
-      if(mode == 5)
-      {
-         double closedLots = 0;
-         for(int k=0;k<tcnt && closedLots<val;k++)
+         ulong ticket = tickets[curIdx];
+         if(PositionSelectByTicket(ticket))
          {
-            if(!PositionSelectByTicket(tickets[k])) continue;
-            double lots = PositionGetDouble(POSITION_VOLUME);
-            double closeLots = MathMin(lots, val - closedLots);
-            if(closeLots >= PositionGetDouble(POSITION_VOLUME))
+            double posLots = PositionGetDouble(POSITION_VOLUME);
+            double closeLot = MathFloor(posLots * val / 100.0 / lotStep + 1e-9) * lotStep;
+            if(closeLot >= minLot)
             {
-               // 全平这一单
-               if(cpTrade.PositionClose(tickets[k], 30))
+               if(closeLot >= posLots)
                {
-                  closedLots += lots;
-                  g_cpAsyncTkt[idx] = TimeCurrent();
-                  Print("[手动平仓] 固定手数 平 #", tickets[k], " 全部 ", DoubleToString(lots,2), " 手");
+                  cpTrade.PositionClose(ticket, 30);
+                  Print("[手动平仓] 百分比 平 #", ticket, " 全部 ", DoubleToString(posLots,2), " 手");
                }
-            }
-            else
-            {
-               // 部分平仓
-               if(DoPartialClose(tickets[k], closeLots, 30))
+               else
                {
-                  closedLots += closeLots;
-                  g_cpAsyncTkt[idx] = TimeCurrent();
-                  Print("[手动平仓] 固定手数 平 #", tickets[k], " 部分 ", DoubleToString(closeLots,2), " 手");
+                  DoPartialClose(ticket, closeLot, 30);
+                  Print("[手动平仓] 百分比 平 #", ticket, " 部分 ", DoubleToString(closeLot,2), " 手");
                }
+               g_cpAsyncTkt[idx] = TimeCurrent();
             }
          }
-         g_cpAsync[idx] = false;
-         Print("[手动平仓] 固定手数平仓完成, 共平 ", DoubleToString(closedLots,2), " 手");
+         g_cpAsyncIdx[idx]++;
          continue;
       }
-      // mode=6: 按序平仓 (从最早开仓的开始平)
+      // mode=5: 固定手数平仓 → 每单平min(fixedLots, posLots)
+      if(mode == 5)
+      {
+         double minLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+         double lotStep = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+         if(lotStep <= 0) lotStep = 0.01;
+         int curIdx = g_cpAsyncIdx[idx];
+         if(curIdx >= tcnt)
+         {
+            g_cpAsync[idx] = false;
+            Print("[手动平仓] 固定手数平仓完成");
+            continue;
+         }
+         ulong ticket = tickets[curIdx];
+         if(PositionSelectByTicket(ticket))
+         {
+            double posLots = PositionGetDouble(POSITION_VOLUME);
+            double closeLot = MathFloor(MathMin(val, posLots) / lotStep + 1e-9) * lotStep;
+            if(closeLot >= minLot)
+            {
+               if(closeLot >= posLots)
+               {
+                  cpTrade.PositionClose(ticket, 30);
+                  Print("[手动平仓] 固定手数 平 #", ticket, " 全部 ", DoubleToString(posLots,2), " 手");
+               }
+               else
+               {
+                  DoPartialClose(ticket, closeLot, 30);
+                  Print("[手动平仓] 固定手数 平 #", ticket, " 部分 ", DoubleToString(closeLot,2), " 手");
+               }
+               g_cpAsyncTkt[idx] = TimeCurrent();
+            }
+         }
+         g_cpAsyncIdx[idx]++;
+         continue;
+      }
+      // mode=6: 按序平仓 (按开仓价排序, g_longCloseDir/g_shortCloseDir控制方向)
       if(mode == 6)
       {
-         // 按开仓时间排序
+         // 按开仓价排序
          ulong sorted[100];
+         double prices[100];
          ArrayCopy(sorted, tickets);
-         // 简单冒泡排序(按开仓时间)
+         for(int a=0;a<tcnt;a++)
+         {
+            if(PositionSelectByTicket(sorted[a]))
+               prices[a] = PositionGetDouble(POSITION_PRICE_OPEN);
+            else
+               prices[a] = 0;
+         }
+         // 排序方向: idx==0(多单) → g_longCloseDir=false=从上向下(高价优先), true=从下向上(低价优先)
+         //           idx==1(空单) → g_shortCloseDir=true=从下向上(低价优先), false=从上向下(高价优先)
+         bool lowToHigh = (idx==0) ? g_longCloseDir : g_shortCloseDir;
          for(int a=0;a<tcnt-1;a++)
             for(int b=a+1;b<tcnt;b++)
             {
-               datetime ta=0, tb=0;
-               if(PositionSelectByTicket(sorted[a])) ta = (datetime)PositionGetInteger(POSITION_TIME);
-               if(PositionSelectByTicket(sorted[b])) tb = (datetime)PositionGetInteger(POSITION_TIME);
-               if(ta > tb) { ulong tmp=sorted[a]; sorted[a]=sorted[b]; sorted[b]=tmp; }
+               bool needSwap = lowToHigh ? (prices[a] > prices[b]) : (prices[a] < prices[b]);
+               if(needSwap)
+               {
+                  ulong tmpU=sorted[a]; sorted[a]=sorted[b]; sorted[b]=tmpU;
+                  double tmpD=prices[a]; prices[a]=prices[b]; prices[b]=tmpD;
+               }
             }
-         // 从最早的开仓开始平
+         // 按排序顺序平仓
          double closedLots = 0;
          for(int k=0;k<tcnt && closedLots<val;k++)
          {
@@ -613,28 +640,84 @@ void CpAsyncTick()
 void DrawPanel(EAStats &s)
 {
    // ====== 全部变量声明（必须在函数体最前面） ======
-   int X,LX,RX,PW_,W,LW_,RW_;
-   color BG_PANEL,BD_PANEL,BG_HDR,BG_CARD,cMute,cOk,cWarn,cBad;
-   string tTxt,pTxt,rTxt,sub;
-   color tClr,pClr=cWhite,rClr;
-   int cy,ry,cDepth,dynTP,ey,btnY,qbw,rx,by,cbw,bw3,bw3S;
-   string gridStr,magicStr,layerStr,tpStr,hedgeStr,hedgeLabel,targetDir,st_buy,st_sell;
-   double nextLot,cLoss,l;
+   int X;
+   int LX;
+   int RX;
+   int PW_;
+   int W;
+   int LW_;
+   int RW_;
+   color BG_PANEL;
+   color BD_PANEL;
+   color BG_HDR;
+   color BG_CARD;
+   color cMute;
+   color cOk;
+   color cWarn;
+   color cBad;
+   string tTxt;
+   string pTxt;
+   string rTxt;
+   string sub;
+   color tClr;
+   color pClr;
+   color rClr;
+   int cy;
+   int ry;
+   int cDepth;
+   int dynTP;
+   int ey;
+   int btnY;
+   int qbw;
+   int rx;
+   int by;
+   int cbw;
+   int bw3;
+   int bw3S;
+   string gridStr;
+   string magicStr;
+   string layerStr;
+   string tpStr;
+   string st_buy;
+   string st_sell;
+   double nextLot;
    color tpClr;
-   int cCnt;
-   bool isBuy;
-   string dirTxtL,dirTxtS;
-   color dirClrL,dirClrS;
-   color hedgeClr,sc_buy,sc_sell;
-
-   double totalPnL,perLVal,fixLVal,ordLVal,perSVal,fixSVal,ordSVal;
-   color pnlClr,buyStatClr,sellStatClr;
-   string pnlSign,buyStat,sellStat;
-   color perLClr,fixLClr,ordLClr,perSClr,fixSClr,ordSClr;
-   string sigStr,spStr,lossStr,nxtStr;
-   color sigClr,spClr;
+   string dirTxtL;
+   string dirTxtS;
+   color dirClrL;
+   color dirClrS;
+   color sc_buy;
+   color sc_sell;
+   double totalPnL;
+   double perLVal;
+   double fixLVal;
+   double ordLVal;
+   double perSVal;
+   double fixSVal;
+   double ordSVal;
+   color pnlClr;
+   color buyStatClr;
+   color sellStatClr;
+   string pnlSign;
+   string buyStat;
+   string sellStat;
+   color perLClr;
+   color fixLClr;
+   color ordLClr;
+   color perSClr;
+   color fixSClr;
+   color ordSClr;
+   string sigStr;
+   string spStr;
+   string lossStr;
+   string nxtStr;
+   color sigClr;
+   color spClr;
    long spread;
+   string maxLayerStr;
+   string incStr;
    // ====== 变量赋值 & 执行语句 ======
+   pClr = cWhite;
    X = g_px;
    LX = X + PD;
    RX = LX + LW + PG;
@@ -644,14 +727,14 @@ void DrawPanel(EAStats &s)
    RW_ = W - LW_ - PG;
 
    // 配色
-   BG_PANEL  = C'15,19,26';
-   BD_PANEL  = C'42,53,68';
-   BG_HDR    = C'22,29,42';
-   BG_CARD   = C'26,33,46';
-   cMute  = C'140,155,175';
-   cOk    = C'78,190,140';
-   cWarn  = C'245,176,68';
-   cBad   = C'230,100,97';
+   BG_PANEL  = C'18,20,28';
+   BD_PANEL  = C'60,68,88';
+   BG_HDR    = C'30,34,48';
+   BG_CARD   = C'24,27,38';
+   cMute  = C'130,140,165';
+   cOk    = C'82,204,147';
+   cWarn  = C'250,180,80';
+   cBad   = C'240,105,110';
 
    sub = _Symbol+"  |  "+EnumToString(InpEMA_TF)+" EMA"+IntegerToString(InpEMA_Period);
 
@@ -671,6 +754,7 @@ void DrawPanel(EAStats &s)
 
    // 运行状态
    if(!g_panel_open){ DelContent(); DrawToggle(); return; }
+   // 不再每次都删除重建对象，避免闪烁
    if(!g_allow_buy&&!g_allow_sell){ rTxt="已暂停"; rClr=cBad; }
    else if(!g_allow_buy||!g_allow_sell){ rTxt="単边"; rClr=cWarn; }
    else if(g_trend==0){ rTxt="等待信号"; rClr=cMute; }
@@ -686,33 +770,33 @@ void DrawPanel(EAStats &s)
    cy = g_py + HDR_H + SG;
 
    // 卡片1: 状态 (左栏)
-   ERect(g_prefix+"c1",X,cy,LW,CH_STATUS,BG_CARD,BD_PANEL);
-   ELbl(g_prefix+"c1_title","状态",LX,cy+PD,F(12),cWhite);
-   ry = cy + PD + 20;
-   ELbl(g_prefix+"r1_lbl","运行状态", LX,   ry+1, F(10), cMute);
-   ELbl(g_prefix+"r1_val", rTxt,       LX+LW*4/10,ry+1, F(10), rClr);
-   ELbl(g_prefix+"r2_lbl","趋势方向", LX,   ry+LH+1, F(10), cMute);
-   ELbl(g_prefix+"r2_val", tTxt,       LX+LW*4/10,ry+LH+1, F(10), tClr);
-   ELbl(g_prefix+"r3_lbl","当前持仓", LX,   ry+LH*2+1, F(10), cMute);
-   ELbl(g_prefix+"r3_val", pTxt,       LX+LW*4/10,ry+LH*2+1, F(10), pClr);
+   ERect(g_prefix+"c1",LX,cy,LW,CH_STATUS,BG_CARD,BD_PANEL);
+   ELbl(g_prefix+"c1_title","状态",LX+CD_PD,cy+CD_PD,F(12),cWhite);
+   ry = cy + CD_PD + 20;
+   ELbl(g_prefix+"r1_lbl","运行状态", LX+CD_PD,   ry+1, F(10), cMute);
+   ELbl(g_prefix+"r1_val", rTxt,       LX+CD_PD+LW*4/10,ry+1, F(10), rClr);
+   ELbl(g_prefix+"r2_lbl","趋势方向", LX+CD_PD,   ry+LH+1, F(10), cMute);
+   ELbl(g_prefix+"r2_val", tTxt,       LX+CD_PD+LW*4/10,ry+LH+1, F(10), tClr);
+   ELbl(g_prefix+"r3_lbl","当前持仓", LX+CD_PD,   ry+LH*2+1, F(10), cMute);
+   ELbl(g_prefix+"r3_val", pTxt,       LX+CD_PD+LW*4/10,ry+LH*2+1, F(10), pClr);
 
    // 网格间距
    gridStr = "逆势"+IntegerToString(g_gridCounterInterval)+"点";
    if(g_gridWithTrend>0) gridStr += " / 顺势"+IntegerToString(g_gridWithTrend)+"点";
    if(g_gridCounterInterval==-1) gridStr = "全部逆向(不加仓)";
-   ELbl(g_prefix+"r4_lbl","网格间距", LX,   ry+LH*3+1, F(10), cMute);
-   ELbl(g_prefix+"r4_val", gridStr,     LX+LW*4/10,ry+LH*3+1, F(10), g_gridCounterInterval==-1?cBad:cOk);
+   ELbl(g_prefix+"r4_lbl","网格间距", LX+CD_PD,   ry+LH*3+1, F(10), cMute);
+   ELbl(g_prefix+"r4_val", gridStr,     LX+CD_PD+LW*4/10,ry+LH*3+1, F(10), g_gridCounterInterval==-1?cBad:cOk);
 
-   // 魔术码 + 阶段
-   magicStr = IntegerToString(g_currentMagic)+" (阶段"+IntegerToString(g_magicPhase)+")";
-   ELbl(g_prefix+"r5_lbl","魔术码",   LX,   ry+LH*4+1, F(10), cMute);
-   ELbl(g_prefix+"r5_val", magicStr,    LX+LW*4/10,ry+LH*4+1, F(10), cWhite);
+   // 魔术码
+   magicStr = IntegerToString(g_currentMagic);
+   ELbl(g_prefix+"r5_lbl","魔术码",   LX+CD_PD,   ry+LH*4+1, F(10), cMute);
+   ELbl(g_prefix+"r5_val", magicStr,    LX+CD_PD+LW*4/10,ry+LH*4+1, F(10), cWhite);
 
    // 层数 + 下次手数
    nextLot = g_lotBase + g_gridLayer * 0.01;
    layerStr = "层数:"+IntegerToString(g_gridLayer)+" | 下次:"+DoubleToString(nextLot,2)+"手";
-   ELbl(g_prefix+"r6_lbl","加仓进度", LX,   ry+LH*5+1, F(10), cMute);
-   ELbl(g_prefix+"r6_val", layerStr,    LX+LW*4/10,ry+LH*5+1, F(10), cOk);
+   ELbl(g_prefix+"r6_lbl","加仓进度", LX+CD_PD,   ry+LH*5+1, F(10), cMute);
+   ELbl(g_prefix+"r6_val", layerStr,    LX+CD_PD+LW*4/10,ry+LH*5+1, F(10), cOk);
 
    // 跑马灯动态止盈
    cDepth = GetCounterDepth(g_trend);
@@ -721,304 +805,183 @@ void DrawPanel(EAStats &s)
    tpStr = "跑马灯 "+IntegerToString(dynTP)+"点 (深度"+IntegerToString(cDepth)+")";
    if(g_tp<=0) tpStr = "止盈已关闭";
    tpClr = (g_tp>0&&g_gridLayer>0) ? cOk : cMute;
-   ELbl(g_prefix+"r7_lbl","动态止盈", LX,   ry+LH*6+1, F(10), cMute);
-   ELbl(g_prefix+"r7_val", tpStr,       LX+LW*4/10,ry+LH*6+1, F(10), tpClr);
+   ELbl(g_prefix+"r7_lbl","动态止盈", LX+CD_PD,   ry+LH*6+1, F(10), cMute);
+   ELbl(g_prefix+"r7_val", tpStr,       LX+CD_PD+LW*4/10,ry+LH*6+1, F(10), tpClr);
 
-   // 对冲方向(D1趋势导向, 实时跟随g_trend翻转)
-   hedgeLabel = "对冲方向";
-   if(g_trend==0)
-      { hedgeStr="无趋势,暂停对冲"; hedgeClr=cMute; }
-   else
-   {
-      targetDir = (g_trend==1) ? "SELL" : "BUY";
-      cLoss=0; cCnt=0;
-      for(int i=PositionsTotal()-1;i>=0;i--)
-      {
-         if(PositionGetSymbol(i)=="") continue;
-         if(PositionGetSymbol(i)!=_Symbol) continue;
-         isBuy=(PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY);
-         if((g_trend==1 && !isBuy) || (g_trend==-1 && isBuy))
-         {
-            l=-(PositionGetDouble(POSITION_PROFIT)+PositionGetDouble(POSITION_SWAP));
-            if(l<=0) continue;
-            cLoss+=l; cCnt++;
-         }
-      }
-      hedgeLabel = "消化逆势"+targetDir;
-      if(cCnt>0)
-         { hedgeStr=IntegerToString(cCnt)+"单 买损$"+DoubleToString(cLoss,1); hedgeClr=cWarn; }
-      else
-         { hedgeStr="全部顺势 安全"; hedgeClr=cOk; }
-   }
-   ELbl(g_prefix+"r8_lbl",hedgeLabel,  LX,   ry+LH*7+1, F(10), cMute);
-   ELbl(g_prefix+"r8_val", hedgeStr,   LX+LW*4/10,ry+LH*7+1, F(10), hedgeClr);
+    // 卡片2: 参数设置 (左栏, 在状态卡下方)
+    cy += CH_STATUS + SG;
+    ERect(g_prefix+"c2",LX,cy,LW,CH_PARAMS,BG_CARD,BD_PANEL);
+    ELbl(g_prefix+"c2_title","参数设置",LX+CD_PD,cy+CD_PD,F(12),cWhite);
+    ey = cy + CD_PD + 22;
 
-   // --- 新增状态行(9-12): 让左栏更高以平衡右栏 ---
-   // 入场信号强度
-   sigStr = "--";
-   sigClr = cMute;
-   if(g_trend != 0)
-   {
-      double emaVal[], closeArr[];
-      ArrayResize(emaVal,1); ArrayResize(closeArr,1);
-      if(CopyClose(_Symbol,InpEMA_TF,0,1,closeArr)>0 && CopyBuffer(g_emaHandle,0,0,1,emaVal)>0)
-      {
-         double diff = MathAbs(closeArr[0]-emaVal[0]) / _Point;
-         sigStr = "偏离 "+DoubleToString(diff,1)+" 点";
-         sigClr = (diff > g_gridWithTrend*0.5) ? cOk : (diff > g_gridWithTrend*0.25 ? cWarn : cMute);
-      }
-   }
-   ELbl(g_prefix+"r9_lbl","入场信号", LX,   ry+LH*8+1, F(10), cMute);
-   ELbl(g_prefix+"r9_val", sigStr,     LX+LW*4/10,ry+LH*8+1, F(10), sigClr);
+    // 第1行: 手数 [____]    止盈 [____]
+    ELbl(g_prefix+"e1_l1","手数",   LX+CD_PD,              ey+2,     F(10), cMute);
+    EEdt(g_prefix+"e1_lot",  DoubleToString(g_lot,2),         LX+CD_PD+LBL_W,  ey,    EDT_W,EH);
+    ELbl(g_prefix+"e1_l2","止盈",   LX+CD_PD+LW/2,         ey+2,     F(10), cMute);
+    EEdt(g_prefix+"e1_tp",   IntegerToString(g_tp),           LX+CD_PD+LW/2+LBL_W, ey, EDT_W,EH);
 
-   // 当前点差
-   spread = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
-   spStr = IntegerToString((int)spread)+" 点";
-   spClr = (spread <= 30) ? cOk : (spread <= 100 ? cWarn : cBad);
-   ELbl(g_prefix+"r10_lbl","当前点差", LX,    ry+LH*9+1, F(10), cMute);
-   ELbl(g_prefix+"r10_val", spStr,      LX+LW*4/10,ry+LH*9+1, F(10), spClr);
+    // 第2行: 止损 [____]    顺间距 [____]
+    ELbl(g_prefix+"e2_l1","止损",   LX+CD_PD,              ey+LH+2,  F(10), cMute);
+    EEdt(g_prefix+"e1_sl",   IntegerToString(g_sl),           LX+CD_PD+LBL_W,  ey+LH,EDT_W,EH);
+    ELbl(g_prefix+"e3_l1","顺间距", LX+CD_PD+LW/2,         ey+LH+2,  F(10), cMute);
+    EEdt(g_prefix+"e3_trend",IntegerToString(g_gridWithTrend),LX+CD_PD+LW/2+LBL_W,ey+LH,EDT_W,EH);
 
-   // 连续亏损/加仓层数摘要
-   lossStr = "层数:"+IntegerToString(g_gridLayer)+" | 间距:"+IntegerToString(g_gridCounterInterval);
-   ELbl(g_prefix+"r11_lbl","网格状态", LX,    ry+LH*10+1, F(10), cMute);
-   ELbl(g_prefix+"r11_val", lossStr,    LX+LW*4/10,ry+LH*10+1, F(10), (g_gridLayer>0)?cWarn:cOk);
+    // 第3行: 最大层 [____]    层递增 [____]
+    ELbl(g_prefix+"e6_l1","最大层", LX+CD_PD,              ey+LH*2+2,F(10), cMute);
+    EEdt(g_prefix+"e6_maxL",IntegerToString(g_maxLayers),     LX+CD_PD+LBL_W,ey+LH*2,EDT_W,EH);
+    ELbl(g_prefix+"e6_l2","层递增", LX+CD_PD+LW/2,         ey+LH*2+2,F(10), cMute);
+    EEdt(g_prefix+"e7_inc", DoubleToString(g_lotIncrement,2), LX+CD_PD+LW/2+LBL_W,ey+LH*2,EDT_W,EH);
 
-   // 下次加仓手数
-   nxtStr = DoubleToString(nextLot,2)+" 手";
-   ELbl(g_prefix+"r12_lbl","下次手数", LX,    ry+LH*11+1, F(10), cMute);
-   ELbl(g_prefix+"r12_val", nxtStr,    LX+LW*4/10,ry+LH*11+1, F(10), cOk);
+    // 第4行: 总手限 [____]    浮亏断 [____]
+    ELbl(g_prefix+"e8_l1","总手限", LX+CD_PD,              ey+LH*3+2,F(10), cMute);
+    EEdt(g_prefix+"e8_maxLot",DoubleToString(g_maxTotalLots,2),LX+CD_PD+LBL_W,ey+LH*3,EDT_W,EH);
+    ELbl(g_prefix+"e8_l2","浮亏断", LX+CD_PD+LW/2,         ey+LH*3+2,F(10), cMute);
+    EEdt(g_prefix+"e9_maxDD", DoubleToString(g_maxDrawdownUSD,0),LX+CD_PD+LW/2+LBL_W,ey+LH*3,EDT_W,EH);
 
-   // 卡片2: 参数设置 (左栏, 在状态卡下方)
-   cy += CH_STATUS + SG;
-   ERect(g_prefix+"c2",X,cy,LW,CH_PARAMS,BG_CARD,BD_PANEL);
-   ELbl(g_prefix+"c2_title","参数设置",LX,cy+PD,F(12),cWhite);
-   ey = cy + PD + 22;
+    // 第5行: 指数倍 [____]
+    ELbl(g_prefix+"e10_l1","指数倍",LX+CD_PD,              ey+LH*4+2,F(10), cMute);
+    EEdt(g_prefix+"e10_exp", DoubleToString(g_gridExpFactor,2),LX+CD_PD+LBL_W,ey+LH*4,EDT_W,EH);
 
-   // 第1行: 手数 [____]    止盈 [____] 点
-   ELbl(g_prefix+"e1_l1","手 数", LX,      ey+2, F(10), cMute);
-   EEdt(g_prefix+"e1_lot", DoubleToString(g_lot,2), LX+48,ey,60,EH);
-   ELbl(g_prefix+"e1_l2","止 盈", LX+120,  ey+2, F(10), cMute);
-   EEdt(g_prefix+"e1_tp",  IntegerToString(g_tp), LX+170,ey,60,EH);
-   ELbl(g_prefix+"e1_u2","点",     LX+234,ey+2, F(9), cMute);
-
-   // 第2行: 止损 [____] 点
-   ELbl(g_prefix+"e2_l2","止 损", LX+120,  ey+LH+2, F(10), cMute);
-   EEdt(g_prefix+"e1_sl",  IntegerToString(g_sl), LX+170,ey+LH,60,EH);
-   ELbl(g_prefix+"e2_u2","点",     LX+234,ey+LH+2, F(9), cMute);
-
-   // 第3行: 顺势间距 [____] 点
-   ELbl(g_prefix+"e3_l1","顺势间距", LX,      ey+LH*2+2, F(10), cMute);
-   EEdt(g_prefix+"e3_trend", IntegerToString(g_gridWithTrend), LX+48,ey+LH*2,60,EH);
-   ELbl(g_prefix+"e3_u1","点",    LX+112,ey+LH*2+2, F(9), cMute);
-
-   // 第4行: 对冲比例 [____]
-   ELbl(g_prefix+"e4_l1","对冲比例", LX,      ey+LH*3+2, F(10), cMute);
-   EEdt(g_prefix+"e4_hedge", DoubleToString(g_hedgeRatio,2), LX+48,ey+LH*3,60,EH);
-
-   // 第5行: 最小对冲 [$____]
-   ELbl(g_prefix+"e5_l1","最小对冲", LX,      ey+LH*4+2, F(10), cMute);
-   EEdt(g_prefix+"e5_minP", DoubleToString(g_hedgeMinProfit,1), LX+48,ey+LH*4,60,EH);
-
-   // 操作按钮行1: 停多 | 停空 | 开多 | 开空
-   {
-      btnY = ey + LH*5 + PG + 2;
-      qbw = (LW - PD*2 - PG*3) / 4;
+    // 操作按钮行1: 停多 | 停空 | 开多 | 开空
+    {
+       btnY = ey + LH*6 + PG + 2;
+      qbw = (LW - CD_PD*2 - PG*3) / 4;
       sc_buy = g_allow_buy ? C'55,75,100' : cOk;
       st_buy = g_allow_buy ? "停多" : "开多";
       sc_sell = g_allow_sell ? C'110,80,60' : cOk;
       st_sell = g_allow_sell ? "停空" : "开空";
-      EBtn(g_prefix+"btn_stop_buy", st_buy, LX+PD, btnY, qbw, BH, sc_buy, cWhite);
-      EBtn(g_prefix+"btn_stop_sell", st_sell, LX+PD+qbw+PG, btnY, qbw, BH, sc_sell, cWhite);
-      EBtn(g_prefix+"btn_buy", "开 多", LX+PD+(qbw+PG)*2, btnY, qbw, BH, InpColorBuy, cWhite);
-      EBtn(g_prefix+"btn_sell", "开 空", LX+PD+(qbw+PG)*3, btnY, qbw, BH, InpColorSell, cWhite);
+      EBtn(g_prefix+"btn_stop_buy", st_buy, LX+CD_PD, btnY, qbw, BH, sc_buy, cWhite);
+      EBtn(g_prefix+"btn_stop_sell", st_sell, LX+CD_PD+qbw+PG, btnY, qbw, BH, sc_sell, cWhite);
+      EBtn(g_prefix+"btn_buy", "开 多", LX+CD_PD+(qbw+PG)*2, btnY, qbw, BH, InpColorBuy, cWhite);
+      EBtn(g_prefix+"btn_sell", "开 空", LX+CD_PD+(qbw+PG)*3, btnY, qbw, BH, InpColorSell, cWhite);
    }
 
-   // 操作按钮行2: 重置网格 | 切换阶段 (新增)
-   {
-      btnY = ey + LH*5 + PG + BH + PG + 2;
-      int qbw2 = (LW - PD*2 - PG) / 2;
-      EBtn(g_prefix+"btn_reset_grid", "重置网格", LX+PD, btnY, qbw2, BH, C'70,72,85', cWhite);
-      EBtn(g_prefix+"btn_switch_phase", "切换阶段", LX+PD+qbw2+PG, btnY, qbw2, BH, C'70,72,85', cWhite);
-   }
-
-   // ===== 卡片c_grid: 加仓控制 =====
-   cy += CH_PARAMS + SG;
-   ERect(g_prefix+"c_grid",LX,cy,LW,CH_GRID_CTRL,BG_CARD,BD_PANEL);
-   ELbl(g_prefix+"c_grid_title","加仓控制",LX+PD,cy+PD,F(12),cWhite);
-   // 按钮行1: 多单加仓开关
-   {
-      int gw1 = (LW - PD*2 - PG) / 2;
-      color buyC = g_allow_grid_buy ? C'55,75,100' : cOk;
-      string buyT = g_allow_grid_buy ? "停加仓多" : "启加仓多";
-      color sellC = g_allow_grid_sell ? C'110,80,60' : cOk;
-      string sellT = g_allow_grid_sell ? "停加仓空" : "启加仓空";
-      EBtn(g_prefix+"btn_grid_buy",  buyT,  LX+PD,               cy+PD+22, gw1,   BH, buyC,  cWhite);
-      EBtn(g_prefix+"btn_grid_sell", sellT, LX+PD+gw1+PG, cy+PD+22, gw1,   BH, sellC, cWhite);
-   }
-   // 按钮行2: 空单加仓开关
-   {
-      int gw2 = (LW - PD*2 - PG) / 2;
-      string abT = (g_allow_grid_buy && g_allow_grid_sell) ? "加仓全停" : "加仓全开";
-      color abC = (g_allow_grid_buy && g_allow_grid_sell) ? C'90,50,50' : C'50,90,50';
-      string aeT = (!g_allow_grid_buy && !g_allow_grid_sell) ? "加仓全开" : "加仓全停";
-      color aeC = (!g_allow_grid_buy && !g_allow_grid_sell) ? C'50,90,50' : C'90,50,50';
-      EBtn(g_prefix+"btn_grid_all",  abT,  LX+PD,               cy+PD+22+BH+PG, gw2,   BH, abC,  cWhite);
-      EBtn(g_prefix+"btn_grid_none", aeT, LX+PD+gw2+PG, cy+PD+22+BH+PG, gw2,   BH, aeC, cWhite);
-   }
-
-//      右栏: 仓位概览 + 多单平仓 + 空单平仓(对称双卡)
+    // 操作按钮行2: 重置网格
+    {
+       btnY = ey + LH*6 + PG + BH + PG + 2;
+       int qbw2 = LW - CD_PD*2;
+       EBtn(g_prefix+"btn_reset_grid", "重置网格", LX+CD_PD, btnY, qbw2, BH, C'70,72,85', cWhite);
+    }
+   //      右栏: 仓位概览 + 多单平仓 + 空单平仓(对称双卡)
    rx = RX;
    cy = g_py + HDR_H + SG;
 
    // ===== 卡片 overview: 仓位概览 =====
-   ERect(g_prefix+"c_overview",rx-PD,cy,RW_+PD*2,CH_OVERVIEW,BG_CARD,BD_PANEL);
-   ELbl(g_prefix+"c_overview_title","仓位概览",rx,cy+PD,F(12),cWhite);
-   by = cy + PD + 22;
+   ERect(g_prefix+"c_overview",rx,cy,RW,CH_OVERVIEW,BG_CARD,BD_PANEL);
+   ELbl(g_prefix+"c_overview_title","仓位概览",rx+CD_PD,cy+CD_PD,F(12),cWhite);
+   by = cy + CD_PD + 22;
 
    // 浮动盈亏
    totalPnL = s.buy_pnl + s.sell_pnl;
    pnlClr = (totalPnL >= 0) ? cOk : cBad;
    pnlSign = (totalPnL >= 0) ? "+" : "";
-   ELbl(g_prefix+"cp_totalPnl","浮动盈亏 "+pnlSign+"$"+DoubleToString(totalPnL,2),
-        rx+PD, by, F(12), pnlClr);
+   ELbl(g_prefix+"cp_totalPnl","浮盈 "+pnlSign+"$"+DoubleToString(totalPnL,2),
+        rx+CD_PD, by, F(12), pnlClr);
    by += LH + PG;
 
    // 一键平仓
-   cbw = RW_ - PD*2;
-   EBtn(g_prefix+"btn_closeAll","一键平仓全部持仓", rx+PD, by, cbw, BH, C'180,50,50', cWhite);
+   cbw = RW - CD_PD*2;
+   EBtn(g_prefix+"btn_closeAll","一键平仓全部持仓", rx+CD_PD, by, cbw, BH, C'180,50,50', cWhite);
 
    // ===== 卡片c3: 多单平仓 =====
    cy += CH_OVERVIEW + SG;
-   ERect(g_prefix+"c3",rx-PD,cy,RW_+PD*2,CH_ACT,BG_CARD,BD_PANEL);
-   ELbl(g_prefix+"c3_title","多单平仓",rx,cy+PD,F(12),InpColorBuy);
-   by = cy + PD + 22;
+   ERect(g_prefix+"c3",rx,cy,RW,CH_ACT,BG_CARD,BD_PANEL);
+   ELbl(g_prefix+"c3_title","多单平仓",rx+CD_PD,cy+CD_PD,F(12),InpColorBuy);
+   by = cy + CD_PD + 22;
 
    // 多单统计
-   buyStat = "手数 "+DoubleToString(s.buy_lot,2)+"  |  数量 "+IntegerToString(s.buy_cnt)+"  |  盈亏 $"+DoubleToString(s.buy_pnl,2);
+   buyStat = "手"+DoubleToString(s.buy_lot,2)+" | "+IntegerToString(s.buy_cnt)+"单 | $"+DoubleToString(s.buy_pnl,2);
    buyStatClr = (s.buy_pnl >= 0) ? cOk : cBad;
-   ELbl(g_prefix+"cp_buyStat", buyStat, rx+PD, by, F(9), buyStatClr);
+   ELbl(g_prefix+"cp_buyStat", buyStat, rx+CD_PD, by, F(9), buyStatClr);
    by += cp_RowH + PG;
 
-   // 全平 | 盈 | 亏
-   bw3 = (RW_ - PD*2 - PG*2) / 3;
-   EBtn(g_prefix+"cp_allL","全平", rx+PD, by, bw3, BH, C'56,132,216', cWhite);
-   EBtn(g_prefix+"cp_profL","平盈", rx+PD+bw3+PG, by, bw3, BH, C'78,190,140', cWhite);
-   EBtn(g_prefix+"cp_lossL","平亏", rx+PD+bw3*2+PG*2, by, bw3, BH, C'230,100,97', cWhite);
+   // 全平多单 | 平盈多单 | 平亏多单
+   bw3 = (RW - CD_PD*2 - PG*2) / 3;
+   EBtn(g_prefix+"cp_allL","全平多单", rx+CD_PD, by, bw3, BH, C'56,132,216', cWhite);
+   EBtn(g_prefix+"cp_profL","平盈多单", rx+CD_PD+bw3+PG, by, bw3, BH, C'78,190,140', cWhite);
+   EBtn(g_prefix+"cp_lossL","平亏多单", rx+CD_PD+bw3*2+PG*2, by, bw3, BH, C'230,100,97', cWhite);
    by += BH + PG;
 
-   // 百分比平仓
-   EBtn(g_prefix+"cp_perL_btn", "百分比", rx+PD, by, cp_LblW, cp_RowH, C'70,72,85', cWhite);
-   EEdt(g_prefix+"cp_edt_perL", "20", rx+PD+cp_LblW+PG, by, cp_EW2, cp_RowH);
-   EBtn(g_prefix+"cp_perL", "抽取", rx+PD+cp_LblW+PG+cp_EW2+PG, by, cp_BtnW, cp_RowH, C'56,132,216', cWhite);
+   // 多单百分比平仓
+   EBtn(g_prefix+"cp_perL_btn", "多单百分比平仓", rx+CD_PD, by, cp_LblW, cp_RowH, C'70,72,85', cWhite);
+   EEdt(g_prefix+"cp_edt_perL", "20", rx+CD_PD+cp_LblW+PG, by, cp_EW2, cp_RowH);
+   EBtn(g_prefix+"cp_perL", "抽取", rx+CD_PD+cp_LblW+PG+cp_EW2+PG, by, cp_BtnW, cp_RowH, C'56,132,216', cWhite);
    perLVal = s.buy_lot * StringToDouble(ObjectGetString(0,g_prefix+"cp_edt_perL",OBJPROP_TEXT)) / 100.0;
    perLClr = cMute;
    ELbl(g_prefix+"cp_perL_res", "="+DoubleToString(perLVal,2),
-        rx+PD+cp_LblW+PG+cp_EW2+PG+cp_BtnW+4, by+3, F(9), perLClr);
+        rx+CD_PD+cp_LblW+PG+cp_EW2+PG+cp_BtnW+4, by+3, F(9), perLClr);
    by += cp_RowH + PG;
 
-   // 固定手数平仓
-   EBtn(g_prefix+"cp_fixL_btn", "固定手数", rx+PD, by, cp_LblW, cp_RowH, C'70,72,85', cWhite);
-   EEdt(g_prefix+"cp_edt_fixL", "0.01", rx+PD+cp_LblW+PG, by, cp_EW2, cp_RowH);
-   EBtn(g_prefix+"cp_fixL", "抽取", rx+PD+cp_LblW+PG+cp_EW2+PG, by, cp_BtnW, cp_RowH, C'56,132,216', cWhite);
+   // 多单固定手数平仓
+   EBtn(g_prefix+"cp_fixL_btn", "多单固定手数平仓", rx+CD_PD, by, cp_LblW, cp_RowH, C'70,72,85', cWhite);
+   EEdt(g_prefix+"cp_edt_fixL", "0.01", rx+CD_PD+cp_LblW+PG, by, cp_EW2, cp_RowH);
+   EBtn(g_prefix+"cp_fixL", "抽取", rx+CD_PD+cp_LblW+PG+cp_EW2+PG, by, cp_BtnW, cp_RowH, C'56,132,216', cWhite);
    fixLVal = StringToDouble(ObjectGetString(0,g_prefix+"cp_edt_fixL",OBJPROP_TEXT));
    fixLClr = cMute;
    ELbl(g_prefix+"cp_fixL_res", "="+DoubleToString(fixLVal,2),
-        rx+PD+cp_LblW+PG+cp_EW2+PG+cp_BtnW+4, by+3, F(9), fixLClr);
+        rx+CD_PD+cp_LblW+PG+cp_EW2+PG+cp_BtnW+4, by+3, F(9), fixLClr);
    by += cp_RowH + PG;
 
-   // 按序方向
-   dirTxtL = g_longCloseDir ? "多↑从下向上" : "多↓从上向下";
+   // 多单从上向下 / 多单从下向上
+   dirTxtL = g_longCloseDir ? "多单从下向上" : "多单从上向下";
    dirClrL = g_longCloseDir ? C'56,132,216' : C'70,72,85';
-   EBtn(g_prefix+"cp_dirL", dirTxtL, rx+PD, by, cp_LblW, cp_RowH, dirClrL, cWhite);
-   EEdt(g_prefix+"cp_edt_ordL", "0.01", rx+PD+cp_LblW+PG, by, cp_EW2, cp_RowH);
-   EBtn(g_prefix+"cp_ordL", "抽取", rx+PD+cp_LblW+PG+cp_EW2+PG, by, cp_BtnW, cp_RowH, C'56,132,216', cWhite);
+   EBtn(g_prefix+"cp_dirL", dirTxtL, rx+CD_PD, by, cp_LblW, cp_RowH, dirClrL, cWhite);
+   EEdt(g_prefix+"cp_edt_ordL", "0.01", rx+CD_PD+cp_LblW+PG, by, cp_EW2, cp_RowH);
+   EBtn(g_prefix+"cp_ordL", "抽取", rx+CD_PD+cp_LblW+PG+cp_EW2+PG, by, cp_BtnW, cp_RowH, C'56,132,216', cWhite);
    ordLVal = StringToDouble(ObjectGetString(0,g_prefix+"cp_edt_ordL",OBJPROP_TEXT));
    ordLClr = cMute;
    ELbl(g_prefix+"cp_ordL_res", "="+DoubleToString(ordLVal,2),
-        rx+PD+cp_LblW+PG+cp_EW2+PG+cp_BtnW+4, by+3, F(9), ordLClr);
+        rx+CD_PD+cp_LblW+PG+cp_EW2+PG+cp_BtnW+4, by+3, F(9), ordLClr);
 
    // ===== 卡片c4: 空单平仓 =====
    cy += CH_ACT + SG;
-   ERect(g_prefix+"c4",rx-PD,cy,RW_+PD*2,CH_ACT,BG_CARD,BD_PANEL);
-   ELbl(g_prefix+"c4_title","空单平仓",rx,cy+PD,F(12),InpColorSell);
-   by = cy + PD + 22;
+   ERect(g_prefix+"c4",rx,cy,RW,CH_ACT,BG_CARD,BD_PANEL);
+   ELbl(g_prefix+"c4_title","空单平仓",rx+CD_PD,cy+CD_PD,F(12),InpColorSell);
+   by = cy + CD_PD + 22;
 
    // 空单统计
-   sellStat = "手数 "+DoubleToString(s.sell_lot,2)+"  |  数量 "+IntegerToString(s.sell_cnt)+"  |  盈亏 $"+DoubleToString(s.sell_pnl,2);
+   sellStat = "手"+DoubleToString(s.sell_lot,2)+" | "+IntegerToString(s.sell_cnt)+"单 | $"+DoubleToString(s.sell_pnl,2);
    sellStatClr = (s.sell_pnl >= 0) ? cOk : cBad;
-   ELbl(g_prefix+"cp_sellStat", sellStat, rx+PD, by, F(9), sellStatClr);
+   ELbl(g_prefix+"cp_sellStat", sellStat, rx+CD_PD, by, F(9), sellStatClr);
    by += cp_RowH + PG;
 
-   // 全平 | 盈 | 亏
-   bw3S = (RW_ - PD*2 - PG*2) / 3;
-   EBtn(g_prefix+"cp_allS","全平", rx+PD, by, bw3S, BH, C'180,80,60', cWhite);
-   EBtn(g_prefix+"cp_profS","平盈", rx+PD+bw3S+PG, by, bw3S, BH, C'78,190,140', cWhite);
-   EBtn(g_prefix+"cp_lossS","平亏", rx+PD+bw3S*2+PG*2, by, bw3S, BH, C'230,100,97', cWhite);
+   // 全平空单 | 平盈空单 | 平亏空单
+   bw3S = (RW - CD_PD*2 - PG*2) / 3;
+   EBtn(g_prefix+"cp_allS","全平空单", rx+CD_PD, by, bw3S, BH, C'180,80,60', cWhite);
+   EBtn(g_prefix+"cp_profS","平盈空单", rx+CD_PD+bw3S+PG, by, bw3S, BH, C'78,190,140', cWhite);
+   EBtn(g_prefix+"cp_lossS","平亏空单", rx+CD_PD+bw3S*2+PG*2, by, bw3S, BH, C'230,100,97', cWhite);
    by += BH + PG;
 
-   // 百分比平仓
-   EBtn(g_prefix+"cp_perS_btn", "百分比", rx+PD, by, cp_LblW, cp_RowH, C'70,72,85', cWhite);
-   EEdt(g_prefix+"cp_edt_perS", "20", rx+PD+cp_LblW+PG, by, cp_EW2, cp_RowH);
-   EBtn(g_prefix+"cp_perS", "抽取", rx+PD+cp_LblW+PG+cp_EW2+PG, by, cp_BtnW, cp_RowH, C'180,80,60', cWhite);
+   // 空单百分比平仓
+   EBtn(g_prefix+"cp_perS_btn", "空单百分比平仓", rx+CD_PD, by, cp_LblW, cp_RowH, C'70,72,85', cWhite);
+   EEdt(g_prefix+"cp_edt_perS", "20", rx+CD_PD+cp_LblW+PG, by, cp_EW2, cp_RowH);
+   EBtn(g_prefix+"cp_perS", "抽取", rx+CD_PD+cp_LblW+PG+cp_EW2+PG, by, cp_BtnW, cp_RowH, C'180,80,60', cWhite);
    perSVal = s.sell_lot * StringToDouble(ObjectGetString(0,g_prefix+"cp_edt_perS",OBJPROP_TEXT)) / 100.0;
    perSClr = cMute;
    ELbl(g_prefix+"cp_perS_res", "="+DoubleToString(perSVal,2),
-        rx+PD+cp_LblW+PG+cp_EW2+PG+cp_BtnW+4, by+3, F(9), perSClr);
+        rx+CD_PD+cp_LblW+PG+cp_EW2+PG+cp_BtnW+4, by+3, F(9), perSClr);
    by += cp_RowH + PG;
 
-   // 固定手数平仓
-   EBtn(g_prefix+"cp_fixS_btn", "固定手数", rx+PD, by, cp_LblW, cp_RowH, C'70,72,85', cWhite);
-   EEdt(g_prefix+"cp_edt_fixS", "0.01", rx+PD+cp_LblW+PG, by, cp_EW2, cp_RowH);
-   EBtn(g_prefix+"cp_fixS", "抽取", rx+PD+cp_LblW+PG+cp_EW2+PG, by, cp_BtnW, cp_RowH, C'180,80,60', cWhite);
+   // 空单固定手数平仓
+   EBtn(g_prefix+"cp_fixS_btn", "空单固定手数平仓", rx+CD_PD, by, cp_LblW, cp_RowH, C'70,72,85', cWhite);
+   EEdt(g_prefix+"cp_edt_fixS", "0.01", rx+CD_PD+cp_LblW+PG, by, cp_EW2, cp_RowH);
+   EBtn(g_prefix+"cp_fixS", "抽取", rx+CD_PD+cp_LblW+PG+cp_EW2+PG, by, cp_BtnW, cp_RowH, C'180,80,60', cWhite);
    fixSVal = StringToDouble(ObjectGetString(0,g_prefix+"cp_edt_fixS",OBJPROP_TEXT));
    fixSClr = cMute;
    ELbl(g_prefix+"cp_fixS_res", "="+DoubleToString(fixSVal,2),
-        rx+PD+cp_LblW+PG+cp_EW2+PG+cp_BtnW+4, by+3, F(9), fixSClr);
+        rx+CD_PD+cp_LblW+PG+cp_EW2+PG+cp_BtnW+4, by+3, F(9), fixSClr);
    by += cp_RowH + PG;
 
-   // 按序方向
-   dirTxtS = g_shortCloseDir ? "空↑从下向上" : "空↓从上向下";
+   // 空单从上向下 / 空单从下向上
+   dirTxtS = g_shortCloseDir ? "空单从下向上" : "空单从上向下";
    dirClrS = g_shortCloseDir ? C'180,80,60' : C'70,72,85';
-   EBtn(g_prefix+"cp_dirS", dirTxtS, rx+PD, by, cp_LblW, cp_RowH, dirClrS, cWhite);
-   EEdt(g_prefix+"cp_edt_ordS", "0.01", rx+PD+cp_LblW+PG, by, cp_EW2, cp_RowH);
-   EBtn(g_prefix+"cp_ordS", "抽取", rx+PD+cp_LblW+PG+cp_EW2+PG, by, cp_BtnW, cp_RowH, C'180,80,60', cWhite);
+   EBtn(g_prefix+"cp_dirS", dirTxtS, rx+CD_PD, by, cp_LblW, cp_RowH, dirClrS, cWhite);
+   EEdt(g_prefix+"cp_edt_ordS", "0.01", rx+CD_PD+cp_LblW+PG, by, cp_EW2, cp_RowH);
+   EBtn(g_prefix+"cp_ordS", "抽取", rx+CD_PD+cp_LblW+PG+cp_EW2+PG, by, cp_BtnW, cp_RowH, C'180,80,60', cWhite);
    ordSVal = StringToDouble(ObjectGetString(0,g_prefix+"cp_edt_ordS",OBJPROP_TEXT));
    ordSClr = cMute;
    ELbl(g_prefix+"cp_ordS_res", "="+DoubleToString(ordSVal,2),
-        rx+PD+cp_LblW+PG+cp_EW2+PG+cp_BtnW+4, by+3, F(9), ordSClr);
-
-   // ===== 卡片c_info: 运行信息 =====
-   cy += CH_ACT + SG;
-   ERect(g_prefix+"c_info",rx-PD,cy,RW_+PD*2,CH_INFO,BG_CARD,BD_PANEL);
-   ELbl(g_prefix+"c_info_title","运行信息",rx,cy+PD,F(12),cMute);
-
-   // 行1: 当前趋势
-   string trendTxt = (g_trend==1)? "上升趋势(D1 EMA14)":
-                     (g_trend==-1)? "下降趋势(D1 EMA14)": "趋势不明";
-   color trendClr = (g_trend==1)? InpColorBuy: (g_trend==-1)? InpColorSell: cMute;
-   ELbl(g_prefix+"info_trend","趋势: "+trendTxt, rx+PD, cy+PD+22, F(10), trendClr);
-
-   // 行2: 开仓权限
-   string dirTxt = "";
-   if(g_allow_buy && g_allow_sell) dirTxt = "多空均开仓";
-   else if(g_allow_buy) dirTxt = "仅多开仓";
-   else if(g_allow_sell) dirTxt = "仅空开仓";
-   else dirTxt = "开仓已全停";
-   color dirClr = (g_allow_buy||g_allow_sell)? cOk: cBad;
-   ELbl(g_prefix+"info_dir","开仓: "+dirTxt, rx+PD, cy+PD+22+LH, F(10), dirClr);
-
-   // 行3: 加仓状态
-   string gridTxt = "";
-   if(g_allow_grid_buy && g_allow_grid_sell) gridTxt = "多空均加仓";
-   else if(g_allow_grid_buy) gridTxt = "仅多加仓";
-   else if(g_allow_grid_sell) gridTxt = "仅空加仓";
-   else gridTxt = "加仓已全停";
-   color gridClr = (g_allow_grid_buy||g_allow_grid_sell)? cOk: cBad;
-   ELbl(g_prefix+"info_grid","加仓: "+gridTxt, rx+PD, cy+PD+22+LH*2, F(10), gridClr);
-
-   // 行4: 对冲状态
-   string hedgeTxt = (g_hedgeRatio>0)? "对冲开启(比例"+DoubleToString(g_hedgeRatio*100,0)+"%)": "对冲关闭";
-   ELbl(g_prefix+"info_hedge","对冲: "+hedgeTxt, rx+PD, cy+PD+22+LH*3, F(10), cMute);
+        rx+CD_PD+cp_LblW+PG+cp_EW2+PG+cp_BtnW+4, by+3, F(9), ordSClr);
 
    // 折叠按钮
    DrawToggle();
@@ -1044,10 +1007,13 @@ void SaveParamsToGV()
    GlobalVariableSet(g_prefix+"tp",  g_tp);
    GlobalVariableSet(g_prefix+"sl",  g_sl);
    GlobalVariableSet(g_prefix+"trendGap",  (double)g_gridWithTrend);
-   GlobalVariableSet(g_prefix+"hedgeR",    g_hedgeRatio);
-   GlobalVariableSet(g_prefix+"hedgeMinP", g_hedgeMinProfit);
    GlobalVariableSet(g_prefix+"gridBuy",  (double)g_allow_grid_buy);
    GlobalVariableSet(g_prefix+"gridSell", (double)g_allow_grid_sell);
+   GlobalVariableSet(g_prefix+"maxLayers", (double)g_maxLayers);
+   GlobalVariableSet(g_prefix+"lotInc",    g_lotIncrement);
+   GlobalVariableSet(g_prefix+"maxLots",   g_maxTotalLots);
+   GlobalVariableSet(g_prefix+"maxDD",     g_maxDrawdownUSD);
+   GlobalVariableSet(g_prefix+"expFactor", g_gridExpFactor);
 }
 bool LoadParamsFromGV()
 {
@@ -1061,13 +1027,15 @@ bool LoadParamsFromGV()
    // 0 是合法值 = 不启用止盈/止损，不要覆盖
    // 加载面板可修改的运行时参数(如果存在)
    if(GlobalVariableCheck(g_prefix+"trendGap"))  g_gridWithTrend  = (int)GlobalVariableGet(g_prefix+"trendGap");
-   if(GlobalVariableCheck(g_prefix+"hedgeR"))    g_hedgeRatio     = GlobalVariableGet(g_prefix+"hedgeR");
-   if(GlobalVariableCheck(g_prefix+"hedgeMinP")) g_hedgeMinProfit = GlobalVariableGet(g_prefix+"hedgeMinP");
    if(GlobalVariableCheck(g_prefix+"gridBuy"))   g_allow_grid_buy  = (GlobalVariableGet(g_prefix+"gridBuy")>0);
-   if(GlobalVariableCheck(g_prefix+"gridSell")) g_allow_grid_sell = (GlobalVariableGet(g_prefix+"gridSell")>0);
+   if(GlobalVariableCheck(g_prefix+"gridSell"))  g_allow_grid_sell = (GlobalVariableGet(g_prefix+"gridSell")>0);
+   if(GlobalVariableCheck(g_prefix+"maxLayers")) g_maxLayers      = (int)GlobalVariableGet(g_prefix+"maxLayers");
+   if(GlobalVariableCheck(g_prefix+"lotInc"))    g_lotIncrement   = GlobalVariableGet(g_prefix+"lotInc");
+   if(GlobalVariableCheck(g_prefix+"maxLots"))   g_maxTotalLots   = GlobalVariableGet(g_prefix+"maxLots");
+   if(GlobalVariableCheck(g_prefix+"maxDD"))     g_maxDrawdownUSD = GlobalVariableGet(g_prefix+"maxDD");
+   if(GlobalVariableCheck(g_prefix+"expFactor")) g_gridExpFactor  = GlobalVariableGet(g_prefix+"expFactor");
    return true;
 }
-//+------------------------------------------------------------------+
 //| 读取输入框                                                        |
 //+------------------------------------------------------------------+
 void ReadEdits()
@@ -1089,21 +1057,36 @@ void ReadEdits()
       t=ObjectGetString(0,g_prefix+"e1_sl",OBJPROP_TEXT);
       g_sl=(int)StringToInteger(t); // 0=不启用止损
    }
-   // 新增参数读取
    if(ObjectFind(0,g_prefix+"e3_trend")>=0)
    {
       t=ObjectGetString(0,g_prefix+"e3_trend",OBJPROP_TEXT);
-      v=(int)StringToInteger(t); if(v>0) g_gridWithTrend=(int)v;
+      v=(double)StringToInteger(t); if(v>0) g_gridWithTrend=(int)v;
    }
-   if(ObjectFind(0,g_prefix+"e4_hedge")>=0)
+   if(ObjectFind(0,g_prefix+"e6_maxL")>=0)
    {
-      t=ObjectGetString(0,g_prefix+"e4_hedge",OBJPROP_TEXT);
-      v=StringToDouble(t); if(v>0 && v<=1) g_hedgeRatio=v;
+      t=ObjectGetString(0,g_prefix+"e6_maxL",OBJPROP_TEXT);
+      v=(double)StringToInteger(t); if(v>0) g_maxLayers=(int)v;
    }
-   if(ObjectFind(0,g_prefix+"e5_minP")>=0)
+   if(ObjectFind(0,g_prefix+"e7_inc")>=0)
    {
-      t=ObjectGetString(0,g_prefix+"e5_minP",OBJPROP_TEXT);
-      v=StringToDouble(t); if(v>=0) g_hedgeMinProfit=v;
+      t=ObjectGetString(0,g_prefix+"e7_inc",OBJPROP_TEXT);
+      v=StringToDouble(t); if(v>0) g_lotIncrement=v;
+   }
+   // 风险防护参数
+   if(ObjectFind(0,g_prefix+"e8_maxLot")>=0)
+   {
+      t=ObjectGetString(0,g_prefix+"e8_maxLot",OBJPROP_TEXT);
+      v=StringToDouble(t); if(v>0) g_maxTotalLots=v;
+   }
+   if(ObjectFind(0,g_prefix+"e9_maxDD")>=0)
+   {
+      t=ObjectGetString(0,g_prefix+"e9_maxDD",OBJPROP_TEXT);
+      v=StringToDouble(t); if(v>=0) g_maxDrawdownUSD=v;
+   }
+   if(ObjectFind(0,g_prefix+"e10_exp")>=0)
+   {
+      t=ObjectGetString(0,g_prefix+"e10_exp",OBJPROP_TEXT);
+      v=StringToDouble(t); if(v>=1.0) g_gridExpFactor=v;
    }
    SaveParamsToGV();
 }
@@ -1176,7 +1159,8 @@ double GetGridMA(int handleIdx, int shift=1)
 // 获取网格MA的方向: 1=上, -1=下, 0=平
 int GetGridMADir(int handleIdx, int shift=1)
 {
-   double ma,cl;
+   double ma;
+   double cl;
    ma = GetGridMA(handleIdx, shift);
    if(ma<=0) return 0;
    ENUM_TIMEFRAMES tf = g_gridTF[handleIdx];
@@ -1235,11 +1219,10 @@ void OnOrderFailed(const string msg)
 }
 //+------------------------------------------------------------------+
 //| 多周期MA10逆势间距计算 (7周期: H4/H1/M30/M15/M5/M3/M1)              |
+//| 指数级间距: 基础间距 × 倍数^深度                                       |
 //+------------------------------------------------------------------+
 int CalcCounterTrendInterval(const int trendDir)
 {
-
-
    // 从H4→M1扫描, 找到最深(最大)的逆向周期
    // 深度: M1=1, M3=2, M5=3, M15=4, M30=5, H1=6, H4=7
    int maxCounterDepth = 0;
@@ -1254,9 +1237,17 @@ int CalcCounterTrendInterval(const int trendDir)
       return 0;  // 全部同向 → 无逆势间距(用顺势间距)
    if(maxCounterDepth == 7)
       return -1; // 全部逆向 → 不加仓
-   // 基础间距 = depth*100 + 100
-   int base = maxCounterDepth * 100 + 100;
-   // 扣减: 比最大逆向层更小的周期如果恢复了(同向), 每层-10
+   // 指数级间距 = 基础间距(100点) × 倍数^(深度-1)
+   // 深度1: 100 × 1.5^0 = 100点
+   // 深度2: 100 × 1.5^1 = 150点
+   // 深度3: 100 × 1.5^2 = 225点
+   // 深度4: 100 × 1.5^3 = 337点
+   // 深度5: 100 × 1.5^4 = 506点
+   // 深度6: 100 × 1.5^5 = 759点
+   double expFactor = (g_gridExpFactor > 1.0) ? g_gridExpFactor : 1.5;
+   double baseInterval = 100.0;
+   double expInterval = baseInterval * MathPow(expFactor, maxCounterDepth - 1);
+   // 扣减: 比最大逆向层更小的周期如果恢复了(同向), 每层-10点(最多扣减基础的30%)
    int recoverySubtract = 0;
    int startCheckIdx = 8 - maxCounterDepth; // 最大逆向层索引+1
    for(int i=startCheckIdx; i<7; i++)
@@ -1265,8 +1256,10 @@ int CalcCounterTrendInterval(const int trendDir)
       bool isSame = (trendDir==1 && dir==1) || (trendDir==-1 && dir==-1);
       if(isSame) recoverySubtract += 10;
    }
-   int result = base - recoverySubtract;
-   if(result < maxCounterDepth * 100) result = maxCounterDepth * 100; // 不低于本级基数
+   int result = (int)MathRound(expInterval - recoverySubtract);
+   // 不低于本级基数 (深度×100的线性值)
+   int minInterval = maxCounterDepth * 100;
+   if(result < minInterval) result = minInterval;
    return result;
 }
 //+------------------------------------------------------------------+
@@ -1284,23 +1277,50 @@ int GetCounterDepth(const int trendDir)
    return 0;
 }
 //+------------------------------------------------------------------+
+//| 计算同方向总持仓手数 (当前魔术码)                                    |
+//+------------------------------------------------------------------+
+double GetDirTotalLots(ENUM_POSITION_TYPE dir)
+{
+   double total = 0;
+   for(int i=PositionsTotal()-1;i>=0;i--)
+      if(m_pos.SelectByIndex(i)&&m_pos.Symbol()==_Symbol&&m_pos.Magic()==g_currentMagic
+         &&m_pos.PositionType()==dir) total += m_pos.Volume();
+   return total;
+}
+//+------------------------------------------------------------------+
 //| 交易操作                                                          |
 //+------------------------------------------------------------------+
 void DoBuy()
 {
-   double ask,lot;
+   double ask;
+   double lot;
    ReadEdits();
    if(!g_allow_buy){ Print("[面板]多单已暂停");return; }
    if(!CanTrade()) return;
+   // 检查最大层数
+   if(g_gridLayer >= g_maxLayers && g_maxLayers > 0)
+   {
+      Print("[网格加仓] 多单已达最大层数 ",g_maxLayers,", 停止加仓");
+      return;
+   }
+   // 检查总手数上限
+   double curLots = GetDirTotalLots(POSITION_TYPE_BUY);
+   double nextLot = g_lotBase + g_gridLayer * g_lotIncrement;
+   if(nextLot < InpLotSize) nextLot = InpLotSize;
+   if(g_maxTotalLots > 0 && curLots + nextLot > g_maxTotalLots)
+   {
+      Print("[风险防护] 多单总手数 ", DoubleToString(curLots,2), "+", DoubleToString(nextLot,2),
+            " > 上限 ", DoubleToString(g_maxTotalLots,2), " 手, 停止加仓");
+      return;
+   }
    // 计算递增手数
-   lot = g_lotBase + g_gridLayer * 0.01;
-   if(lot < InpLotSize) lot = InpLotSize;
+   lot = nextLot;
    ask=SymbolInfoDouble(_Symbol,SYMBOL_ASK);
    m_trade.SetExpertMagicNumber(g_currentMagic);
    if(m_trade.Buy(lot,_Symbol,ask,0,0,"EMA多"))
    {
       Print("[开多] ",_Symbol," @ ",ask," 手数:",lot,
-            " 阶段:",g_magicPhase," 层数:",g_gridLayer,
+            " 层数:",g_gridLayer,
             " SL/TP=主动监听");
       g_lastFailTime = 0; // 成功后清除失败标记
       g_gridLastBuy  = ask; // 更新网格参考价
@@ -1311,20 +1331,36 @@ void DoBuy()
 }
 void DoSell()
 {
-   double bid,lot;
+   double bid;
+   double lot;
 
    ReadEdits();
    if(!g_allow_sell){ Print("[面板]空单已暂停");return; }
    if(!CanTrade()) return;
+   // 检查最大层数
+   if(g_gridLayer >= g_maxLayers && g_maxLayers > 0)
+   {
+      Print("[网格加仓] 空单已达最大层数 ",g_maxLayers,", 停止加仓");
+      return;
+   }
+   // 检查总手数上限
+   double curLots = GetDirTotalLots(POSITION_TYPE_SELL);
+   double nextLot = g_lotBase + g_gridLayer * g_lotIncrement;
+   if(nextLot < InpLotSize) nextLot = InpLotSize;
+   if(g_maxTotalLots > 0 && curLots + nextLot > g_maxTotalLots)
+   {
+      Print("[风险防护] 空单总手数 ", DoubleToString(curLots,2), "+", DoubleToString(nextLot,2),
+            " > 上限 ", DoubleToString(g_maxTotalLots,2), " 手, 停止加仓");
+      return;
+   }
    // 计算递增手数
-   lot = g_lotBase + g_gridLayer * 0.01;
-   if(lot < InpLotSize) lot = InpLotSize;
+   lot = nextLot;
    bid=SymbolInfoDouble(_Symbol,SYMBOL_BID);
    m_trade.SetExpertMagicNumber(g_currentMagic);
    if(m_trade.Sell(lot,_Symbol,bid,0,0,"EMA空"))
    {
       Print("[开空] ",_Symbol," @ ",bid," 手数:",lot,
-            " 阶段:",g_magicPhase," 层数:",g_gridLayer,
+            " 层数:",g_gridLayer,
             " SL/TP=主动监听");
       g_lastFailTime = 0; // 成功后清除失败标记
       g_gridLastSell = bid; // 更新网格参考价
@@ -1358,7 +1394,7 @@ void CloseDir(ENUM_POSITION_TYPE dir)
    if(dir==POSITION_TYPE_SELL){ g_gridLastSell=0; g_gridLayer=0; g_lotBase=InpLotSize; }
 }
 //+------------------------------------------------------------------+
-//| 平仓所有阶段订单 (趋势转变时用)                                     |
+//| 平仓所有本EA订单                                                   |
 //+------------------------------------------------------------------+
 void CloseAllEaOrders()
 {
@@ -1366,9 +1402,8 @@ void CloseAllEaOrders()
    {
       if(!m_pos.SelectByIndex(i)) continue;
       if(m_pos.Symbol()!=_Symbol) continue;
-      // 平掉所有本EA的订单(不管魔术码)
-      if(m_pos.Magic()==InpMagicNumber || 
-         (m_pos.Magic()%111111==0 && m_pos.Magic()>=111111 && m_pos.Magic()<=999999))
+      // 平掉所有本EA的订单(按魔术码识别)
+      if(m_pos.Magic()==InpMagicNumber)
       {
          m_trade.PositionClose(m_pos.Ticket());
       }
@@ -1480,214 +1515,29 @@ void CheckTPSL()
    }
 }
 //+------------------------------------------------------------------+
-//| 计算当前D1趋势方向所有持仓的总盈利(浮盈+当天已实现)                    |
+//| 计算同方向浮亏金额 (当前魔术码, 返回正数)                           |
 //+------------------------------------------------------------------+
-double GetTrendProfit()
+double GetDirDrawdown(ENUM_POSITION_TYPE dir)
 {
-   double profit = 0;
-   // 浮盈: 所有顺势持仓
+   double dd = 0;
    for(int i=PositionsTotal()-1;i>=0;i--)
    {
       if(!m_pos.SelectByIndex(i)) continue;
-      if(m_pos.Symbol()!=_Symbol) continue;
-      bool isBuy  = (m_pos.PositionType()==POSITION_TYPE_BUY);
-      bool isTrend = (g_trend==1 && isBuy) || (g_trend==-1 && !isBuy);
-      if(!isTrend) continue;
-      profit += m_pos.Profit() + m_pos.Swap();
+      if(m_pos.Symbol()!=_Symbol || m_pos.Magic()!=g_currentMagic) continue;
+      if(m_pos.PositionType()!=dir) continue;
+      double p = m_pos.Profit() + m_pos.Swap();
+      if(p < 0) dd += -p;
    }
-   // 当天已实现盈利(不限魔术码, 品种匹配即可)
-   MqlDateTime dt;
-   TimeToStruct(TimeCurrent(), dt);
-   datetime todayStart = StringToTime(StringFormat("%04d.%02d.%02d", dt.year, dt.mon, dt.day));
-   if(HistorySelect(todayStart, TimeCurrent()))
-   {
-      int total = HistoryDealsTotal();
-      for(int i=total-1; i>=0; i--)
-      {
-         ulong dealTicket = HistoryDealGetTicket(i);
-         if(dealTicket==0) continue;
-         if(HistoryDealGetInteger(dealTicket, DEAL_ENTRY) != DEAL_ENTRY_OUT) continue;
-         if(HistoryDealGetString(dealTicket, DEAL_SYMBOL) != _Symbol) continue;
-         int dType = (int)HistoryDealGetInteger(dealTicket, DEAL_TYPE);
-         if(dType==DEAL_TYPE_BUY || dType==DEAL_TYPE_SELL)
-            profit += HistoryDealGetDouble(dealTicket, DEAL_PROFIT);
-      }
-   }
-   return profit;
-}
-//+------------------------------------------------------------------+
-//| D1 EMA14趋势导向对冲: 顺势盈利 → 平逆势亏损单                        |
-//| 核心原则:                                                           |
-//|   1. D1 EMA14 趋势方向是唯一裁判                                     |
-//|   2. 顺势单 = 赚钱机器, 逆势单 = 待解决的问题                          |
-//|   3. 趋势越强, 对冲越激进 (strengthFactor 0.8~1.8)                   |
-//|   4. 从最远的逆势亏损单开始消化, 逐个击破                              |
-//+------------------------------------------------------------------+
-void HedgeOldPositions()
-{
-   double ask;
-   double availableProfit;
-   double bid;
-   double currentLoss;
-   double currentLots;
-   double dist;
-   double emaDeviation;
-   double entry;
-   double hedgeAmount;
-   double hedgeLots;
-   double l;
-   double loss;
-   double perLotLoss;
-   double pt;
-   double step;
-   double strengthFactor;
-   double trendProfit;
-   double remLoss;
-   int    remCnt;
-   int    lastMagic;
-   if(g_trend == 0) return;  // 无明确趋势, 不处理对冲
-   // ── 对冲方向实时跟随D1趋势 ──
-   g_hedgeOldTrend = -g_trend;  // 面板显示: 当前正在消化的逆势方向
-   pt     = Pt();
-   bid    = SymbolInfoDouble(_Symbol,SYMBOL_BID);
-   ask    = SymbolInfoDouble(_Symbol,SYMBOL_ASK);
-   int    digits = (int)SymbolInfoInteger(_Symbol,SYMBOL_DIGITS);
-   // ── 1. 收集所有逆势亏损持仓 (方向与D1趋势相反) ──
-   struct CounterPos
-   {
-      ulong  ticket;
-      double lots;
-      double entry;
-      double loss;    // 当前浮亏(正数)
-      double dist;    // 入场价到市场价距离(点), 负值=逆势方向
-      bool   isBuy;
-      int    magic;
-   };
-   CounterPos counter[100];
-   int counterCnt = 0;
-   for(int i=PositionsTotal()-1; i>=0 && counterCnt<100; i--)
-   {
-      if(!m_pos.SelectByIndex(i)) continue;
-      if(m_pos.Symbol()!=_Symbol) continue;
-      bool isBuy     = (m_pos.PositionType()==POSITION_TYPE_BUY);
-      bool isCounter = (g_trend==1 && !isBuy) || (g_trend==-1 && isBuy);
-      if(!isCounter) continue;
-      loss = -(m_pos.Profit()+m_pos.Swap());
-      if(loss <= 0) continue;  // 不亏的不需要对冲
-      entry = m_pos.PriceOpen();
-      dist  = isBuy ? (bid-entry)/pt : (entry-ask)/pt;
-      counter[counterCnt].ticket = m_pos.Ticket();
-      counter[counterCnt].lots   = m_pos.Volume();
-      counter[counterCnt].entry  = entry;
-      counter[counterCnt].loss   = loss;
-      counter[counterCnt].dist   = dist;
-      counter[counterCnt].isBuy  = isBuy;
-      counter[counterCnt].magic  = (int)m_pos.Magic();
-      counterCnt++;
-   }
-   // 没有逆势亏损单 → 清除标记, 退出
-   if(counterCnt == 0)
-   {
-      bool hasAnyCounter = false;
-      for(int i=PositionsTotal()-1;i>=0;i--)
-      {
-         if(!m_pos.SelectByIndex(i)) continue;
-         if(m_pos.Symbol()!=_Symbol) continue;
-         bool isBuy=(m_pos.PositionType()==POSITION_TYPE_BUY);
-         if((g_trend==1&&!isBuy)||(g_trend==-1&&isBuy)) { hasAnyCounter=true; break; }
-      }
-      if(!hasAnyCounter) { g_hedgeOldMagic=0; g_hedgeOldTrend=0; }
-      return;
-   }
-   // ── 2. 计算顺势方向总盈利 ──
-   trendProfit = GetTrendProfit();
-   if(trendProfit < g_hedgeMinProfit) return;
-   // ── 3. D1 EMA14 趋势强度因子 ──
-   double ema[1], close[1];
-   strengthFactor = 1.0;
-   if(CopyBuffer(g_emaHandle,0,1,1,ema)>0 &&
-      CopyClose(_Symbol,PERIOD_D1,1,1,close)>0 && ema[0]>0)
-   {
-      emaDeviation = MathAbs((close[0]-ema[0])/ema[0]) * 100;
-      strengthFactor = 0.8 + MathMin(emaDeviation / 2.5, 1.0);  // 范围 0.8~1.8
-   }
-   // ── 4. 排序: 距离最远(亏损最深)的逆势单优先 ──
-   for(int i=0; i<counterCnt-1; i++)
-      for(int j=i+1; j<counterCnt; j++)
-         if(counter[j].dist < counter[i].dist)
-         {
-            CounterPos tmp = counter[i];
-            counter[i] = counter[j];
-            counter[j] = tmp;
-         }
-   // ── 5. 逐个消化逆势亏损单 ──
-   availableProfit = trendProfit * g_hedgeRatio * strengthFactor;
-   if(availableProfit < g_hedgeMinProfit) return;
-   bool hedged = false;
-   for(int i=0; i<counterCnt && availableProfit>=g_hedgeMinProfit; i++)
-   {
-      if(counter[i].ticket == 0) continue;
-      if(!PositionSelectByTicket(counter[i].ticket)) continue;
-      currentLoss  = -(PositionGetDouble(POSITION_PROFIT) +
-                              PositionGetDouble(POSITION_SWAP));
-      if(currentLoss <= 0) continue;  // 已回本, 跳过
-      currentLots = PositionGetDouble(POSITION_VOLUME);
-      perLotLoss  = currentLoss / currentLots;
-      if(perLotLoss <= 0) continue;
-      hedgeLots = availableProfit / perLotLoss;
-      hedgeLots = MathMin(hedgeLots, currentLots);
-      step = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
-      if(step <= 0) step = InpHedgeMinLots;
-      hedgeLots = MathFloor(hedgeLots / step) * step;
-      hedgeLots = NormalizeDouble(hedgeLots, 2);
-      if(hedgeLots < InpHedgeMinLots) continue;
-      hedgeAmount = hedgeLots * perLotLoss;
-      if(DoPartialClose(counter[i].ticket, hedgeLots, InpSlippage))
-      {
-         hedged = true;
-         availableProfit -= hedgeAmount;
-         Print("════════════════════════════════");
-         Print("[D1趋势对冲] 顺势盈利: $",DoubleToString(trendProfit,2),
-               " 趋势强度: ",DoubleToString(strengthFactor,2),
-               " 可用: $",DoubleToString(availableProfit+hedgeAmount,2));
-         Print("  逆势单: #",counter[i].ticket," ",counter[i].isBuy?"BUY":"SELL",
-               " 魔术码:",counter[i].magic,
-               " 入场:",DoubleToString(counter[i].entry,digits),
-               " 亏损: $",DoubleToString(currentLoss,2),
-               " 距离: ",DoubleToString(counter[i].dist,1),"点");
-         Print("  部分平仓: ",DoubleToString(hedgeLots,2),"/",
-               DoubleToString(currentLots,2),"手 消化≈$",
-               DoubleToString(hedgeAmount,2),
-               " 剩余可用: $",DoubleToString(availableProfit,2));
-         Print("════════════════════════════════");
-      }
-   }
-   // ── 6. 更新面板状态标记 ──
-   if(hedged)
-   {
-      remLoss=0; remCnt=0; lastMagic=0;
-      for(int i=PositionsTotal()-1;i>=0;i--)
-      {
-         if(!m_pos.SelectByIndex(i)) continue;
-         if(m_pos.Symbol()!=_Symbol) continue;
-         bool isBuy=(m_pos.PositionType()==POSITION_TYPE_BUY);
-         if((g_trend==1&&!isBuy)||(g_trend==-1&&isBuy))
-         {
-            l=-(m_pos.Profit()+m_pos.Swap());
-            if(l<=0) continue;
-            remLoss+=l; remCnt++; lastMagic=(int)m_pos.Magic();
-         }
-      }
-      g_hedgeOldMagic = (remCnt>0) ? lastMagic : 0;
-      // g_hedgeOldTrend 已在函数入口随 g_trend 实时设置
-   }
+   return dd;
 }
 //+------------------------------------------------------------------+
 //| 网格加仓检测                                                       |
 //+------------------------------------------------------------------+
 void CheckGrid()
 {
-   double bid,ask,pt;
+   double bid;
+   double ask;
+   double pt;
    int counterInt;
 
    if(g_trend==0) return;
@@ -1724,15 +1574,26 @@ void CheckGrid()
    g_gridLastDepth = rawInterval;
    g_gridCounterInterval = counterInt;
    int withInt = g_gridWithTrend;
+   // ── 浮亏熔断: 同方向浮亏超阈值 → 暂停逆势加仓 ──
+   bool  ddBlockBuy  = false;
+   bool  ddBlockSell = false;
+   double buyDD  = GetDirDrawdown(POSITION_TYPE_BUY);
+   double sellDD = GetDirDrawdown(POSITION_TYPE_SELL);
+   if(g_maxDrawdownUSD > 0 && buyDD >= g_maxDrawdownUSD)  ddBlockBuy  = true;
+   if(g_maxDrawdownUSD > 0 && sellDD >= g_maxDrawdownUSD) ddBlockSell = true;
    // ── 多头网格: 逆势=价格下跌, 顺势=价格上涨 ──
    if(g_trend==1 && g_allow_buy && g_allow_grid_buy && g_gridLastBuy>0)
    {
-      // 逆势加仓
-      if(counterInt > 0 && bid <= g_gridLastBuy - counterInt * pt)
+      // 逆势加仓 (浮亏熔断时跳过)
+      if(!ddBlockBuy && counterInt > 0 && bid <= g_gridLastBuy - counterInt * pt)
       {
          Print("[网格加仓-逆势] 多头 间隔=",IntegerToString(counterInt),"点 价格=",DoubleToString(bid,(int)SymbolInfoInteger(_Symbol,SYMBOL_DIGITS)));
          DoBuy();
          return;
+      }
+      if(ddBlockBuy && counterInt > 0 && bid <= g_gridLastBuy - counterInt * pt)
+      {
+         Print("[浮亏熔断] 多头浮亏$", DoubleToString(buyDD,1), " ≥ 阈值$", DoubleToString(g_maxDrawdownUSD,1), ", 暂停逆势加仓");
       }
       // 顺势加仓: 仅当7周期MA全部同向
       if(withInt > 0 && AllGridSameDir(g_trend) && ask >= g_gridLastBuy + withInt * pt)
@@ -1745,12 +1606,16 @@ void CheckGrid()
    // ── 空头网格: 逆势=价格上涨, 顺势=价格下跌 ──
    if(g_trend==-1 && g_allow_sell && g_allow_grid_sell && g_gridLastSell>0)
    {
-      // 逆势加仓
-      if(counterInt > 0 && ask >= g_gridLastSell + counterInt * pt)
+      // 逆势加仓 (浮亏熔断时跳过)
+      if(!ddBlockSell && counterInt > 0 && ask >= g_gridLastSell + counterInt * pt)
       {
          Print("[网格加仓-逆势] 空头 间隔=",IntegerToString(counterInt),"点 价格=",DoubleToString(ask,(int)SymbolInfoInteger(_Symbol,SYMBOL_DIGITS)));
          DoSell();
          return;
+      }
+      if(ddBlockSell && counterInt > 0 && ask >= g_gridLastSell + counterInt * pt)
+      {
+         Print("[浮亏熔断] 空头浮亏$", DoubleToString(sellDD,1), " ≥ 阈值$", DoubleToString(g_maxDrawdownUSD,1), ", 暂停逆势加仓");
       }
       // 顺势加仓: 仅当7周期MA全部同向
       if(withInt > 0 && AllGridSameDir(g_trend) && bid <= g_gridLastSell - withInt * pt)
@@ -1785,8 +1650,13 @@ void CheckEntry()
 //+------------------------------------------------------------------+
 void HandlePanelButtonClick(const string sparam)
 {
-   double lots,pct,t,targetLots;
-   string dirDesc,k,msg;
+   double lots;
+   double pct;
+   double t;
+   double targetLots;
+   string dirDesc;
+   string k;
+   string msg;
 
    EAStats stats;
    k = StringSubstr(sparam, StringLen(g_prefix));
@@ -1892,7 +1762,7 @@ void HandlePanelButtonClick(const string sparam)
       if(!ShowConfirmDialog("确定要平掉全部多单吗？\n当前: "+
          IntegerToString(stats.buy_cnt)+" 单  "+DoubleToString(stats.buy_lot,2)+" 手"))
          return;
-      CloseDir(POSITION_TYPE_BUY);
+      CpStartAsync(POSITION_TYPE_BUY, 1, 0);
       RefreshPanel(true);
       return;
    }
@@ -1903,7 +1773,7 @@ void HandlePanelButtonClick(const string sparam)
       if(!ShowConfirmDialog("确定要平掉全部空单吗？\n当前: "+
          IntegerToString(stats.sell_cnt)+" 单  "+DoubleToString(stats.sell_lot,2)+" 手"))
          return;
-      CloseDir(POSITION_TYPE_SELL);
+      CpStartAsync(POSITION_TYPE_SELL, 1, 0);
       RefreshPanel(true);
       return;
    }
@@ -2165,32 +2035,13 @@ void HandlePanelButtonClick(const string sparam)
       RefreshPanel(true);
       return;
    }
-   // ── 切换阶段 ──
-   if(k == "btn_switch_phase")
-   {
-      ResetPanelButtonState(sparam);
-      int newPhase = (g_magicPhase == 1) ? 2 : 1;
-      int newMagic = (newPhase == 1) ? 111111 : 222222;
-      if(!ShowConfirmDialog("确定要切换阶段吗？\n"
-         "当前: 阶段"+IntegerToString(g_magicPhase)+" (魔术码"+IntegerToString(g_currentMagic)+")\n"
-         "切换到: 阶段"+IntegerToString(newPhase)+" (魔术码"+IntegerToString(newMagic)+")\n\n"
-         "注意: 这不会影响已有持仓，只影响后续新开单。"))
-         return;
-      g_magicPhase = newPhase;
-      g_currentMagic = newMagic;
-      g_gridLayer = 0;
-      g_lotBase = InpLotSize;
-      m_trade.SetExpertMagicNumber(g_currentMagic);
-      Print("[面板] 已切换到阶段", newPhase, " 魔术码:", newMagic);
-      RefreshPanel(true);
-      return;
-   }
 }
 //+==================================================================+
 //| 生命周期                                                          |
 //+==================================================================+
 int OnInit()
 {
+   g_currentMagic = InpMagicNumber;  // 固定使用输入参数的魔术码, 不再自动切换
    m_trade.SetExpertMagicNumber(g_currentMagic);
    m_trade.SetDeviationInPoints(InpSlippage);
    m_trade.SetTypeFillingBySymbol(_Symbol);
@@ -2207,16 +2058,19 @@ int OnInit()
    {
       g_lot=InpLotSize; g_tp=InpTakeProfit; g_sl=InpStopLoss;
       g_gridWithTrend  = InpGridWithTrend;
-      g_hedgeRatio     = InpHedgeRatio;
-      g_hedgeMinProfit = InpHedgeMinProfit;
+      g_maxLayers      = InpMaxGridLayers;
+      g_lotIncrement   = InpLotIncrement;
+      g_maxTotalLots   = InpMaxTotalLots;
+      g_maxDrawdownUSD = InpMaxDrawdownUSD;
+      g_gridExpFactor  = InpGridExpFactor;
       SaveParamsToGV();
    }
    g_px=InpPanelX; g_py=InpPanelY; ClampPanelPosition(g_px,g_py);
    EventSetTimer(1);  // 1秒Timer
    ChartSetInteger(0,CHART_EVENT_MOUSE_MOVE,true);
    RefreshPanel(true); ChartRedraw(0);
-   Print("[均线策略网格系统 v2.52] D1 EMA",InpEMA_Period," + MA10 7周期网格启动 ",_Symbol,
-         " 对冲方向随D1趋势实时翻转 / 手动平仓只平本品种");
+   Print("[均线策略网格系统 v2.53] D1 EMA",InpEMA_Period," + MA10 7周期网格启动 ",_Symbol,
+         " 四重风险防护");
    return INIT_SUCCEEDED;
 }
 void OnDeinit(const int reason)
@@ -2227,69 +2081,23 @@ void OnDeinit(const int reason)
    for(int i=0;i<7;i++)
       if(g_maHandle[i]!=INVALID_HANDLE) IndicatorRelease(g_maHandle[i]);
    EventKillTimer();
-   Print("[v2.52 已停止]");
+   Print("[v2.53 已停止]");
 }
 void OnTick()
 {
-   double oldCounterLoss;
-   double newCounterLoss;
-   int    oldCounterCnt;
-   int    newCounterCnt;
-   double oldTrendProfit;
-   double newTrendProfit;
    g_trend=DetectTrend();
 
-   // 趋势转变检测
+   // 趋势转变提示
    if(g_lastTrend!=0 && g_trend!=0 && g_trend!=g_lastTrend)
    {
-      // 趋势转变: 切换魔术码阶段
-      g_magicPhase++;
-      if(g_magicPhase>9) g_magicPhase=1; // 循环 1-9
-      g_currentMagic = g_magicPhase * 111111; // 111111, 222222, ..., 999999
-
-      // 重置手数基数和层数
-      g_lotBase = InpLotSize; // 从input参数开始
-      g_gridLayer = 0;
-
-      // ── 统计新旧逆势单 ──
-      oldCounterLoss=0; newCounterLoss=0;
-      oldCounterCnt=0;  newCounterCnt=0;
-      oldTrendProfit=0; newTrendProfit=0;
-      for(int i=PositionsTotal()-1;i>=0;i--)
-      {
-         if(!m_pos.SelectByIndex(i)) continue;
-         if(m_pos.Symbol()!=_Symbol) continue;
-         bool isBuy=(m_pos.PositionType()==POSITION_TYPE_BUY);
-         double p = m_pos.Profit()+m_pos.Swap();
-
-         // 旧趋势方向(刚变成逆势): g_lastTrend方向 → 需要被对冲
-         bool wasTrend = (g_lastTrend==1 && isBuy) || (g_lastTrend==-1 && !isBuy);
-         // 新趋势方向(刚变成顺势): g_trend方向 → 为对冲提供资金
-         bool isTrend  = (g_trend==1 && isBuy) || (g_trend==-1 && !isBuy);
-
-         if(wasTrend)  { if(p<0){ oldCounterLoss-=p; oldCounterCnt++; } else oldTrendProfit+=p; }
-         if(isTrend)   { newTrendProfit+=p;                 if(p>0){} else{ newCounterLoss-=p; newCounterCnt++; }  } // 新方向也有亏损的话记上
-      }
-
       Print("════════════════════════════════");
-      Print("[趋势翻转] ",g_lastTrend==1?"多头 → 空头":"空头 → 多头",
-            "  新魔术码:",g_currentMagic);
-      Print("  对冲方向切换: 旧趋势",g_lastTrend==1?"BUY":"SELL",
-            "单元(",oldCounterCnt,"单 浮亏$",DoubleToString(oldCounterLoss,1),
-            ") → 现在消化");
-      Print("  新趋势",g_trend==1?"BUY":"SELL",
-            "单元(浮盈$",DoubleToString(newTrendProfit,1),
-            ") → 为对冲提供资金");
-      Print("  对冲方向已随D1趋势实时翻转!");
+      Print("[趋势翻转] ",g_lastTrend==1?"多头 → 空头":"空头 → 多头");
       Print("════════════════════════════════");
-
-      // 对冲方向已切换, HedgeOldPositions会立即用新趋势消化旧方向逆势单
    }
    g_lastTrend = g_trend;
 
    CheckEntry();
    CheckTPSL();
-   HedgeOldPositions();  // D1趋势导向对冲: 顺势盈利→平逆势亏损
    // 某方向全部平仓 → 重置网格参考价, 等趋势再开首单
    if(CountDir(POSITION_TYPE_BUY)==0)  g_gridLastBuy=0;
    if(CountDir(POSITION_TYPE_SELL)==0) g_gridLastSell=0;
