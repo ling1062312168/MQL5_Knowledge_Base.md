@@ -35,7 +35,7 @@
 #define LBL_W           56        // 左栏标签列宽
 #define EDT_W           56        // 左栏输入框宽
 // 左栏卡片高度
-#define CH_STATUS       274       // 状态卡(10行数据)
+#define CH_STATUS       330       // 状态卡(12行数据: 10基础+2触发价)
 #define CH_MANUAL       120       // 手动交易卡(2行输入+1行按钮)
 #define CH_GRID         253       // 网格参数卡(5行输入+填充对齐)
 // 左栏总高
@@ -44,7 +44,7 @@
 // 右栏卡片高度
 #define CH_OVERVIEW     95        // 仓位概览卡
 #define CH_ACT          222       // 平仓管理卡(多/空)
-#define CH_ACCOUNT      100       // 账户信息卡(3行)
+#define CH_ACCOUNT      154       // 账户信息卡(3行) - 与左栏网格参数卡底部对齐(总高723)
 #define RIGHT_COL_H     (CH_OVERVIEW + SG + CH_ACT + SG + CH_ACT + SG + CH_ACCOUNT)
 
 #define TOTAL_H   (HDR_H + SG + PD + (LEFT_COL_H > RIGHT_COL_H ? LEFT_COL_H : RIGHT_COL_H) + PD)
@@ -83,6 +83,9 @@ input double      InpGridExpFactorSell = 1.5;      // 空单逆势加仓指数�
 input group "== 面板位置 =="
 input int         InpPanelX         = 10;            // 面板X(像素)
 input int         InpPanelY         = 10;            // 面板Y(像素)
+input group "== 风险计价模式 =="
+input bool   InpRiskMode     = true;     // 启用美金风险模式(true=参数按USD/手解释,false=按point)
+
 input group "== 颜色 =="
 input color       InpColorBuy       = C'66,153,225'; // 买入色
 input color       InpColorSell      = C'239,100,97'; // 卖出色
@@ -154,8 +157,6 @@ double         g_lot_base_buy   = 0.01; // 自动网格多单初始手数
 double         g_lot_base_sell  = 0.01; // 自动网格空单初始手数
 int            g_tp            = 200;
 int            g_sl            = 200;
-int            g_tpFloorBuy    = 100;  // 多单跑马灯TP下限(point, 防止加仓后TP收紧到0)
-int            g_tpFloorSell   = 100;  // 空单跑马灯TP下限(point, 防止加仓后TP收紧到0)
 int            g_trend         = 0;
 datetime       g_lastRefresh   = 0;
 bool           g_allow_buy     = true;
@@ -1014,6 +1015,12 @@ void DrawPanel(EAStats &s)
    double clipL_or;
    double clipS_fx;
    double clipS_or;
+   // ── 触发价调试 ──
+   double bidD; double askD; double ptD;
+   double tBuyCT, tBuyWT, tSellCT, tSellWT, tTpBuy, tTpSell;
+   double dBuyCT, dBuyWT, dSellCT, dSellWT, dTpBuy, dTpSell;  // 距离当前价还有多少
+   string trigStr;
+   int    digitsD;
    // ====== 变量赋值 & 执行语句 ======
    pClr = cWhite;
    X = g_px;
@@ -1034,7 +1041,71 @@ void DrawPanel(EAStats &s)
    cWarn  = C'250,180,80';
    cBad   = C'240,105,110';
 
-   sub = _Symbol+"  |  "+EnumToString(InpEMA_TF)+" EMA"+IntegerToString(InpEMA_Period);
+   double pvDisp = PointValuePerLot();
+   string pvStr  = (pvDisp > 0) ? "  |  1pt="+DoubleToString(pvDisp,4)+"$/手" : "";
+   sub = _Symbol+"  |  "+EnumToString(InpEMA_TF)+" EMA"+IntegerToString(InpEMA_Period)
+       + pvStr + (InpRiskMode ? "  |  USD模式" : "  |  PT模式");
+
+   // ── 触发价调试: 实时计算下一逆势/顺势加仓价和跑马灯TP价 ──
+   bidD = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   askD = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   ptD  = Pt();
+   digitsD = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
+   // 默认值(无意义)用 0 表示
+   tBuyCT=tBuyWT=tSellCT=tSellWT=tTpBuy=tTpSell=0;
+   dBuyCT=dBuyWT=dSellCT=dSellWT=dTpBuy=dTpSell=0;
+   if(g_trend==1)  // 多头趋势
+   {
+      if(g_gridCounterInterval>0 && g_gridLastBuy>0)
+      {
+         tBuyCT = g_gridLastBuy - PToPrice(g_gridCounterInterval);
+         dBuyCT = (bidD > tBuyCT) ? (bidD - tBuyCT) : 0;
+      }
+      if(g_gridWithTrend>0 && g_gridLastBuy>0)
+      {
+         tBuyWT = g_gridLastBuy + PToPrice(g_gridWithTrend);
+         dBuyWT = (askD < tBuyWT) ? (tBuyWT - askD) : 0;
+      }
+   }
+   else if(g_trend==-1)
+   {
+      if(g_gridCounterInterval>0 && g_gridLastSell>0)
+      {
+         tSellCT = g_gridLastSell + PToPrice(g_gridCounterInterval);
+         dSellCT = (askD < tSellCT) ? (tSellCT - askD) : 0;
+      }
+      if(g_gridWithTrend>0 && g_gridLastSell>0)
+      {
+         tSellWT = g_gridLastSell - PToPrice(g_gridWithTrend);
+         dSellWT = (bidD > tSellWT) ? (bidD - tSellWT) : 0;
+      }
+   }
+   // 跑马灯TP价 (按当前持仓方向实际计算均价)
+   {
+      double bW=0,bV=0,sW=0,sV=0; ulong tkt2; double v2;
+      for(int i2=(int)PositionsTotal()-1; i2>=0; i2--)
+      {
+         tkt2 = PositionGetTicket(i2);
+         if(tkt2==0 || !PositionSelectByTicket(tkt2)) continue;
+         if(PositionGetString(POSITION_SYMBOL)!=_Symbol) continue;
+         if(PositionGetInteger(POSITION_MAGIC)!=g_currentMagic) continue;
+         v2 = PositionGetDouble(POSITION_VOLUME);
+         if(PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY)
+         { bW += PositionGetDouble(POSITION_PRICE_OPEN)*v2; bV+=v2; }
+         else
+         { sW += PositionGetDouble(POSITION_PRICE_OPEN)*v2; sV+=v2; }
+      }
+      if(bV>0)
+      {
+         tTpBuy = bW/bV + PToPrice(InpTakeProfit>0?InpTakeProfit:200);
+         dTpBuy = (tTpBuy > bidD) ? (tTpBuy - bidD) : 0;
+      }
+      if(sV>0)
+      {
+         tTpSell = sW/sV - PToPrice(InpTakeProfit>0?InpTakeProfit:200);
+         dTpSell = (askD > tTpSell) ? (askD - tTpSell) : 0;
+      }
+   }
 
    if(g_trend==1)      { tTxt="▲ 多头"; tClr=InpColorBuy; }
    else if(g_trend==-1){ tTxt="▼ 空头"; tClr=InpColorSell; }
@@ -1105,14 +1176,10 @@ void DrawPanel(EAStats &s)
    ELbl(g_prefix+"r6_lbl","加仓进度", LX+CD_PD,   ry+LH*5+1, F(10), cMute);
    ELbl(g_prefix+"r6_val", layerStr,    LX+CD_PD+LW*4/10,ry+LH*5+1, F(10), cOk);
 
-   // 跑马灯动态止盈 (分段查表基础 + 深度放宽, 按当前趋势方向选多/空下限)
+   // 跑马灯动态止盈
    cDepth = GetCounterDepth(g_trend);
-   dynTP  = CalcDynTPBase(g_gridLayer) + cDepth*25;
-   {
-      int flr = (g_trend==-1) ? g_tpFloorSell : g_tpFloorBuy;  // 空头用空下限, 其余(多/无)用多下限
-      if(dynTP<flr) dynTP=flr;
-      if(dynTP>500) dynTP=500;
-   }
+   dynTP  = InpTakeProfit - g_gridLayer*20 + cDepth*25;
+   if(dynTP<50) dynTP=50; if(dynTP>400) dynTP=400;
    tpStr = "跑马灯 "+IntegerToString(dynTP)+"点 (深度"+IntegerToString(cDepth)+")";
    if(g_tp<=0) tpStr = "止盈已关闭";
    tpClr = (g_tp>0&&g_gridLayer>0) ? cOk : cMute;
@@ -1133,6 +1200,38 @@ void DrawPanel(EAStats &s)
    // 锁仓状态 (只读)
    ELbl(g_prefix+"r10_lbl","锁仓状态", LX+CD_PD,   ry+LH*9+1, F(10), cMute);
    ELbl(g_prefix+"r10_val", g_locked?"已锁仓":"正常", LX+CD_PD+LW*4/10,ry+LH*9+1, F(10), g_locked?cBad:cOk);
+
+   // ── 触发价调试行 1: 逆势/顺势加仓价 ──
+   if(g_trend==1 && g_gridLastBuy>0)
+   {
+      string ctBs = (tBuyCT>0) ? ("逆势 @"+DoubleToString(tBuyCT,digitsD)+" 剩"+DoubleToString(dBuyCT,digitsD)) : "逆势 -";
+      string wtBs = (tBuyWT>0) ? ("顺势 @"+DoubleToString(tBuyWT,digitsD)+" 剩"+DoubleToString(dBuyWT,digitsD)) : "顺势 -";
+      trigStr = ctBs + " | " + wtBs;
+   }
+   else if(g_trend==-1 && g_gridLastSell>0)
+   {
+      string ctSs = (tSellCT>0) ? ("逆势 @"+DoubleToString(tSellCT,digitsD)+" 剩"+DoubleToString(dSellCT,digitsD)) : "逆势 -";
+      string wtSs = (tSellWT>0) ? ("顺势 @"+DoubleToString(tSellWT,digitsD)+" 剩"+DoubleToString(dSellWT,digitsD)) : "顺势 -";
+      trigStr = ctSs + " | " + wtSs;
+   }
+   else if(g_trend==0)
+      trigStr = "无趋势信号";
+   else
+      trigStr = "等待首单";
+   ELbl(g_prefix+"r11_lbl","加仓触发价", LX+CD_PD,   ry+LH*10+1, F(9), cMute);
+   ELbl(g_prefix+"r11_val", trigStr,      LX+CD_PD+LW*4/10,ry+LH*10+1, F(8), cWarn);
+
+   // ── 触发价调试行 2: 跑马灯TP价 ──
+   {
+      string tpb = (tTpBuy>0)  ? ("多TP @"+DoubleToString(tTpBuy,digitsD)+" 剩"+DoubleToString(dTpBuy,digitsD)) : "";
+      string tps = (tTpSell>0) ? ("空TP @"+DoubleToString(tTpSell,digitsD)+" 剩"+DoubleToString(dTpSell,digitsD)) : "";
+      string tpLine = tpb;
+      if(StringLen(tpb)>0 && StringLen(tps)>0) tpLine = tpb + " | " + tps;
+      else if(StringLen(tps)>0) tpLine = tps;
+      else tpLine = "无持仓(未计算)";
+      ELbl(g_prefix+"r12_lbl","跑马灯TP价", LX+CD_PD,   ry+LH*11+1, F(9), cMute);
+      ELbl(g_prefix+"r12_val", tpLine,      LX+CD_PD+LW*4/10,ry+LH*11+1, F(8), cOk);
+   }
 
     // 卡片2: 手动交易 (左栏, 在状态卡下方)
     cy += CH_STATUS + SG;
@@ -1201,12 +1300,6 @@ void DrawPanel(EAStats &s)
     ELbl(g_prefix+"e10_l1","多单指数倍间距",LX+CD_PD+2+EDT_W+2,  ey+LH*4+2,F(10), cMute);
     EEdt(g_prefix+"e10_expS", DoubleToString(g_gridExpFactorSell,2),LX+CD_PD+LW/2+2,ey+LH*4,EDT_W,EH);
     ELbl(g_prefix+"e10_l2","空单指数倍间距",LX+CD_PD+LW/2+2+EDT_W+2,ey+LH*4+2,F(10), cMute);
-
-    // 第6行: [____]多单TP下限    [____]空单TP下限 (跑马灯止盈下限, 防止加仓后TP收紧到0)
-    EEdt(g_prefix+"e11_tpFloorB", IntegerToString(g_tpFloorBuy), LX+CD_PD+2,ey+LH*5,EDT_W,EH);
-    ELbl(g_prefix+"e11_l1","多单TP下限",LX+CD_PD+2+EDT_W+2,    ey+LH*5+2,F(10), cMute);
-    EEdt(g_prefix+"e11_tpFloorS", IntegerToString(g_tpFloorSell),LX+CD_PD+LW/2+2,ey+LH*5,EDT_W,EH);
-    ELbl(g_prefix+"e11_l2","空单TP下限",LX+CD_PD+LW/2+2+EDT_W+2,ey+LH*5+2,F(10), cMute);
 
     //      右栏: 仓位概览 + 多单平仓 + 空单平仓(对称双卡)
    rx = RX;
@@ -1428,8 +1521,6 @@ void SaveParamsToGV()
    GlobalVariableSet(g_prefix+"maxLotsS",   g_maxTotalLotsSell);
    GlobalVariableSet(g_prefix+"expFactorB", g_gridExpFactorBuy);
    GlobalVariableSet(g_prefix+"expFactorS", g_gridExpFactorSell);
-   GlobalVariableSet(g_prefix+"tpFloorB",  (double)g_tpFloorBuy);
-   GlobalVariableSet(g_prefix+"tpFloorS",  (double)g_tpFloorSell);
 }
 bool LoadParamsFromGV()
 {
@@ -1457,8 +1548,6 @@ bool LoadParamsFromGV()
    if(GlobalVariableCheck(g_prefix+"maxLotsS"))   g_maxTotalLotsSell = GlobalVariableGet(g_prefix+"maxLotsS");
    if(GlobalVariableCheck(g_prefix+"expFactorB")) g_gridExpFactorBuy  = GlobalVariableGet(g_prefix+"expFactorB");
    if(GlobalVariableCheck(g_prefix+"expFactorS")) g_gridExpFactorSell = GlobalVariableGet(g_prefix+"expFactorS");
-   if(GlobalVariableCheck(g_prefix+"tpFloorB"))  g_tpFloorBuy  = (int)GlobalVariableGet(g_prefix+"tpFloorB");
-   if(GlobalVariableCheck(g_prefix+"tpFloorS"))  g_tpFloorSell = (int)GlobalVariableGet(g_prefix+"tpFloorS");
    return true;
 }
 //| 读取输入框                                                        |
@@ -1537,16 +1626,6 @@ void ReadEdits()
    {
       t=ObjectGetString(0,g_prefix+"e10_expS",OBJPROP_TEXT);
       v=StringToDouble(t); if(v>=1.0) g_gridExpFactorSell=v;
-   }
-   if(ObjectFind(0,g_prefix+"e11_tpFloorB")>=0)
-   {
-      t=ObjectGetString(0,g_prefix+"e11_tpFloorB",OBJPROP_TEXT);
-      v=(double)StringToInteger(t); if(v>=10) g_tpFloorBuy=(int)v;
-   }
-   if(ObjectFind(0,g_prefix+"e11_tpFloorS")>=0)
-   {
-      t=ObjectGetString(0,g_prefix+"e11_tpFloorS",OBJPROP_TEXT);
-      v=(double)StringToInteger(t); if(v>=10) g_tpFloorSell=(int)v;
    }
    SaveParamsToGV();
 }
@@ -1653,9 +1732,109 @@ void SyncStateFromPositions()
    if(totalPos == 0) { g_lot_base_buy = g_lot_manual; g_lot_base_sell = g_lot_manual; }
 }
 //+------------------------------------------------------------------+
+//| 订单标签 (区分首单/逆势加仓/顺势加仓/手动单)                      |
+//+------------------------------------------------------------------+
+enum ENUM_ORDER_TAG
+{
+   OT_FIRST   = 0,   // 首单
+   OT_CTREND  = 1,   // 逆势加仓
+   OT_WTREND  = 2,   // 顺势加仓
+   OT_MANUAL  = 3    // 手动单
+};
+//+------------------------------------------------------------------+
+//| 生成订单注释 (格式示例:                                           |
+//|   "首多单0=0.01"  "多单顺势加仓1=0.02"  "多单逆势加仓3=0.07"       |
+//|   "首空单0=0.01"  "空单逆势加仓2=0.05"  "手动空=0.01")             |
+//| limit=31 (MT5 ORDER_PROPERTIES_COMMENT 限制)                      |
+//+------------------------------------------------------------------+
+string BuildOrderComment(ENUM_POSITION_TYPE dir, ENUM_ORDER_TAG tag,
+                         int layerNumber, double lot)
+{
+   string side  = (dir==POSITION_TYPE_BUY) ? "多" : "空";
+   string lotStr= DoubleToString(lot, 2);
+   string tagStr;
+   switch(tag)
+   {
+      case OT_FIRST:   tagStr = "首" + side + "单"  + IntegerToString(layerNumber); break;
+      case OT_CTREND:  tagStr = side + "单逆势加仓"  + IntegerToString(layerNumber); break;
+      case OT_WTREND:  tagStr = side + "单顺势加仓"  + IntegerToString(layerNumber); break;
+      case OT_MANUAL:  tagStr = "手动" + side;                          break;
+   }
+   return tagStr + "=" + lotStr;
+}
+//+------------------------------------------------------------------+
 //| 指标                                                              |
 //+------------------------------------------------------------------+
 double Pt(){ return SymbolInfoDouble(_Symbol,SYMBOL_POINT); }
+//+------------------------------------------------------------------+
+//| 每手每 point 的美金价值 (考虑计价货币汇率)                         |
+//| 优先用经纪商提供的 SYMBOL_TRADE_TICK_VALUE (已含汇率换算)          |
+//| 回退1: 用合约规模估算 (不含汇率, USD计价品种准确, 交叉盘有误差)     |
+//| 回退2: 上述都失败, 缓存上次有效值 (避免后缀品种 tickValue 偶发为 0) |
+//+------------------------------------------------------------------+
+double g_lastValidPointValue = 0;   // 缓存上次有效点值, 防止偶发 0
+double PointValuePerLot()
+{
+   double tickVal  = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
+   double tickSize = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+   double pt       = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+   // 路径1: 经纪商提供的 tickValue (最准, 含汇率)
+   if(tickVal > 0 && tickSize > 0)
+   {
+      double pv = tickVal / tickSize * pt;
+      g_lastValidPointValue = pv;
+      return pv;
+   }
+   // 路径2: 合约规模估算 (USD计价品种准确, 交叉盘有误差)
+   double contract = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_CONTRACT_SIZE);
+   if(contract > 0 && pt > 0)
+   {
+      double pv = contract * pt;
+      if(g_lastValidPointValue == 0)
+         PrintFormat("[点值] %s tickValue 异常(=%.4f), 回退合约规模估算: 1pt=%.4f$/手 (交叉盘可能有汇率误差)",
+                     _Symbol, tickVal, pv);
+      g_lastValidPointValue = pv;
+      return pv;
+   }
+   // 路径3: 全部失败, 用缓存值
+   if(g_lastValidPointValue > 0)
+   {
+      PrintFormat("[点值] %s 元数据异常, 使用缓存值 1pt=%.4f$/手", _Symbol, g_lastValidPointValue);
+      return g_lastValidPointValue;
+   }
+   return 0;
+}
+//+------------------------------------------------------------------+
+//| 把「美元风险/手」换算成「价格距离」                                |
+//+------------------------------------------------------------------+
+double UsdToPrice(double usdPerLot)
+{
+   double pv = PointValuePerLot();
+   if(pv <= 0) return 0;
+   return usdPerLot / pv;
+}
+//+------------------------------------------------------------------+
+//| 统一换算: 把用户输入的参数值转成价格距离                           |
+//| InpRiskMode=true:  val 是 USD/手                                  |
+//| InpRiskMode=false: val 是 point 数 (原行为, 向后兼容)              |
+//+------------------------------------------------------------------+
+double ToPrice(double val)
+{
+   if(InpRiskMode)
+      return UsdToPrice(val);
+   else
+      return val * Pt();
+}
+//+------------------------------------------------------------------+
+//| 把「point 个数」换算成价格距离                                     |
+//| 用于: 网格 counterInt/withInt (CalcCounterTrendInterval 产生的是 point 数)|
+//|      跑马灯 dynTP (InpTakeProfit-layers*20+depth*25 本身就是 point 语义)|
+//| 不受 InpRiskMode 影响, 行为始终稳定 (解决"隔太远"的核心 Bug)        |
+//+------------------------------------------------------------------+
+double PToPrice(int points)
+{
+   return (double)points * Pt();
+}
 // D1 EMA14 (入场信号)
 double GetEMA(int shift=1)
 {
@@ -1813,7 +1992,7 @@ double GetDirTotalLots(ENUM_POSITION_TYPE dir)
 //+------------------------------------------------------------------+
 //| 交易操作                                                          |
 //+------------------------------------------------------------------+
-void DoBuy()
+void DoBuy(ENUM_ORDER_TAG tag=OT_CTREND)
 {
    if(g_locked){ Print("[锁仓] 已冻结, 禁止开多");return; }
    double ask;
@@ -1841,10 +2020,12 @@ void DoBuy()
    lot = nextLot;
    ask=SymbolInfoDouble(_Symbol,SYMBOL_ASK);
    m_trade.SetExpertMagicNumber(g_currentMagic);
-   if(m_trade.Buy(lot,_Symbol,ask,0,0,"EMA多"))
+   string cmnt = BuildOrderComment(POSITION_TYPE_BUY, tag, g_gridLayer, lot);
+   if(m_trade.Buy(lot,_Symbol,ask,0,0,cmnt))
    {
       Print("[开多] ",_Symbol," @ ",ask," 手数:",lot,
             " 层数:",g_gridLayer,
+            " 注释:",cmnt,
             " SL/TP=主动监听");
       g_lastFailTime = 0; // 成功后清除失败标记
       g_gridLastBuy  = ask; // 更新网格参考价
@@ -1853,7 +2034,7 @@ void DoBuy()
    else
       OnOrderFailed(m_trade.ResultRetcodeDescription());
 }
-void DoSell()
+void DoSell(ENUM_ORDER_TAG tag=OT_CTREND)
 {
    if(g_locked){ Print("[锁仓] 已冻结, 禁止开空");return; }
    double bid;
@@ -1882,10 +2063,12 @@ void DoSell()
    lot = nextLot;
    bid=SymbolInfoDouble(_Symbol,SYMBOL_BID);
    m_trade.SetExpertMagicNumber(g_currentMagic);
-   if(m_trade.Sell(lot,_Symbol,bid,0,0,"EMA空"))
+   string cmnt = BuildOrderComment(POSITION_TYPE_SELL, tag, g_gridLayer, lot);
+   if(m_trade.Sell(lot,_Symbol,bid,0,0,cmnt))
    {
       Print("[开空] ",_Symbol," @ ",bid," 手数:",lot,
             " 层数:",g_gridLayer,
+            " 注释:",cmnt,
             " SL/TP=主动监听");
       g_lastFailTime = 0; // 成功后清除失败标记
       g_gridLastSell = bid; // 更新网格参考价
@@ -1905,9 +2088,10 @@ void DoManualBuy()
    double lot = g_lot_manual;
    if(lot < InpLotSize) lot = InpLotSize;
    m_trade.SetExpertMagicNumber(g_manualMagic);
-   if(m_trade.Buy(lot,_Symbol,ask,0,0,"手动多"))
+   string cmntBuy = BuildOrderComment(POSITION_TYPE_BUY, OT_MANUAL, 0, lot);
+   if(m_trade.Buy(lot,_Symbol,ask,0,0,cmntBuy))
       Print("[手动开多] ",_Symbol," @ ",ask," 手数:",lot," 魔术码:",g_manualMagic,
-            " TP=",g_tp," SL=",g_sl," (独立管理)");
+            " TP=",g_tp," SL=",g_sl," 注释:",cmntBuy," (独立管理)");
    else
       OnOrderFailed(m_trade.ResultRetcodeDescription());
    m_trade.SetExpertMagicNumber(g_currentMagic); // 还原自动策略魔术码
@@ -1923,9 +2107,10 @@ void DoManualSell()
    double lot = g_lot_manual;
    if(lot < InpLotSize) lot = InpLotSize;
    m_trade.SetExpertMagicNumber(g_manualMagic);
-   if(m_trade.Sell(lot,_Symbol,bid,0,0,"手动空"))
+   string cmntSell = BuildOrderComment(POSITION_TYPE_SELL, OT_MANUAL, 0, lot);
+   if(m_trade.Sell(lot,_Symbol,bid,0,0,cmntSell))
       Print("[手动开空] ",_Symbol," @ ",bid," 手数:",lot," 魔术码:",g_manualMagic,
-            " TP=",g_tp," SL=",g_sl," (独立管理)");
+            " TP=",g_tp," SL=",g_sl," 注释:",cmntSell," (独立管理)");
    else
       OnOrderFailed(m_trade.ResultRetcodeDescription());
    m_trade.SetExpertMagicNumber(g_currentMagic); // 还原自动策略魔术码
@@ -1949,13 +2134,13 @@ void ManageManualTPSL()
       // 多单: TP=均价+g_tp点, SL=均价-g_sl点
       if(m_pos.PositionType()==POSITION_TYPE_BUY)
       {
-         if(g_tp > 0 && bid >= open + g_tp*pt)
+         if(g_tp > 0 && bid >= open + ToPrice(g_tp))
          {
             Print("[手动单TP-多] 平仓 票号:",m_pos.Ticket()," 盈利:$",DoubleToString(profit,2));
             m_trade.PositionClose(m_pos.Ticket());
             continue;
          }
-         if(g_sl > 0 && bid <= open - g_sl*pt)
+         if(g_sl > 0 && bid <= open - ToPrice(g_sl))
          {
             Print("[手动单SL-多] 平仓 票号:",m_pos.Ticket()," 亏损:$",DoubleToString(profit,2));
             m_trade.PositionClose(m_pos.Ticket());
@@ -1965,13 +2150,13 @@ void ManageManualTPSL()
       // 空单: TP=均价-g_tp点, SL=均价+g_sl点
       if(m_pos.PositionType()==POSITION_TYPE_SELL)
       {
-         if(g_tp > 0 && ask <= open - g_tp*pt)
+         if(g_tp > 0 && ask <= open - ToPrice(g_tp))
          {
             Print("[手动单TP-空] 平仓 票号:",m_pos.Ticket()," 盈利:$",DoubleToString(profit,2));
             m_trade.PositionClose(m_pos.Ticket());
             continue;
          }
-         if(g_sl > 0 && ask >= open + g_sl*pt)
+         if(g_sl > 0 && ask >= open + ToPrice(g_sl))
          {
             Print("[手动单SL-空] 平仓 票号:",m_pos.Ticket()," 亏损:$",DoubleToString(profit,2));
             m_trade.PositionClose(m_pos.Ticket());
@@ -2064,7 +2249,6 @@ void CloseAll()
 //+------------------------------------------------------------------+
 void CheckTPSL()
 {
-   if(g_locked) return;  // 锁仓冻结后跑马灯停止平仓, 等待人工介入
    double pt;
    double bid;
    double ask;
@@ -2083,14 +2267,10 @@ void CheckTPSL()
    // ── 跑马灯篮子止盈 ──
    if(g_tp > 0)
    {
-      // 动态TP: 分段查表基础(0→500,3→450,5→300,7→200,10→100) + 深度*25放宽
-      // 多空下限分开可配(面板), 上限统一500; 防止加仓后TP收紧到0
-      int dynTPBuy  = CalcDynTPBase(layers) + cDepth * 25;
-      if(dynTPBuy  < g_tpFloorBuy)  dynTPBuy  = g_tpFloorBuy;
-      if(dynTPBuy  > 500)           dynTPBuy  = 500;
-      int dynTPSell = CalcDynTPBase(layers) + cDepth * 25;
-      if(dynTPSell < g_tpFloorSell) dynTPSell = g_tpFloorSell;
-      if(dynTPSell > 500)           dynTPSell = 500;
+      // 动态TP: 基础200 - 层数*20 + 逆向深度*25, 最低50, 最高400
+      int dynTP = InpTakeProfit - (layers) * 20 + cDepth * 25;
+      if(dynTP < 50)  dynTP = 50;
+      if(dynTP > 400) dynTP = 400;
       // ── 多单篮子 ──
       buyVol=0;
       buyWeighted=0;
@@ -2103,11 +2283,11 @@ void CheckTPSL()
          v=m_pos.Volume();
          buyVol+=v; buyWeighted+=m_pos.PriceOpen()*v; buyCnt++;
       }
-      if(buyCnt>0 && bid >= buyWeighted/buyVol + dynTPBuy*pt)
+      if(buyCnt>0 && bid >= buyWeighted/buyVol + PToPrice(dynTP))
       {
          Print("════════════════════════════════");
          Print("[跑马灯止盈-多] 均价:",DoubleToString(buyWeighted/buyVol,digits),
-               " 动态TP:",dynTPBuy,"点(下限",g_tpFloorBuy,") 层数:",buyCnt," 深度:",cDepth);
+               " 动态TP:",dynTP,"点 层数:",buyCnt," 深度:",cDepth);
          Print("════════════════════════════════");
          CloseDir(POSITION_TYPE_BUY);
       }
@@ -2123,29 +2303,15 @@ void CheckTPSL()
          v=m_pos.Volume();
          sellVol+=v; sellWeighted+=m_pos.PriceOpen()*v; sellCnt++;
       }
-      if(sellCnt>0 && ask <= sellWeighted/sellVol - dynTPSell*pt)
+      if(sellCnt>0 && ask <= sellWeighted/sellVol - PToPrice(dynTP))
       {
          Print("════════════════════════════════");
          Print("[跑马灯止盈-空] 均价:",DoubleToString(sellWeighted/sellVol,digits),
-               " 动态TP:",dynTPSell,"点(下限",g_tpFloorSell,") 层数:",sellCnt," 深度:",cDepth);
+               " 动态TP:",dynTP,"点 层数:",sellCnt," 深度:",cDepth);
          Print("════════════════════════════════");
          CloseDir(POSITION_TYPE_SELL);
       }
    }
-}
-//+------------------------------------------------------------------+
-//| 分段线性查表: 层数 → 跑马灯基础TP (cDepth=0时的基准值)              |
-//| 精确匹配: L=0→500, L=3→450, L=5→300, L=7→200, L=10→100, L>10→100  |
-//| 分段斜率: 0-3层=-16.67/层, 3-5层=-75/层, 5-7层=-50/层, 7-10层=-33.33/层|
-//+------------------------------------------------------------------+
-int CalcDynTPBase(int layers)
-{
-   if(layers <= 0)  return 500;
-   if(layers <= 3)  return (int)MathRound(500.0 - (50.0/3.0) * layers);
-   if(layers <= 5)  return (int)MathRound(450.0 - 75.0 * (layers - 3));
-   if(layers <= 7)  return (int)MathRound(300.0 - 50.0 * (layers - 5));
-   if(layers <= 10) return (int)MathRound(200.0 - (100.0/3.0) * (layers - 7));
-   return 100;
 }
 //+------------------------------------------------------------------+
 //| 计算同方向浮亏金额 (当前魔术码, 返回正数)                           |
@@ -2195,9 +2361,31 @@ void CheckGrid()
    double pt;
    int counterInt;
 
-   if(g_trend==0) return;
-   if(g_locked) return;  // 锁仓后完全冻结, 不加仓
-   if(g_isAsyncClosing) return;  // 异步平仓期间禁止加仓
+   static datetime logLastTrend=0, logLastLocked=0, logLastAsync=0, logLastRaw1=0, logLastGridOff=0, logLastNoRef=0;
+   if(g_trend==0)
+   {
+      if(TimeCurrent()-logLastTrend >= 60) {
+         logLastTrend = TimeCurrent();
+         Print("[网格加仓] D1 EMA无信号 → 跳过加仓");
+      }
+      return;
+   }
+   if(g_locked)
+   {
+      if(TimeCurrent()-logLastLocked >= 60) {
+         logLastLocked = TimeCurrent();
+         Print("[网格加仓] 已锁仓(g_locked=true) → 停止加仓");
+      }
+      return;
+   }
+   if(g_isAsyncClosing)
+   {
+      if(TimeCurrent()-logLastAsync >= 60) {
+         logLastAsync = TimeCurrent();
+         Print("[网格加仓] 异步平仓进行中 → 暂停加仓");
+      }
+      return;
+   }
    bid = SymbolInfoDouble(_Symbol,SYMBOL_BID);
    ask = SymbolInfoDouble(_Symbol,SYMBOL_ASK);
    pt  = Pt();
@@ -2206,6 +2394,10 @@ void CheckGrid()
    // 全部逆向 → 不加仓
    if(rawInterval == -1)
    {
+      if(TimeCurrent()-logLastRaw1 >= 60) {
+         logLastRaw1 = TimeCurrent();
+         Print("[网格加仓] 7周期MA全部逆向(H4→M1) → 暂停加仓, 等待至少1个周期同向");
+      }
       g_gridCounterInterval = -1;
       return;
    }
@@ -2235,38 +2427,62 @@ void CheckGrid()
    int withInt = g_gridWithTrend;
    // 注: 浮亏锁仓检测已移至 OnTick (CheckLock), 达阈值后 g_locked=true 完全冻结
    // ── 多头网格: 逆势=价格下跌, 顺势=价格上涨 ──
+   if(g_trend==1)
+   {
+      if(TimeCurrent()-logLastGridOff >= 60 && (!g_allow_buy || !g_allow_grid_buy)) {
+         logLastGridOff = TimeCurrent();
+         PrintFormat("[网格加仓] 多头被面板暂停(allow_buy=%s, allow_grid_buy=%s) → 跳过",
+                     g_allow_buy?"true":"false", g_allow_grid_buy?"true":"false");
+      }
+      if(TimeCurrent()-logLastNoRef >= 60 && g_gridLastBuy<=0) {
+         logLastNoRef = TimeCurrent();
+         Print("[网格加仓] 多头首单未开(g_gridLastBuy=0) → 无参考价, 等首单完成后再加仓");
+      }
+   }
    if(g_trend==1 && g_allow_buy && g_allow_grid_buy && g_gridLastBuy>0)
    {
       // 逆势加仓
-      if(counterInt > 0 && bid <= g_gridLastBuy - counterInt * pt)
+      if(counterInt > 0 && bid <= g_gridLastBuy - PToPrice(counterInt))
       {
          Print("[网格加仓-逆势] 多头 间隔=",IntegerToString(counterInt),"点 价格=",DoubleToString(bid,(int)SymbolInfoInteger(_Symbol,SYMBOL_DIGITS)));
-         DoBuy();
+         DoBuy(OT_CTREND);
          return;
       }
       // 顺势加仓: 仅当7周期MA全部同向
-      if(withInt > 0 && AllGridSameDir(g_trend) && ask >= g_gridLastBuy + withInt * pt)
+      if(withInt > 0 && AllGridSameDir(g_trend) && ask >= g_gridLastBuy + PToPrice(withInt))
       {
          Print("[网格加仓-顺势] 多头 7周期全同向 间隔=",IntegerToString(withInt),"点 价格=",DoubleToString(ask,(int)SymbolInfoInteger(_Symbol,SYMBOL_DIGITS)));
-         DoBuy();
+         DoBuy(OT_WTREND);
          return;
       }
    }
    // ── 空头网格: 逆势=价格上涨, 顺势=价格下跌 ──
+   if(g_trend==-1)
+   {
+      if(TimeCurrent()-logLastGridOff >= 60 && (!g_allow_sell || !g_allow_grid_sell)) {
+         logLastGridOff = TimeCurrent();
+         PrintFormat("[网格加仓] 空头被面板暂停(allow_sell=%s, allow_grid_sell=%s) → 跳过",
+                     g_allow_sell?"true":"false", g_allow_grid_sell?"true":"false");
+      }
+      if(TimeCurrent()-logLastNoRef >= 60 && g_gridLastSell<=0) {
+         logLastNoRef = TimeCurrent();
+         Print("[网格加仓] 空头首单未开(g_gridLastSell=0) → 无参考价, 等首单完成后再加仓");
+      }
+   }
    if(g_trend==-1 && g_allow_sell && g_allow_grid_sell && g_gridLastSell>0)
    {
       // 逆势加仓
-      if(counterInt > 0 && ask >= g_gridLastSell + counterInt * pt)
+      if(counterInt > 0 && ask >= g_gridLastSell + PToPrice(counterInt))
       {
          Print("[网格加仓-逆势] 空头 间隔=",IntegerToString(counterInt),"点 价格=",DoubleToString(ask,(int)SymbolInfoInteger(_Symbol,SYMBOL_DIGITS)));
-         DoSell();
+         DoSell(OT_CTREND);
          return;
       }
       // 顺势加仓: 仅当7周期MA全部同向
-      if(withInt > 0 && AllGridSameDir(g_trend) && bid <= g_gridLastSell - withInt * pt)
+      if(withInt > 0 && AllGridSameDir(g_trend) && bid <= g_gridLastSell - PToPrice(withInt))
       {
          Print("[网格加仓-顺势] 空头 7周期全同向 间隔=",withInt,"点 价格=",bid);
-         DoSell();
+         DoSell(OT_WTREND);
          return;
       }
    }
@@ -2282,11 +2498,11 @@ void CheckEntry()
    // 首单: 该方向无持仓时才开
    if(g_trend==1 && CountDir(POSITION_TYPE_BUY)==0)
    {
-      DoBuy(); return;
+      DoBuy(OT_FIRST); return;
    }
    if(g_trend==-1 && CountDir(POSITION_TYPE_SELL)==0)
    {
-      DoSell(); return;
+      DoSell(OT_FIRST); return;
    }
    // 网格加仓
    CheckGrid();
@@ -2700,14 +2916,36 @@ int OnInit()
       g_lockDrawdownUSD= InpLockDrawdownUSD;
       g_gridExpFactorBuy  = InpGridExpFactorBuy;
       g_gridExpFactorSell = InpGridExpFactorSell;
-      g_tpFloorBuy        = 100;
-      g_tpFloorSell       = 100;
       SaveParamsToGV();
    }
    g_px=InpPanelX; g_py=InpPanelY; ClampPanelPosition(g_px,g_py);
    EventSetTimer(1);  // 1秒Timer
    ChartSetInteger(0,CHART_EVENT_MOUSE_MOVE,true);
    RefreshPanel(true); ChartRedraw(0);
+   // ── 品种元数据诊断 (含后缀品种如 XAUUSD.c/.m/.s 自检) ──
+   {
+      int    dg     = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
+      double pt     = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+      double tickSz = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+      double tickVl = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
+      double ctr    = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_CONTRACT_SIZE);
+      double volMin = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+      double volStp = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+      double pv     = PointValuePerLot();
+      string mode   = InpRiskMode ? "USD/手风险模式" : "PT(point)模式";
+      Print("═══════════════════════════════════════════════════════════");
+      PrintFormat("[启动诊断] 品种=%s  模式=%s", _Symbol, mode);
+      PrintFormat("[启动诊断] digits=%d  point=%.5f  tickSize=%.5f  tickValue=%.4f$/tick",
+                  dg, pt, tickSz, tickVl);
+      PrintFormat("[启动诊断] 合约规模=%.2f  volMin=%.2f  volStep=%.3f", ctr, volMin, volStp);
+      PrintFormat("[启动诊断] 点值 1pt=%.4f$/手  → 1USD风险=%.2f point (每手)",
+                  pv, (pv>0 ? 1.0/pv : 0));
+      if(InpRiskMode && pv <= 0)
+         Print("[启动诊断] ⚠️ 点值读取失败! USD模式将失效, 请检查经纪商品种配置或切换 InpRiskMode=false");
+      if(InpRiskMode && pv > 0 && pv < 0.001)
+         PrintFormat("[启动诊断] ⚠️ 点值过小(%.6f), 可能是后缀品种元数据异常, 请核对 tickValue", pv);
+      Print("═══════════════════════════════════════════════════════════");
+   }
    Print("[均线策略网格系统 v2.53] D1 EMA",InpEMA_Period," + MA10 7周期网格启动 ",_Symbol,
          " 四重风险防护");
    return INIT_SUCCEEDED;
