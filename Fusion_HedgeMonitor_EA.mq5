@@ -25,7 +25,7 @@ input bool   UseFloatingProfitHedge = false;    // 浮盈对冲模式
 input string CryptoSymbols = "BTCUSDm,ETHUSDm"; // 加密货币品种列表
 
 // ========== 浮亏监控参数（来自原浮亏监控EA） ==========
-input string SymbolList = "XAUUSD,EURUSD,GBPUSD,AUDUSD,USDCHF,GBPJPY,BTCUSD,NZDCAD";
+input string SymbolList = "XAUUSD,EURUSD,GBPUSD,AUDUSD,USDCHF,GBPJPY,BTCUSD,NZDCAD,AUDCAD,EURGBP";
 input string SymbolSuffix = "";                 // 货币对后缀
 input int    MonitorCheckInterval = 5;          // 浮亏检查间隔（秒）
 input bool   EnableLockPosition = false;        // 开启锁仓功能
@@ -82,7 +82,7 @@ int g_currentScheme = SCHEME_PURPLE_NIGHT;
 // ====================================================================
 // 浮亏监控EA常量
 // ====================================================================
-#define MAX_SYMBOLS 8
+#define MAX_SYMBOLS 10
 #define PFX_MON "Mon_"           // 浮亏监控面板前缀
 #define PFX_HEDGE "Hedge_"       // 对冲引擎面板前缀
 #define PFX_FUSION "Fusion_"     // 融合系统面板前缀
@@ -534,7 +534,7 @@ int ParseSymbolList(string symbolList) {
    g_symbolCount = 0;
    if(StringLen(symbolList) == 0) {
       Print("警告：货币对列表为空，使用默认列表");
-      symbolList = "XAUUSD,EURUSD,GBPUSD,AUDUSD,USDCHF,GBPJPY,BTCUSD,NZDCAD";
+      symbolList = "XAUUSD,EURUSD,GBPUSD,AUDUSD,USDCHF,GBPJPY,BTCUSD,NZDCAD,AUDCAD,EURGBP";
    }
    string symbols[];
    int count = StringSplit(symbolList, ',', symbols);
