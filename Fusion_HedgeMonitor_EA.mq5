@@ -164,6 +164,8 @@ int g_panelX = 20;
 int g_panelY = 50;
 bool g_panelVisible = true;
 int g_hideOffsetX = 0;
+int g_btnHideOrigX = 0;
+int g_btnHideOrigY = 0;
 
 bool g_enableLockPosition = false;
 const string SETTINGS_PREFIX = "FusionEA";
@@ -1577,6 +1579,32 @@ void SwitchButton(string name, int x, int y, int width, int height, string text,
    ObjectSetString(0, name, OBJPROP_TEXT, text);
 }
 
+string GetHideButtonName() {
+   switch(PanelStyle) {
+      case 0: return PFX_FUSION "Orig_BtnHide";
+      case 1: return PFX_FUSION "Info_BtnHide";
+      case 2: return PFX_FUSION "Visual_BtnHide";
+      case 3: return PFX_FUSION "Tab_BtnHide";
+   }
+   return PFX_FUSION "Info_BtnHide";
+}
+
+void SaveHideButtonOriginalPos() {
+   string btnName = GetHideButtonName();
+   if(ObjectFind(0, btnName) >= 0) {
+      g_btnHideOrigX = (int)ObjectGetInteger(0, btnName, OBJPROP_XDISTANCE);
+      g_btnHideOrigY = (int)ObjectGetInteger(0, btnName, OBJPROP_YDISTANCE);
+   }
+}
+
+void RestoreHideButtonPosition() {
+   string btnName = GetHideButtonName();
+   if(ObjectFind(0, btnName) >= 0) {
+      ObjectSetInteger(0, btnName, OBJPROP_XDISTANCE, g_btnHideOrigX);
+      ObjectSetInteger(0, btnName, OBJPROP_YDISTANCE, g_btnHideOrigY);
+   }
+}
+
 void UpdatePanelVisibility() {
    int targetOffset = g_panelVisible ? 0 : -10000;
    int dx = targetOffset - g_hideOffsetX;
@@ -1586,17 +1614,35 @@ void UpdatePanelVisibility() {
          string objName = ObjectName(0, i);
          if(objName == "") continue;
          if(StringFind(objName, PFX_FUSION) == 0) {
-            if(objName == PFX_FUSION "PanelHideButton") continue;
+            if(StringFind(objName, "BtnHide") > 0) continue;
             int ox = (int)ObjectGetInteger(0, objName, OBJPROP_XDISTANCE);
             ObjectSetInteger(0, objName, OBJPROP_XDISTANCE, ox + dx);
          }
          if(StringFind(objName, PFX_MON) == 0) {
-            if(objName == PFX_MON "PanelHideButton") continue;
             int ox = (int)ObjectGetInteger(0, objName, OBJPROP_XDISTANCE);
             ObjectSetInteger(0, objName, OBJPROP_XDISTANCE, ox + dx);
          }
       }
       g_hideOffsetX = targetOffset;
+   }
+
+   if(!g_panelVisible) {
+      string btnName = GetHideButtonName();
+      if(ObjectFind(0, btnName) >= 0) {
+         ObjectSetInteger(0, btnName, OBJPROP_XDISTANCE, 20);
+         ObjectSetInteger(0, btnName, OBJPROP_YDISTANCE, 50);
+         ObjectSetInteger(0, btnName, OBJPROP_XSIZE, 80);
+         ObjectSetInteger(0, btnName, OBJPROP_YSIZE, 22);
+         ObjectSetString(0, btnName, OBJPROP_TEXT, "显示面板");
+      }
+   } else {
+      string btnName = GetHideButtonName();
+      if(ObjectFind(0, btnName) >= 0) {
+         RestoreHideButtonPosition();
+         ObjectSetInteger(0, btnName, OBJPROP_XSIZE, 70);
+         ObjectSetInteger(0, btnName, OBJPROP_YSIZE, 20);
+         ObjectSetString(0, btnName, OBJPROP_TEXT, "隐藏面板");
+      }
    }
    ChartRedraw();
 }
@@ -2005,7 +2051,15 @@ void CreateActivePanel() {
       case 2: CreatePanel_VisualEnhanced(); break;
       case 3: CreatePanel_TabLayout(); break;
    }
-   // 同时创建浮亏监控面板
+   SaveHideButtonOriginalPos();
+   if(!g_panelVisible) {
+      string btnName = GetHideButtonName();
+      if(ObjectFind(0, btnName) >= 0) {
+         ObjectSetInteger(0, btnName, OBJPROP_XDISTANCE, 20);
+         ObjectSetInteger(0, btnName, OBJPROP_YDISTANCE, 50);
+         ObjectSetString(0, btnName, OBJPROP_TEXT, "显示面板");
+      }
+   }
    if(g_enableLossMonitor)
       CreateMonitorPanel();
 }
