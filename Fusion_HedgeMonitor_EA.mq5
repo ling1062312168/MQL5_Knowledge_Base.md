@@ -1736,6 +1736,7 @@ void CreatePanel_InfoDense() {
    int w = 600, h = 350;
    int px = PanelX_Init, py = PanelY_Init;
 
+   CreateCell(pfx + "Border", px - 3, py - 3, w + 6, h + 6, GetBorderColor(), CORNER_LEFT_UPPER, true);
    CreateCell(pfx + "Bg", px, py, w, h, GetPanelBgColor(), CORNER_LEFT_UPPER, false);
    CreateLabel(pfx + "Title", "🛡️ 融合交易系统 v1.0", px + 10, py + 10, GetTitleColor(), 11);
 
@@ -1836,6 +1837,7 @@ void CreatePanel_VisualEnhanced() {
    int w = 550, h = 280;
    int px = PanelX_Init, py = PanelY_Init;
 
+   CreateCell(pfx + "Border", px - 3, py - 3, w + 6, h + 6, GetBorderColor(), CORNER_LEFT_UPPER, true);
    CreateCell(pfx + "Bg", px, py, w, h, GetPanelBgColor(), CORNER_LEFT_UPPER, false);
    CreateCell(pfx + "TitleBar", px, py, w, 25, GetHeaderBgColor(), CORNER_LEFT_UPPER, false);
    CreateLabel(pfx + "Title", "🌙 融合交易系统", px + 10, py + 8, GetTitleColor(), 11);
@@ -1958,6 +1960,7 @@ void CreatePanel_TabLayout() {
    int w = 650, h = 320;
    int px = PanelX_Init, py = PanelY_Init;
 
+   CreateCell(pfx + "Border", px - 3, py - 3, w + 6, h + 6, GetBorderColor(), CORNER_LEFT_UPPER, true);
    CreateCell(pfx + "Bg", px, py, w, h, GetPanelBgColor(), CORNER_LEFT_UPPER, false);
    CreateCell(pfx + "TitleBar", px, py, w, 25, GetHeaderBgColor(), CORNER_LEFT_UPPER, false);
    CreateLabel(pfx + "Title", "🛡️ 融合交易系统 v1.0", px + 10, py + 8, GetTitleColor(), 11);
