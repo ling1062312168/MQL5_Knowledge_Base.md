@@ -1618,10 +1618,6 @@ void UpdatePanelVisibility() {
             int ox = (int)ObjectGetInteger(0, objName, OBJPROP_XDISTANCE);
             ObjectSetInteger(0, objName, OBJPROP_XDISTANCE, ox + dx);
          }
-         if(StringFind(objName, PFX_MON) == 0) {
-            int ox = (int)ObjectGetInteger(0, objName, OBJPROP_XDISTANCE);
-            ObjectSetInteger(0, objName, OBJPROP_XDISTANCE, ox + dx);
-         }
       }
       g_hideOffsetX = targetOffset;
    }
@@ -2052,14 +2048,30 @@ void CreateActivePanel() {
       case 3: CreatePanel_TabLayout(); break;
    }
    SaveHideButtonOriginalPos();
+
    if(!g_panelVisible) {
+      int total = ObjectsTotal(0);
+      for(int i = total - 1; i >= 0; i--) {
+         string objName = ObjectName(0, i);
+         if(objName == "") continue;
+         if(StringFind(objName, PFX_FUSION) == 0) {
+            if(StringFind(objName, "BtnHide") > 0) continue;
+            int ox = (int)ObjectGetInteger(0, objName, OBJPROP_XDISTANCE);
+            ObjectSetInteger(0, objName, OBJPROP_XDISTANCE, ox - 10000);
+         }
+      }
+      g_hideOffsetX = -10000;
+
       string btnName = GetHideButtonName();
       if(ObjectFind(0, btnName) >= 0) {
          ObjectSetInteger(0, btnName, OBJPROP_XDISTANCE, 20);
          ObjectSetInteger(0, btnName, OBJPROP_YDISTANCE, 50);
+         ObjectSetInteger(0, btnName, OBJPROP_XSIZE, 80);
+         ObjectSetInteger(0, btnName, OBJPROP_YSIZE, 22);
          ObjectSetString(0, btnName, OBJPROP_TEXT, "显示面板");
       }
    }
+
    if(g_enableLossMonitor)
       CreateMonitorPanel();
 }
@@ -2088,6 +2100,7 @@ void DeleteActivePanel() {
 // 浮亏监控面板（独立面板）
 // ====================================================================
 void CreateMonitorPanel() {
+   DeleteMonitorPanel();
    int px = PanelX_Init + 610, py = PanelY_Init;
    CreateCell(PFX_MON "Panel_Border", px - BORDER_WIDTH_MON, py - BORDER_WIDTH_MON,
               PANEL_WIDTH_MON + 2 * BORDER_WIDTH_MON, PANEL_HEIGHT_MON + 2 * BORDER_WIDTH_MON,
@@ -2154,7 +2167,6 @@ void CreateMonitorPanel() {
             ObjectSetInteger(0, objName, OBJPROP_XDISTANCE, ox - 10000);
          }
       }
-      g_hideOffsetX = -10000;
    }
 
    ChartRedraw();
