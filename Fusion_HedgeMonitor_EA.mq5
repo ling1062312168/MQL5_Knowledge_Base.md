@@ -1461,6 +1461,13 @@ void ActionCloseSell(int symbolIndex) {
 // ====================================================================
 // UI 面板辅助函数
 // ====================================================================
+string StringRepeat(string str, int count) {
+   string result = "";
+   for(int i = 0; i < count; i++)
+      result += str;
+   return result;
+}
+
 void CreateCell(string name, int x, int y, int width, int height, color bgColor, ENUM_BASE_CORNER corner=CORNER_LEFT_UPPER, bool inBackground=true) {
    if(ObjectFind(0, name) < 0) {
       ObjectCreate(0, name, OBJ_RECTANGLE_LABEL, 0, 0, 0);
@@ -1850,7 +1857,7 @@ void UpdatePanel_VisualEnhanced() {
    double progressRatio = MathMin(g_hedgeStatus.todayProfit / DailyProfitThreshold, 1.0);
    int barLen = 20;
    int filledLen = (int)(progressRatio * barLen);
-   string bar = StringReplicate("▓", filledLen) + StringReplicate("░", barLen - filledLen);
+   string bar = StringRepeat("▓", filledLen) + StringRepeat("░", barLen - filledLen);
    ObjectSetString(0, pfx + "ProgressBar", OBJPROP_TEXT, bar);
    ObjectSetInteger(0, pfx + "ProgressBar", OBJPROP_COLOR, g_hedgeStatus.hedgeReady ? GetProfitPosColor() : GetProfitNegColor());
 
@@ -2038,14 +2045,14 @@ void CreateMonitorPanel() {
    int headerWidth = PANEL_WIDTH_MON - MARGIN_MON * 2;
    CreateCell(PFX_MON "Header_BG", px + MARGIN_MON, headerY, headerWidth, HEADER_HEIGHT_MON,
               GetHeaderBgColor(), CORNER_LEFT_UPPER, false);
-   CreateHeaderLabel(PFX_MON "Header_Num", "#", px + ColX_Num());
-   CreateHeaderLabel(PFX_MON "Header_Symbol", "品种", px + ColX_Symbol());
-   CreateHeaderLabel(PFX_MON "Header_Lots", "手数", px + ColX_Lots());
-   CreateHeaderLabel(PFX_MON "Header_Count", "单量", px + ColX_Count());
-   CreateHeaderLabel(PFX_MON "Header_Profit", "盈亏", px + ColX_Profit());
-   CreateHeaderLabel(PFX_MON "Header_Thresh", "阈值", px + ColX_Thresh());
-   CreateHeaderLabel(PFX_MON "Header_Status", "状态", px + ColX_Status());
-   CreateHeaderLabel(PFX_MON "Header_Action", "操作", px + ColX_Action());
+   CreateHeaderLabel(PFX_MON "Header_Num", "#", px + ColX_Num(), headerY);
+   CreateHeaderLabel(PFX_MON "Header_Symbol", "品种", px + ColX_Symbol(), headerY);
+   CreateHeaderLabel(PFX_MON "Header_Lots", "手数", px + ColX_Lots(), headerY);
+   CreateHeaderLabel(PFX_MON "Header_Count", "单量", px + ColX_Count(), headerY);
+   CreateHeaderLabel(PFX_MON "Header_Profit", "盈亏", px + ColX_Profit(), headerY);
+   CreateHeaderLabel(PFX_MON "Header_Thresh", "阈值", px + ColX_Thresh(), headerY);
+   CreateHeaderLabel(PFX_MON "Header_Status", "状态", px + ColX_Status(), headerY);
+   CreateHeaderLabel(PFX_MON "Header_Action", "操作", px + ColX_Action(), headerY);
 
    CreateCell(PFX_MON "Header_Line", px + MARGIN_MON, headerY + HEADER_HEIGHT_MON, headerWidth, 1,
               GetBorderColor(), CORNER_LEFT_UPPER, false);
@@ -2108,7 +2115,6 @@ void DeleteMonitorPanel() {
 int OnInit() {
    trade.SetExpertMagicNumber(0);
    trade.SetDeviationInPoints(50);
-   trade.UseMarketClose = UseMarketClose;
    Print("融合交易系统已启动 - 版本 1.00");
 
    InitColorSchemes();
