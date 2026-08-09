@@ -163,11 +163,6 @@ bool g_thresholdsUpdated = false;
 int g_panelX = 20;
 int g_panelY = 50;
 bool g_panelVisible = true;
-bool g_isDragging = false;
-int g_dragStartX = 0;
-int g_dragStartY = 0;
-int g_panelOffsetX = 0;
-int g_panelOffsetY = 0;
 int g_hideOffsetX = 0;
 
 bool g_enableLockPosition = false;
@@ -2336,23 +2331,6 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
          CreateActivePanel();
          return;
       }
-
-      if(IsClickOnPanelArea_Mon(mouseX, mouseY)) {
-         g_isDragging = true;
-         g_dragStartX = mouseX;
-         g_dragStartY = mouseY;
-         g_panelOffsetX = g_panelX;
-         g_panelOffsetY = g_panelY;
-      }
-   }
-
-   if(id == CHARTEVENT_MOUSE_MOVE && g_isDragging) {
-      if(!g_enableLossMonitor) { g_isDragging = false; return; }
-      int dx = mouseX - g_dragStartX;
-      int dy = mouseY - g_dragStartY;
-      int newX = g_panelOffsetX + dx;
-      int newY = g_panelOffsetY + dy;
-      MovePanel_Mon(newX, newY);
    }
 
    if(id == CHARTEVENT_OBJECT_ENDEDIT) {
@@ -2379,31 +2357,6 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
    }
 }
 
-bool IsClickOnPanelArea_Mon(int x, int y) {
-   if(!g_panelVisible) return false;
-   int titleTop = g_panelY + 2;
-   int titleBottom = g_panelY + 2 + TITLE_BAR_HEIGHT_MON;
-   if(y >= titleTop && y <= titleBottom &&
-      x >= g_panelX && x <= g_panelX + PANEL_WIDTH_MON)
-      return true;
-
-   int DRAG_ZONE = 6;
-   int outerLeft = g_panelX - DRAG_ZONE;
-   int outerTop = g_panelY - DRAG_ZONE;
-   int outerRight = g_panelX + PANEL_WIDTH_MON + DRAG_ZONE;
-   int outerBottom = g_panelY + PANEL_HEIGHT_MON + DRAG_ZONE;
-   int innerLeft = g_panelX + DRAG_ZONE;
-   int innerTop = g_panelY + DRAG_ZONE;
-   int innerRight = g_panelX + PANEL_WIDTH_MON - DRAG_ZONE;
-   int innerBottom = g_panelY + PANEL_HEIGHT_MON - DRAG_ZONE;
-
-   if(x < outerLeft || x > outerRight || y < outerTop || y > outerBottom)
-      return false;
-   if(x > innerLeft && x < innerRight && y > innerTop && y < innerBottom)
-      return false;
-   return true;
-}
-
 bool IsClickOnTitleLabel_Mon(int x, int y) {
    if(!g_panelVisible) return false;
    int titleTop = g_panelY + 2;
@@ -2413,36 +2366,4 @@ bool IsClickOnTitleLabel_Mon(int x, int y) {
       x >= g_panelX + 2 && x <= titleRight)
       return true;
    return false;
-}
-
-void OffsetPanelObjects_Mon(int dx, int dy) {
-   if(dx == 0 && dy == 0) return;
-   int total = ObjectsTotal(0);
-   for(int i = total - 1; i >= 0; i--) {
-      string objName = ObjectName(0, i);
-      if(objName != "" && StringFind(objName, PFX_MON) == 0) {
-         int ox = (int)ObjectGetInteger(0, objName, OBJPROP_XDISTANCE);
-         int oy = (int)ObjectGetInteger(0, objName, OBJPROP_YDISTANCE);
-         ObjectSetInteger(0, objName, OBJPROP_XDISTANCE, ox + dx);
-         ObjectSetInteger(0, objName, OBJPROP_YDISTANCE, oy + dy);
-      }
-   }
-   g_panelX += dx;
-   g_panelY += dy;
-}
-
-void MovePanel_Mon(int newX, int newY) {
-   int chartWidth = (int)ChartGetInteger(0, CHART_WIDTH_IN_PIXELS);
-   int chartHeight = (int)ChartGetInteger(0, CHART_HEIGHT_IN_PIXELS);
-   int maxX = chartWidth - PANEL_WIDTH_MON;
-   int maxY = chartHeight - PANEL_HEIGHT_MON;
-   if(maxX < 0) maxX = 0;
-   if(maxY < 0) maxY = 0;
-   if(newX < 0) newX = 0;
-   if(newY < 0) newY = 0;
-   if(newX > maxX) newX = maxX;
-   if(newY > maxY) newY = maxY;
-   int dx = newX - g_panelX;
-   int dy = newY - g_panelY;
-   OffsetPanelObjects_Mon(dx, dy);
 }
