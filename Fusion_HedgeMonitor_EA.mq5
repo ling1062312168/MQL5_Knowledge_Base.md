@@ -1243,6 +1243,10 @@ void UpdateProfitLabels() {
          ObjectSetInteger(0, rowBgName, OBJPROP_BGCOLOR, rowColor);
       }
    }
+   if(ObjectFind(0, PFX_MON "LockStatus") >= 0) {
+      ObjectSetString(0, PFX_MON "LockStatus", OBJPROP_TEXT,
+         g_enableLockPosition ? "🔒 锁仓: 开" : "🔓 锁仓: 关");
+   }
    ChartRedraw();
 }
 
@@ -2082,19 +2086,16 @@ void CreateMonitorPanel() {
    int footerY = startY + g_symbolCount * ROW_HEIGHT_MON + 4;
    CreateCell(PFX_MON "Footer_Bar", px + MARGIN_MON, footerY, headerWidth, FOOTER_HEIGHT_MON,
               GetHeaderBgColor(), CORNER_LEFT_UPPER, false);
-   SwitchButton(PFX_MON "LockToggleButton", px + MARGIN_MON + 8, footerY + 3, 100, 18,
-                g_enableLockPosition ? "锁仓：开" : "锁仓：关", "锁仓：关", 9, false, FONT_NAME_MON,
-                GetTitleColor(), GetHeaderBgColor(), CORNER_LEFT_UPPER);
-   SwitchButton(PFX_MON "PanelHideButton", px + PANEL_WIDTH_MON - MARGIN_MON - 78, footerY + 3, 70, 18,
-                g_panelVisible ? "隐藏面板" : "显示面板", "显示面板", 9, false, FONT_NAME_MON,
-                GetTitleColor(), GetHeaderBgColor(), CORNER_LEFT_UPPER);
+   CreateLabel(PFX_MON "LockStatus", g_enableLockPosition ? "🔒 锁仓: 开" : "🔓 锁仓: 关",
+               px + MARGIN_MON + 8, footerY + 5, GetTitleColor(), 9);
+   CreateLabel(PFX_MON "TipLabel", "提示: 使用左侧面板按钮操作",
+               px + PANEL_WIDTH_MON - MARGIN_MON - 200, footerY + 5, GetStatusEmptyColor(), 8);
 
    if(!g_panelVisible) {
       int total = ObjectsTotal(0);
       for(int i = total - 1; i >= 0; i--) {
          string objName = ObjectName(0, i);
          if(objName != "" && StringFind(objName, PFX_MON) == 0) {
-            if(objName == PFX_MON "PanelHideButton") continue;
             int ox = (int)ObjectGetInteger(0, objName, OBJPROP_XDISTANCE);
             ObjectSetInteger(0, objName, OBJPROP_XDISTANCE, ox - 10000);
          }
@@ -2225,32 +2226,6 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
          ObjectSetInteger(0, sparam, OBJPROP_STATE, false);
          int idx = (int)StringToInteger(StringSubstr(sparam, StringLen(PFX_MON "BtnCloseSell_")));
          ActionCloseSell(idx);
-         return;
-      }
-      if(sparam == PFX_MON "LockToggleButton") {
-         ObjectSetInteger(0, sparam, OBJPROP_STATE, false);
-         g_enableLockPosition = !g_enableLockPosition;
-         SaveSettingsToGlobalVars();
-         if(PanelStyle == 1)
-            ObjectSetString(0, PFX_FUSION + "Info_BtnToggleLock", OBJPROP_TEXT, g_enableLockPosition ? "锁仓:开" : "锁仓:关");
-         else if(PanelStyle == 2)
-            ObjectSetString(0, PFX_FUSION + "Visual_BtnLock", OBJPROP_TEXT, g_enableLockPosition ? "锁仓:开" : "锁仓:关");
-         else if(PanelStyle == 3)
-            ObjectSetString(0, PFX_FUSION + "Tab_BtnLock", OBJPROP_TEXT, g_enableLockPosition ? "锁仓:开" : "锁仓:关");
-         DeleteMonitorPanel();
-         CreateMonitorPanel();
-         UpdateProfitLabels();
-         SaveSettingsToGlobalVars();
-         return;
-      }
-      if(sparam == PFX_MON "PanelHideButton") {
-         ObjectSetInteger(0, sparam, OBJPROP_STATE, false);
-         g_panelVisible = !g_panelVisible;
-         if(g_panelVisible)
-            ObjectSetString(0, sparam, OBJPROP_TEXT, "隐藏面板");
-         else
-            ObjectSetString(0, sparam, OBJPROP_TEXT, "显示面板");
-         UpdatePanelVisibility();
          return;
       }
 
