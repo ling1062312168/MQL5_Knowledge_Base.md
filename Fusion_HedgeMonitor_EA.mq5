@@ -88,7 +88,6 @@ int g_currentScheme = SCHEME_PURPLE_NIGHT;
 #define PFX_FUSION "Fusion_"     // 融合系统面板前缀
 
 #define PANEL_WIDTH_MON 730
-#define PANEL_HEIGHT_MON 296
 #define ROW_HEIGHT_MON 26
 #define COL_NUM_MON 30
 #define COL_SYMBOL_MON 90
@@ -169,6 +168,10 @@ int g_btnHideOrigY = 0;
 
 bool g_enableLockPosition = false;
 const string SETTINGS_PREFIX = "FusionEA";
+
+int GetMonitorPanelContentHeight() {
+   return TITLE_BAR_HEIGHT_MON + 4 + HEADER_HEIGHT_MON + 2 + g_symbolCount * ROW_HEIGHT_MON + 4 + FOOTER_HEIGHT_MON;
+}
 
 // ====================================================================
 // 协同层 - 共享数据
@@ -1651,6 +1654,7 @@ void UpdatePanelVisibility() {
 void CreatePanel_Original() {
    int x = 10, y = 25;
    string pfx = PFX_FUSION;
+   int h = GetMonitorPanelContentHeight();
 
    if(ObjectFind(0, pfx + "Background") < 0)
       ObjectCreate(0, pfx + "Background", OBJ_RECTANGLE_LABEL, 0, 0, 0);
@@ -1658,7 +1662,7 @@ void CreatePanel_Original() {
    ObjectSetInteger(0, pfx + "Background", OBJPROP_XDISTANCE, 5);
    ObjectSetInteger(0, pfx + "Background", OBJPROP_YDISTANCE, 20);
    ObjectSetInteger(0, pfx + "Background", OBJPROP_XSIZE, 390);
-   ObjectSetInteger(0, pfx + "Background", OBJPROP_YSIZE, 175);
+   ObjectSetInteger(0, pfx + "Background", OBJPROP_YSIZE, h);
    ObjectSetInteger(0, pfx + "Background", OBJPROP_BGCOLOR, C'30,35,40');
    ObjectSetInteger(0, pfx + "Background", OBJPROP_BORDER_TYPE, BORDER_FLAT);
    ObjectSetInteger(0, pfx + "Background", OBJPROP_BORDER_COLOR, C'60,65,70');
@@ -1733,7 +1737,7 @@ void DeletePanel_Original() {
 // 方案1 - 信息密集型面板
 void CreatePanel_InfoDense() {
    string pfx = PFX_FUSION + "Info_";
-   int w = 600, h = 350;
+   int w = 600, h = GetMonitorPanelContentHeight();
    int px = PanelX_Init, py = PanelY_Init;
 
    CreateCell(pfx + "Border", px - 3, py - 3, w + 6, h + 6, GetBorderColor(), CORNER_LEFT_UPPER, true);
@@ -1741,7 +1745,9 @@ void CreatePanel_InfoDense() {
    CreateLabel(pfx + "Title", "🛡️ 融合交易系统 v1.0", px + 10, py + 10, GetTitleColor(), 11);
 
    int y = py + 35;
-   CreateCell(pfx + "AccountBg", px + 10, y, w - 20, 45, GetRowBgDark(), CORNER_LEFT_UPPER, false);
+   int sectionH = (h - 35 - 50) / 3;
+
+   CreateCell(pfx + "AccountBg", px + 10, y, w - 20, sectionH, GetRowBgDark(), CORNER_LEFT_UPPER, false);
    CreateLabel(pfx + "Balance", "💰 余额: $0.00", px + 20, y + 8, GetProfitPosColor(), 9);
    CreateLabel(pfx + "Equity", "💎 净值: $0.00", px + 180, y + 8, GetTitleColor(), 9);
    CreateLabel(pfx + "Margin", "⚖️ 保证金: $0.00", px + 340, y + 8, GetHeaderTxtColor(), 9);
@@ -1749,8 +1755,8 @@ void CreatePanel_InfoDense() {
    CreateLabel(pfx + "TodayProfit", "📈 今日盈亏: $0.00", px + 180, y + 25, GetProfitPosColor(), 9);
    CreateLabel(pfx + "Runtime", "⏱ 运行: 0h", px + 340, y + 25, GetHeaderTxtColor(), 9);
 
-   y += 55;
-   CreateCell(pfx + "HedgeBg", px + 10, y, w - 20, 60, GetRowBgLight(), CORNER_LEFT_UPPER, false);
+   y += sectionH + 5;
+   CreateCell(pfx + "HedgeBg", px + 10, y, w - 20, sectionH, GetRowBgLight(), CORNER_LEFT_UPPER, false);
    CreateLabel(pfx + "HedgeTitle", "🛡️ 对冲引擎状态", px + 20, y + 8, GetTitleColor(), 9);
    CreateLabel(pfx + "HedgeProgress", "今日盈利: $0.00 / $50.00", px + 20, y + 25, GetProfitPosColor(), 9);
    CreateLabel(pfx + "HedgeStatus", "状态: 未启动", px + 300, y + 8, GetStatusEmptyColor(), 9);
@@ -1758,8 +1764,8 @@ void CreatePanel_InfoDense() {
    CreateLabel(pfx + "HedgeNext", "下次检测: --", px + 20, y + 42, GetTitleColor(), 9);
    CreateLabel(pfx + "HedgeCount", "已对冲: 0次", px + 300, y + 42, GetHeaderTxtColor(), 9);
 
-   y += 70;
-   CreateCell(pfx + "MonitorBg", px + 10, y, w - 20, 85, GetRowBgDark(), CORNER_LEFT_UPPER, false);
+   y += sectionH + 5;
+   CreateCell(pfx + "MonitorBg", px + 10, y, w - 20, sectionH, GetRowBgDark(), CORNER_LEFT_UPPER, false);
    CreateLabel(pfx + "MonitorTitle", "📊 浮亏监控 (点击品种可操作)", px + 20, y + 8, GetTitleColor(), 9);
    int colX = px + 20;
    for(int i = 0; i < MathMin(g_symbolCount, 3); i++) {
@@ -1769,18 +1775,18 @@ void CreatePanel_InfoDense() {
       string symStatus = symLoss >= 0 ? "盈利" : "亏损";
       CreateLabel(pfx + "MonSym_" + IntegerToString(i), symText + " " + DoubleToString(symLoss, 2) + " [" + symStatus + "]", colX + i * 190, y + 28, symColor, 9);
    }
-   CreateLabel(pfx + "MonitorAlert", "⚠️ 超阈值品种: 0", px + 20, y + 55, GetProfitNegColor(), 9);
-   CreateLabel(pfx + "MonitorCount", "监控品种: " + IntegerToString(g_symbolCount) + " 个", px + 200, y + 55, GetHeaderTxtColor(), 9);
-   CreateLabel(pfx + "MonitorLock", g_enableLockPosition ? "🔒 锁仓: 开" : "🔓 锁仓: 关", px + 380, y + 55, GetTitleColor(), 9);
+   CreateLabel(pfx + "MonitorAlert", "⚠️ 超阈值品种: 0", px + 20, y + sectionH - 30, GetProfitNegColor(), 9);
+   CreateLabel(pfx + "MonitorCount", "监控品种: " + IntegerToString(g_symbolCount) + " 个", px + 200, y + sectionH - 30, GetHeaderTxtColor(), 9);
+   CreateLabel(pfx + "MonitorLock", g_enableLockPosition ? "🔒 锁仓: 开" : "🔓 锁仓: 关", px + 380, y + sectionH - 30, GetTitleColor(), 9);
 
-   y += 95;
-   CreateCell(pfx + "BtnBg", px + 10, y, w - 20, 35, GetHeaderBgColor(), CORNER_LEFT_UPPER, false);
-   CreateActionButton(pfx + "BtnManualHedge", "手动对冲", px + 20, y + 8, 80, 20);
-   CreateActionButton(pfx + "BtnToggleLock", g_enableLockPosition ? "锁仓:开" : "锁仓:关", px + 110, y + 8, 80, 20);
-   CreateActionButton(pfx + "BtnHide", "隐藏面板", px + 200, y + 8, 70, 20);
-   CreateActionButton(pfx + "BtnScheme", "配色", px + 280, y + 8, 60, 20);
-   CreateActionButton(pfx + "BtnCloseAll", "全平", px + 350, y + 8, 60, 20);
-   CreateActionButton(pfx + "BtnPause", "暂停EA", px + 420, y + 8, 70, 20);
+   int btnY = py + h - 40;
+   CreateCell(pfx + "BtnBg", px + 10, btnY, w - 20, 35, GetHeaderBgColor(), CORNER_LEFT_UPPER, false);
+   CreateActionButton(pfx + "BtnManualHedge", "手动对冲", px + 20, btnY + 8, 80, 20);
+   CreateActionButton(pfx + "BtnToggleLock", g_enableLockPosition ? "锁仓:开" : "锁仓:关", px + 110, btnY + 8, 80, 20);
+   CreateActionButton(pfx + "BtnHide", "隐藏面板", px + 200, btnY + 8, 70, 20);
+   CreateActionButton(pfx + "BtnScheme", "配色", px + 280, btnY + 8, 60, 20);
+   CreateActionButton(pfx + "BtnCloseAll", "全平", px + 350, btnY + 8, 60, 20);
+   CreateActionButton(pfx + "BtnPause", "暂停EA", px + 420, btnY + 8, 70, 20);
 
    ChartRedraw();
 }
@@ -1834,7 +1840,7 @@ void DeletePanel_InfoDense() {
 // 方案2 - 视觉增强型面板
 void CreatePanel_VisualEnhanced() {
    string pfx = PFX_FUSION + "Visual_";
-   int w = 550, h = 280;
+   int w = 550, h = GetMonitorPanelContentHeight();
    int px = PanelX_Init, py = PanelY_Init;
 
    CreateCell(pfx + "Border", px - 3, py - 3, w + 6, h + 6, GetBorderColor(), CORNER_LEFT_UPPER, true);
@@ -1844,7 +1850,9 @@ void CreatePanel_VisualEnhanced() {
    CreateLabel(pfx + "ThemeName", "[" + g_schemes[g_currentScheme].name + "]", px + w - 100, py + 8, GetHeaderTxtColor(), 9);
 
    int y = py + 35;
-   CreateCell(pfx + "MainCard", px + 10, y, w - 20, 80, GetRowBgDark(), CORNER_LEFT_UPPER, false);
+   int sectionH = (h - 35 - 45) / 2;
+
+   CreateCell(pfx + "MainCard", px + 10, y, w - 20, sectionH, GetRowBgDark(), CORNER_LEFT_UPPER, false);
    CreateLabel(pfx + "MainTitle", "⚡ 今日盈利 / 🛡️ 对冲状态", px + 20, y + 8, GetTitleColor(), 9);
    string progressText = "$0.00 / $50.00";
    CreateLabel(pfx + "Progress", progressText, px + 20, y + 25, GetProfitPosColor(), 10);
@@ -1854,21 +1862,21 @@ void CreatePanel_VisualEnhanced() {
    CreateLabel(pfx + "HedgeNext", "下次: " + FormatHedgeNextCheckTime(), px + 380, y + 42, GetTitleColor(), 9);
    CreateLabel(pfx + "HedgeCount", "已对冲: 0次", px + 380, y + 58, GetHeaderTxtColor(), 9);
 
-   y += 90;
-   CreateCell(pfx + "MonitorCard", px + 10, y, w - 20, 95, GetRowBgLight(), CORNER_LEFT_UPPER, false);
+   y += sectionH + 10;
+   CreateCell(pfx + "MonitorCard", px + 10, y, w - 20, sectionH - 10, GetRowBgLight(), CORNER_LEFT_UPPER, false);
    CreateLabel(pfx + "MonTitle", "📊 品种监控 (Top 3)", px + 20, y + 8, GetTitleColor(), 9);
 
    long ticket = 0;
    double maxLoss = 0;
    string maxSymbol = "";
    for(int i = PositionsTotal() - 1; i >= 0; i--) {
-      ulong h = PositionGetTicket(i);
-      if(h == 0) continue;
+      ulong hh = PositionGetTicket(i);
+      if(hh == 0) continue;
       if(PositionGetInteger(POSITION_TYPE) > POSITION_TYPE_SELL) continue;
-      double loss = GetPositionNetProfitByTicket(h);
+      double loss = GetPositionNetProfitByTicket(hh);
       if(loss < maxLoss) {
          maxLoss = loss;
-         ticket = (long)h;
+         ticket = (long)hh;
          maxSymbol = PositionGetString(POSITION_SYMBOL);
       }
    }
@@ -1884,14 +1892,14 @@ void CreatePanel_VisualEnhanced() {
    CreateLabel(pfx + "AlertInfo", "超阈值: " + IntegerToString(g_monitorStatus.alertCount), px + 200, y + 44, GetProfitNegColor(), 9);
    CreateLabel(pfx + "LockInfo", g_enableLockPosition ? "🔒 锁仓: 开" : "🔓 锁仓: 关", px + 350, y + 28, GetTitleColor(), 9);
 
-   y += 105;
-   CreateCell(pfx + "BtnCard", px + 10, y, w - 20, 30, GetHeaderBgColor(), CORNER_LEFT_UPPER, false);
-   CreateActionButton(pfx + "BtnHedge", "手动对冲", px + 20, y + 5, 80, 20);
-   CreateActionButton(pfx + "BtnLock", g_enableLockPosition ? "锁仓:开" : "锁仓:关", px + 110, y + 5, 80, 20);
-   CreateActionButton(pfx + "BtnHide", g_panelVisible ? "隐藏" : "显示", px + 200, y + 5, 60, 20);
-   CreateActionButton(pfx + "BtnScheme", "配色", px + 270, y + 5, 50, 20);
-   CreateActionButton(pfx + "BtnCloseAll", "全平", px + 330, y + 5, 50, 20);
-   CreateActionButton(pfx + "BtnPause", "暂停", px + 390, y + 5, 50, 20);
+   int btnY = py + h - 35;
+   CreateCell(pfx + "BtnCard", px + 10, btnY, w - 20, 30, GetHeaderBgColor(), CORNER_LEFT_UPPER, false);
+   CreateActionButton(pfx + "BtnHedge", "手动对冲", px + 20, btnY + 5, 80, 20);
+   CreateActionButton(pfx + "BtnLock", g_enableLockPosition ? "锁仓:开" : "锁仓:关", px + 110, btnY + 5, 80, 20);
+   CreateActionButton(pfx + "BtnHide", g_panelVisible ? "隐藏" : "显示", px + 200, btnY + 5, 60, 20);
+   CreateActionButton(pfx + "BtnScheme", "配色", px + 270, btnY + 5, 50, 20);
+   CreateActionButton(pfx + "BtnCloseAll", "全平", px + 330, btnY + 5, 50, 20);
+   CreateActionButton(pfx + "BtnPause", "暂停", px + 390, btnY + 5, 50, 20);
 
    ChartRedraw();
 }
@@ -1957,7 +1965,7 @@ void DeletePanel_VisualEnhanced() {
 // 方案3 - 分区布局型面板
 void CreatePanel_TabLayout() {
    string pfx = PFX_FUSION + "Tab_";
-   int w = 650, h = 320;
+   int w = 650, h = GetMonitorPanelContentHeight();
    int px = PanelX_Init, py = PanelY_Init;
 
    CreateCell(pfx + "Border", px - 3, py - 3, w + 6, h + 6, GetBorderColor(), CORNER_LEFT_UPPER, true);
@@ -1974,7 +1982,8 @@ void CreatePanel_TabLayout() {
    CreateActionButton(pfx + "Tab4", "⚙️ 设置", px + 345, tabY + 3, 80, 19);
 
    int contentY = tabY + 30;
-   CreateCell(pfx + "ContentBg", px + 10, contentY, w - 20, 220, GetRowBgDark(), CORNER_LEFT_UPPER, false);
+   int contentH = h - (contentY - py) - 40;
+   CreateCell(pfx + "ContentBg", px + 10, contentY, w - 20, contentH, GetRowBgDark(), CORNER_LEFT_UPPER, false);
 
    CreateLabel(pfx + "BalLabel", "💰 余额", px + 20, contentY + 15, GetHeaderTxtColor(), 8);
    CreateLabel(pfx + "BalValue", "$0.00", px + 20, contentY + 30, GetProfitPosColor(), 10);
@@ -2001,10 +2010,11 @@ void CreatePanel_TabLayout() {
       CreateLabel(pfx + "MonSym_" + IntegerToString(i), g_symbols[i] + ": $" + DoubleToString(symLoss, 2), px + 20, contentY + 120 + i * 18, symColor, 9);
    }
 
-   CreateActionButton(pfx + "BtnManualHedge", "手动对冲", px + 20, py + h - 35, 80, 20);
-   CreateActionButton(pfx + "BtnLock", g_enableLockPosition ? "锁仓:开" : "锁仓:关", px + 110, py + h - 35, 80, 20);
-   CreateActionButton(pfx + "BtnHide", g_panelVisible ? "隐藏" : "显示", px + 200, py + h - 35, 60, 20);
-   CreateActionButton(pfx + "BtnScheme", "配色", px + 270, py + h - 35, 50, 20);
+   int btnY = py + h - 35;
+   CreateActionButton(pfx + "BtnManualHedge", "手动对冲", px + 20, btnY, 80, 20);
+   CreateActionButton(pfx + "BtnLock", g_enableLockPosition ? "锁仓:开" : "锁仓:关", px + 110, btnY, 80, 20);
+   CreateActionButton(pfx + "BtnHide", g_panelVisible ? "隐藏" : "显示", px + 200, btnY, 60, 20);
+   CreateActionButton(pfx + "BtnScheme", "配色", px + 270, btnY, 50, 20);
 
    ChartRedraw();
 }
@@ -2105,10 +2115,11 @@ void DeleteActivePanel() {
 void CreateMonitorPanel() {
    DeleteMonitorPanel();
    int px = PanelX_Init + 610, py = PanelY_Init;
+   int monH = GetMonitorPanelContentHeight();
    CreateCell(PFX_MON "Panel_Border", px - BORDER_WIDTH_MON, py - BORDER_WIDTH_MON,
-              PANEL_WIDTH_MON + 2 * BORDER_WIDTH_MON, PANEL_HEIGHT_MON + 2 * BORDER_WIDTH_MON,
+              PANEL_WIDTH_MON + 2 * BORDER_WIDTH_MON, monH + 2 * BORDER_WIDTH_MON,
               GetBorderColor(), CORNER_LEFT_UPPER, true);
-   CreateCell(PFX_MON "Panel_BG", px, py, PANEL_WIDTH_MON, PANEL_HEIGHT_MON,
+   CreateCell(PFX_MON "Panel_BG", px, py, PANEL_WIDTH_MON, monH,
               GetPanelBgColor(), CORNER_LEFT_UPPER, false);
    CreateCell(PFX_MON "Title_Bar", px + 2, py, PANEL_WIDTH_MON - 4, TITLE_BAR_HEIGHT_MON,
               GetHeaderBgColor(), CORNER_LEFT_UPPER, false);
