@@ -1256,7 +1256,8 @@ void DrawPanel()
       // 品种名
       string symName = allStats[idx].symbol;
       if(StringLen(symName) > 8) symName = StringSubstr(symName, 0, 8);
-      ELbl(g_prefix+"mon_s"+IntegerToString(r), symName, X+PD+CD_PD, rowY+2, F(9), C'200,210,230);
+      color symClr = C'200,210,230';
+      ELbl(g_prefix+"mon_s"+IntegerToString(r), symName, X+PD+CD_PD, rowY+2, F(9), symClr);
 
       // 浮亏
       double pnl = allStats[idx].totalPnl;
@@ -1296,8 +1297,10 @@ void DrawPanel()
       int scrollY = monY + monH - BH - CD_PD;
       int sbw = 80;
       int rightX = X + PW - PD - CD_PD - sbw*2 - PG;
-      EBtn(g_prefix+"mon_scrollUp","上移", rightX, scrollY, sbw, BH, C'50,60,80', C'200,210,230');
-      EBtn(g_prefix+"mon_scrollDown","下移", rightX+sbw+PG, scrollY, sbw, BH, C'50,60,80', C'200,210,230');
+      color btnBg = C'50,60,80';
+      color btnFg = C'200,210,230';
+      EBtn(g_prefix+"mon_scrollUp","上移", rightX, scrollY, sbw, BH, btnBg, btnFg);
+      EBtn(g_prefix+"mon_scrollDown","下移", rightX+sbw+PG, scrollY, sbw, BH, btnBg, btnFg);
       ELbl(g_prefix+"mon_page", IntegerToString(startIdx+1)+"-"+IntegerToString(MathMin(startIdx+maxShow,totalSymbols))+"/"+IntegerToString(totalSymbols), rightX-60, scrollY+4, F(9), cMute);
    }
    else
