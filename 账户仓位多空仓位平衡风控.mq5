@@ -303,7 +303,7 @@ void UnmarkPositionAsLocked(ulong ticket)
 
       string tagToRemove = StringSubstr(newComment, posFound, endPos - posFound);
       StringReplace(newComment, tagToRemove, "");
-      newComment = StringTrimLeft(newComment);
+      StringTrimLeft(newComment);
    }
 
    request.comment = newComment;
