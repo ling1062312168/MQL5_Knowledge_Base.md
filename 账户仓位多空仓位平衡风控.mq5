@@ -179,7 +179,7 @@ void EBtn(string nm, string txt, int x, int y, int w, int h, color bg, color fg,
    if(ObjectFind(0,nm)<0) ObjectCreate(0,nm,OBJ_BUTTON,0,0,0);
    ObjectSetInteger(0,nm,OBJPROP_CORNER,cr); ObjectSetInteger(0,nm,OBJPROP_XDISTANCE,x);
    ObjectSetInteger(0,nm,OBJPROP_YDISTANCE,y); ObjectSetInteger(0,nm,OBJPROP_XSIZE,w);
-   ObjectSetInteger(0,nm,OBJPROP_YSIZE,h); ObjectSetInteger(0,nm,OBJPROP_FONT,"Microsoft YaHei");
+   ObjectSetInteger(0,nm,OBJPROP_YSIZE,h); ObjectSetString(0,nm,OBJPROP_FONT,"Microsoft YaHei");
    ObjectSetInteger(0,nm,OBJPROP_FONTSIZE,F(10)); ObjectSetString(0,nm,OBJPROP_TEXT,txt);
    ObjectSetInteger(0,nm,OBJPROP_COLOR,fg); ObjectSetInteger(0,nm,OBJPROP_BGCOLOR,bg);
    ObjectSetInteger(0,nm,OBJPROP_BORDER_COLOR,bg); ObjectSetInteger(0,nm,OBJPROP_SELECTABLE,false);
@@ -1054,7 +1054,6 @@ void DrawPanel()
    int ey = 0;
    int by = 0;
    int rx = 0;
-   string tTxt; color tClr;
 
    // ── 卡片1: 账户状态卡 ──
    int statusH = 160;
@@ -1227,7 +1226,7 @@ void DrawPanel()
    int monY = cy + actH + SG;
    int monH = 200;
    ERect(g_prefix+"c_mon", X+PD, monY, PW-PD*2, monH, BG_CARD, BD_PANEL);
-   ELbl(g_prefix+"c_mon_title","监控预警 (全品种)", X+PD+CD_PD, monY+CD_PD, F(11), C'235,240,250);
+   ELbl(g_prefix+"c_mon_title","监控预警-全品种", X+PD+CD_PD, monY+CD_PD, F(11), C'235,240,250');
 
    // 标题行统计
    int balancedCnt=0, unbalancedCnt=0, warningCnt=0;
@@ -1245,8 +1244,8 @@ void DrawPanel()
    int hdrY = monY + CD_PD + 22;
    ELbl(g_prefix+"mon_h1","品种",     X+PD+CD_PD,       hdrY, F(9), cMute);
    ELbl(g_prefix+"mon_h2","浮亏$",    X+PD+CD_PD+60,    hdrY, F(9), cMute);
-   ELbl(g_prefix+"mon_h3","多单(单/手)", X+PD+CD_PD+110, hdrY, F(9), cMute);
-   ELbl(g_prefix+"mon_h4","空单(单/手)", X+PD+CD_PD+210, hdrY, F(9), cMute);
+   ELbl(g_prefix+"mon_h3","多单-单/手", X+PD+CD_PD+110, hdrY, F(9), cMute);
+   ELbl(g_prefix+"mon_h4","空单-单/手", X+PD+CD_PD+210, hdrY, F(9), cMute);
    ELbl(g_prefix+"mon_h5","对冲",     X+PD+CD_PD+310,   hdrY, F(9), cMute);
    ELbl(g_prefix+"mon_h6","状态",     X+PD+CD_PD+370,   hdrY, F(9), cMute);
 
