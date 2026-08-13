@@ -36,7 +36,6 @@ input color       InpColorInfo         = C'66,153,225';
 //| 面板布局常量                                                      |
 //+------------------------------------------------------------------+
 #define PW              520       // 面板总宽度
-#define MONITOR_H        240       // 监控卡片高度
 #define PD              12        // 面板内边距
 #define PG              8         // 行间距
 #define HDR_H           48        // 标题栏高度
@@ -108,7 +107,6 @@ bool           g_isAsyncClosing = false;
 
 // ── 多品种监控 ──
 int            g_monitorScroll   = 0;         // 监控列表滚动偏移
-#define MONITOR_MAX_ROWS   6                  // 监控卡片最多显示行数
 
 //+------------------------------------------------------------------+
 //| 字体缩放                                                          |
@@ -841,7 +839,7 @@ void DrawPanel()
    int X = g_px, LX = X+PD, RX = LX+LW+PG;
 
    // 外框 + 标题栏
-   ERect(g_prefix+"panel", X, g_py, PW, 420+MONITOR_H, BG_PANEL, BD_PANEL);
+   ERect(g_prefix+"panel", X, g_py, PW, 660, BG_PANEL, BD_PANEL);
    ERect(g_prefix+"header", X, g_py, PW, HDR_H, BG_HDR, BD_PANEL);
    ELbl(g_prefix+"title", "账户仓位多空仓位平衡风控", LX+4, g_py+8, F(14), C'235,240,250');
    ELbl(g_prefix+"sub", symbol+" | 平衡容差:"+DoubleToString(g_balanceTolerance,3), LX+4, g_py+30, F(9), cMute);
@@ -1019,7 +1017,7 @@ void DrawPanel()
 
    // ── 监控预警卡片 (全品种) ──
    int monY = g_py + HDR_H + SG + MathMax(180, 250) + SG + 150 + SG;
-   int monH = MONITOR_H;
+   int monH = 240;
    ERect(g_prefix+"c_mon", X+PD, monY, PW-PD*2, monH, BG_CARD, BD_PANEL);
    ELbl(g_prefix+"c_mon_title","监控预警 (全品种)", X+PD+CD_PD, monY+CD_PD, F(11), C'235,240,250);
 
@@ -1048,14 +1046,15 @@ void DrawPanel()
    ELbl(g_prefix+"mon_h5","状态",     X+PD+CD_PD+325,   hdrY, F(9), cMute);
 
    // 数据行
-   int rowH = (monH - CD_PD*2 - 22 - 24 - 30) / MONITOR_MAX_ROWS;
+   int monitorRowCount = 6;
+   int rowH = (monH - CD_PD*2 - 22 - 24 - 30) / monitorRowCount;
    rowH = MathMax(rowH, 20);
-   int maxShow = MathMin(MONITOR_MAX_ROWS, totalSymbols);
+   int maxShow = MathMin(monitorRowCount, totalSymbols);
    int startIdx = MathMax(0, MathMin(g_monitorScroll, totalSymbols - maxShow));
    g_monitorScroll = startIdx;
 
    // 清理多余的旧行标签
-   for(int clr = maxShow; clr < MONITOR_MAX_ROWS; clr++)
+   for(int clr = maxShow; clr < monitorRowCount; clr++)
    {
       ObjectDelete(0, g_prefix+"mon_s"+IntegerToString(clr));
       ObjectDelete(0, g_prefix+"mon_p"+IntegerToString(clr));
