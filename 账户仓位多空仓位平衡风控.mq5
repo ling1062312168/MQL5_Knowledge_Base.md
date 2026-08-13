@@ -789,7 +789,10 @@ void DrawPanel()
    ELbl(g_prefix+"sub", symbol+" | 平衡容差:"+DoubleToString(g_balanceTolerance,3), LX+4, g_py+30, F(9), cMute);
 
    int cy = g_py + HDR_H + SG;
-   int ey, btnY;
+   int ry = 0;
+   int ey = 0;
+   int btnY = 0;
+   int rx = 0;
    string tTxt; color tClr;
 
    // ── 卡片1: 状态卡 ──
