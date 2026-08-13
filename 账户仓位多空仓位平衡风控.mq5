@@ -18,7 +18,7 @@ input double      InpLockDrawdownUSD   = 1000.0;   // 浮亏锁仓阈值($,设�
 input double      InpUnlockRatio       = 0.50;     // 盈利解锁比例(对冲盈利达锁仓阈值的此比例即解锁)
 input double      InpMinHedgeProfit    = 5.0;      // 最低保留对冲盈利(渐进平仓时需保留此额)
 input int         InpSlippage          = 30;       // 滑点
-input int         InpLockMagic         = 888888;   // 锁仓对冲单魔术码
+input int         InpTradeMagic        = 111111;   // 统一魔术码(策略单+对冲单共用)
 input bool        InpAutoDetectBalance = true;     // 自动检测多空平衡状态
 input double      InpBalanceTolerance  = 0.01;     // 平衡容差(多空手数差≤此值视为平衡)
 
@@ -48,6 +48,7 @@ input color       InpColorInfo         = C'66,153,225';
 #define LW              ((PW - PD*2 - PG)/2)  // 左栏宽度
 #define RW              LW                     // 右栏宽度
 #define THIRD_W         ((LW - PG*2)/3)
+#define HEDGE_COMMENT   "BRC_HEDGE"           // 对冲单标记注释
 
 //+------------------------------------------------------------------+
 //| 结构体                                                            |
@@ -98,7 +99,7 @@ double         g_unlockRatio    = 0.50;      // 解锁比例
 double         g_minHedgeProfit = 5.0;       // 最低保留盈利
 bool           g_progressiveClose = false;    // 渐进平仓模式
 bool           g_postLockWait  = false;      // 手动解锁后等待状态
-int            g_lockMagic     = 888888;     // 锁仓对冲单魔术码
+int            g_tradeMagic     = 111111;    // 统一魔术码(策略单+对冲单共用)
 double         g_balanceTolerance = 0.01;    // 平衡容差
 
 // ── 异步平仓 ──
@@ -372,6 +373,15 @@ int GetAllSymbolsStats(SymbolStats &allStats[])
 }
 
 //+------------------------------------------------------------------+
+//| 判断是否为对冲单 (通过注释标记)                                    |
+//+------------------------------------------------------------------+
+bool IsHedgeOrder()
+{
+   string comment = PositionGetString(POSITION_COMMENT);
+   return (StringFind(comment, HEDGE_COMMENT) >= 0);
+}
+
+//+------------------------------------------------------------------+
 //| 锁仓对冲: 开反向单锁住平衡仓位                                    |
 //+------------------------------------------------------------------+
 void OpenLockHedge(string symbol, ENUM_POSITION_TYPE dir, double lots)
@@ -382,16 +392,15 @@ void OpenLockHedge(string symbol, ENUM_POSITION_TYPE dir, double lots)
    lots = MathFloor(lots / step) * step;
    if(lots < minVol) return;
    double price = (dir == POSITION_TYPE_BUY) ? SymbolInfoDouble(symbol,SYMBOL_ASK) : SymbolInfoDouble(symbol,SYMBOL_BID);
-   string cmnt = (dir==POSITION_TYPE_BUY) ? "风控对冲多" : "风控对冲空";
-   m_trade.SetExpertMagicNumber(g_lockMagic);
+   string cmnt = HEDGE_COMMENT + (dir==POSITION_TYPE_BUY ? "_多" : "_空");
+   m_trade.SetExpertMagicNumber(g_tradeMagic);
    bool ok = (dir==POSITION_TYPE_BUY) ? m_trade.Buy(lots,symbol,price,0,0,cmnt)
                                        : m_trade.Sell(lots,symbol,price,0,0,cmnt);
    if(ok)
       Print("[风控锁仓] 反向开",(dir==POSITION_TYPE_BUY?"多":"空")," ",symbol," @ ",DoubleToString(price,5),
-            " 手数:",DoubleToString(lots,2)," 魔术码:",g_lockMagic);
+            " 手数:",DoubleToString(lots,2)," 魔术码:",g_tradeMagic);
    else
       Print("[风控锁仓] 开对冲失败: ",m_trade.ResultRetcodeDescription());
-   m_trade.SetExpertMagicNumber(InpLockMagic);
 }
 
 //+------------------------------------------------------------------+
@@ -406,7 +415,7 @@ double GetLockHedgeProfit(string symbol)
       if(ticket==0) continue;
       if(!PositionSelectByTicket(ticket)) continue;
       if(PositionGetString(POSITION_SYMBOL) != symbol) continue;
-      if((int)PositionGetInteger(POSITION_MAGIC) != g_lockMagic) continue;
+      if(!IsHedgeOrder()) continue;
       total += PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
    }
    return total;
@@ -424,7 +433,7 @@ void GetLockHedgeLots(string symbol, double &buyLots, double &sellLots)
       if(ticket==0) continue;
       if(!PositionSelectByTicket(ticket)) continue;
       if(PositionGetString(POSITION_SYMBOL) != symbol) continue;
-      if((int)PositionGetInteger(POSITION_MAGIC) != g_lockMagic) continue;
+      if(!IsHedgeOrder()) continue;
       double vol = PositionGetDouble(POSITION_VOLUME);
       if((ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY)
          buyLots += vol;
@@ -444,7 +453,7 @@ bool HasLockHedge(string symbol)
       if(ticket==0) continue;
       if(!PositionSelectByTicket(ticket)) continue;
       if(PositionGetString(POSITION_SYMBOL) != symbol) continue;
-      if((int)PositionGetInteger(POSITION_MAGIC) == g_lockMagic) return true;
+      if(IsHedgeOrder()) return true;
    }
    return false;
 }
@@ -461,7 +470,7 @@ void CloseLockHedge(string symbol)
       if(ticket==0) continue;
       if(!PositionSelectByTicket(ticket)) continue;
       if(PositionGetString(POSITION_SYMBOL) != symbol) continue;
-      if((int)PositionGetInteger(POSITION_MAGIC) != g_lockMagic) continue;
+      if(!IsHedgeOrder()) continue;
       double vol = PositionGetDouble(POSITION_VOLUME);
       double profit = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
       if(ClosePosition(ticket, vol, InpSlippage))
@@ -488,7 +497,7 @@ double GetDirLossAmount(string symbol, ENUM_POSITION_TYPE posType)
       if(!PositionSelectByTicket(ticket)) continue;
       if(PositionGetString(POSITION_SYMBOL) != symbol) continue;
       if((ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE) != posType) continue;
-      if((int)PositionGetInteger(POSITION_MAGIC) == g_lockMagic) continue;
+      if(IsHedgeOrder()) continue;
       double p = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
       if(p < -0.01) loss += -p;
    }
@@ -507,7 +516,7 @@ bool HasLossOrders(string symbol, ENUM_POSITION_TYPE posType)
       if(!PositionSelectByTicket(ticket)) continue;
       if(PositionGetString(POSITION_SYMBOL) != symbol) continue;
       if((ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE) != posType) continue;
-      if((int)PositionGetInteger(POSITION_MAGIC) == g_lockMagic) continue;
+      if(IsHedgeOrder()) continue;
       double p = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
       if(p < -0.01) return true;
    }
@@ -549,7 +558,7 @@ bool ProgressiveCloseLossOrders(string symbol)
       ENUM_POSITION_TYPE pt = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
       if(g_lockDir==1 && pt!=POSITION_TYPE_BUY) continue;
       if(g_lockDir==-1 && pt!=POSITION_TYPE_SELL) continue;
-      if((int)PositionGetInteger(POSITION_MAGIC) == g_lockMagic) continue;
+      if(IsHedgeOrder()) continue;
       double p = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
       if(p >= -0.01) continue;
       entries[count].ticket = ticket;
@@ -1178,7 +1187,7 @@ void HandlePanelButtonClick(const string sparam)
                  + "50%目标: $"+DoubleToString(targetP,2)+"\n\n"
                  + "解锁后:\n"
                  + "• 风控系统恢复监测\n"
-                 + "• 锁仓对冲单保留(魔术码"+IntegerToString(g_lockMagic)+")\n"
+                 + "• 锁仓对冲单保留(通过注释标记:"+HEDGE_COMMENT+")\n"
                  + "• 对冲盈利达50%时自动渐进平仓";
       if(!ShowConfirmDialog(msg)) return;
       g_locked = false;
@@ -1229,14 +1238,14 @@ void HandlePanelButtonClick(const string sparam)
 //+------------------------------------------------------------------+
 int OnInit()
 {
-   g_lockMagic = InpLockMagic;
+   g_tradeMagic = InpTradeMagic;
    g_lockDrawdownUSD = InpLockDrawdownUSD;
    g_unlockRatio = InpUnlockRatio;
    g_minHedgeProfit = InpMinHedgeProfit;
    g_balanceTolerance = InpBalanceTolerance;
    g_px = InpPanelX; g_py = InpPanelY;
    LoadParamsFromGV();
-   m_trade.SetExpertMagicNumber(InpLockMagic);
+   m_trade.SetExpertMagicNumber(InpTradeMagic);
    EventSetTimer(1);
    DrawPanel();
    Print("═══════════════════════════════════════════════════");
@@ -1246,7 +1255,7 @@ int OnInit()
    Print("  解锁比例: ", DoubleToString(g_unlockRatio*100,0), "%");
    Print("  最低保留盈利: $", DoubleToString(g_minHedgeProfit,1));
    Print("  平衡容差: ", DoubleToString(g_balanceTolerance,2));
-   Print("  锁仓对冲魔术码: ", g_lockMagic);
+   Print("  统一魔术码: ", g_tradeMagic);
    Print("═══════════════════════════════════════════════════");
    return INIT_SUCCEEDED;
 }
