@@ -1053,6 +1053,7 @@ void DrawPanel()
    int ry = 0;
    int ey = 0;
    int by = 0;
+   int rx = 0;
    string tTxt; color tClr;
 
    // ── 卡片1: 账户状态卡 ──
