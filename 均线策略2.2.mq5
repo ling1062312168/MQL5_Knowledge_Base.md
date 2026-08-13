@@ -220,6 +220,7 @@ double         g_unlockRatioSell = 0.50;  // 空单锁仓解锁盈利比例(对�
 double         g_unlockMinHedgeBuy  = 5.0;  // 多单解锁最低保留对冲盈利(渐进平仓时需保留此额)
 double         g_unlockMinHedgeSell = 5.0;  // 空单解锁最低保留对冲盈利(渐进平仓时需保留此额)
 bool           g_progressiveClose  = false; // 渐进平仓模式标志
+bool           g_postLockWait      = false; // 手动解锁后等待对冲盈利达50%的状态
 //+------------------------------------------------------------------+
 //| 字体缩放                                                          |
 //+------------------------------------------------------------------+
@@ -1237,15 +1238,16 @@ void DrawPanel(EAStats &s)
 
    // 锁仓状态 (只读)
    string lockStatus;
-   if(g_progressiveClose) lockStatus = "渐进平仓中";
-   else if(g_locked) lockStatus = "已锁仓";
-   else lockStatus = "正常";
-   color lockClr = g_progressiveClose ? cWarn : (g_locked ? cBad : cOk);
+   color lockClr;
+   if(g_progressiveClose){ lockStatus = "渐进平仓中"; lockClr = cWarn; }
+   else if(g_locked){ lockStatus = "已锁仓"; lockClr = cBad; }
+   else if(g_postLockWait){ lockStatus = "锁仓等待50%"; lockClr = cWarn; }
+   else{ lockStatus = "正常"; lockClr = cOk; }
    ELbl(g_prefix+"r10_lbl","锁仓状态", LX+CD_PD,   ry+LH*9+1, F(10), cMute);
    ELbl(g_prefix+"r10_val", lockStatus, LX+CD_PD+LW*4/10,ry+LH*9+1, F(10), lockClr);
 
-   // 锁仓方向详情 (仅锁仓时显示)
-   if(g_locked && (s.lock_buy_cnt>0 || s.lock_sell_cnt>0))
+   // 锁仓方向详情 (锁仓或锁仓等待状态均显示)
+   if((g_locked || g_postLockWait) && (s.lock_buy_cnt>0 || s.lock_sell_cnt>0))
    {
       int rowOffset = 10;  // r10 是锁仓状态
       if(g_lockDir == 1 && s.lock_sell_cnt > 0)
@@ -1284,22 +1286,36 @@ void DrawPanel(EAStats &s)
          }
       }
 
-      // 渐进平仓进度显示
-      if(g_progressiveClose)
+      // 渐进平仓进度显示 (锁仓或锁仓等待状态均显示)
+      if(g_progressiveClose || g_postLockWait)
       {
          double hPnl = GetLockHedgeProfit();
          double minH = (g_lockDir==1) ? g_unlockMinHedgeBuy :
                        (g_lockDir==-1) ? g_unlockMinHedgeSell :
                        (g_unlockMinHedgeBuy + g_unlockMinHedgeSell)/2.0;
-         string progTxt = "对冲盈利:$"+DoubleToString(hPnl,2)+" 最低保留:$"+DoubleToString(minH,2);
-         color progClr = (hPnl >= minH) ? cOk : cBad;
+         double unlockR = (g_lockDir==1) ? g_unlockRatioBuy :
+                          (g_lockDir==-1) ? g_unlockRatioSell :
+                          (g_unlockRatioBuy+g_unlockRatioSell)/2.0;
+         double targetP = g_lockOrigThresh * unlockR;
+         string progTxt;
+         color progClr;
+         if(g_postLockWait && !g_progressiveClose)
+         {
+            progTxt = "对冲盈利:$"+DoubleToString(hPnl,2)+" 50%目标:$"+DoubleToString(targetP,2);
+            progClr = (hPnl >= targetP) ? cOk : cWarn;
+         }
+         else
+         {
+            progTxt = "对冲盈利:$"+DoubleToString(hPnl,2)+" 最低保留:$"+DoubleToString(minH,2);
+            progClr = (hPnl >= minH) ? cOk : cBad;
+         }
          ELbl(g_prefix+"r13_lbl","渐进进度", LX+CD_PD,   ry+LH*rowOffset+1, F(10), cMute);
          ELbl(g_prefix+"r13_val", progTxt, LX+CD_PD+LW*4/10, ry+LH*rowOffset+1, F(10), progClr);
       }
    }
    else
    {
-      // 非锁仓状态: 清理锁仓相关标签
+      // 非锁仓/非锁仓等待状态: 清理锁仓相关标签
       DelLockLabels();
    }
 
@@ -1444,6 +1460,19 @@ void DrawPanel(EAStats &s)
    // 一键平仓
    cbw = RW - CD_PD*2;
    EBtn(g_prefix+"btn_closeAll","一键平仓全部持仓", rx+CD_PD, by, cbw, BH, C'180,50,50', cWhite);
+   by += BH + PG;
+
+   // 手动解锁按钮 (仅锁仓时显示)
+   if(g_locked)
+   {
+      string unlockTxt = "手动解锁(恢复交易)";
+      EBtn(g_prefix+"btn_manualUnlock", unlockTxt, rx+CD_PD, by, cbw, BH, C'50,140,80', cWhite);
+      by += BH + PG;
+   }
+   else if(ObjectFind(0,g_prefix+"btn_manualUnlock")>=0)
+   {
+      ObjectDelete(0, g_prefix+"btn_manualUnlock");
+   }
 
    // ===== 卡片c3: 多单平仓 =====
    cy += CH_OVERVIEW + SG;
@@ -2912,6 +2941,7 @@ bool ProgressiveCloseLossOrders()
 void ResetLockState()
 {
    g_locked          = false;
+   g_postLockWait    = false;
    g_lockOrigThresh  = 0;
    g_lockDir         = 0;
    g_lockDrawdownUSD = LOCK_DISABLED;
@@ -2979,7 +3009,60 @@ void CheckLock()
       return;
    }
 
-   // ── 未锁仓: 检测是否需要触发锁仓 ──
+   // ── 手动解锁后: 对冲盈利监控 (g_postLockWait=true) ──
+   // 说明: 用户点击"手动解锁"后, g_locked=false 恢复自动交易, 但锁仓对冲单保留
+   //       继续监控对冲盈利, 达到50%阈值后自动渐进平仓 → 平对冲单 → 完整解锁
+   if(g_postLockWait)
+   {
+      // 对冲单已被手动平仓 → 直接完整解锁
+      if(!HasLockHedge())
+      {
+         double totalProfit = GetLockCycleTotalProfit();
+         Print("════════════════════════════════");
+         Print("[解锁检查] 手动解锁后对冲单已平仓, 总盈亏=$", DoubleToString(totalProfit,2));
+         Print("[解锁] 保留所有非锁仓单, 恢复交易");
+         ResetLockState();
+         return;
+      }
+
+      // 计算50%解锁目标
+      double ratio = (g_lockDir==1) ? g_unlockRatioBuy :
+                     (g_lockDir==-1) ? g_unlockRatioSell :
+                     (g_unlockRatioBuy+g_unlockRatioSell)/2.0;
+      double hedgeProfit = GetLockHedgeProfit();
+      double targetProfit = g_lockOrigThresh * ratio;
+
+      // 对冲盈利未达50% → 继续等待
+      if(g_lockOrigThresh > 0 && hedgeProfit < targetProfit)
+      {
+         return;
+      }
+
+      // 对冲盈利已达50% → 启动或继续渐进平仓
+      if(!g_progressiveClose)
+      {
+         Print("════════════════════════════════");
+         Print("[解锁后渐进平仓] 对冲盈利达标 → 启动渐进平仓");
+         Print("[解锁后渐进平仓] 对冲盈利:$",DoubleToString(hedgeProfit,2),
+               " 解锁目标:$",DoubleToString(targetProfit,2));
+      }
+
+      bool canUnlock = ProgressiveCloseLossOrders();
+
+      if(canUnlock)
+      {
+         double minHedge = (g_lockDir==1) ? g_unlockMinHedgeBuy :
+                           (g_lockDir==-1) ? g_unlockMinHedgeSell :
+                           g_unlockMinHedgeBuy;
+         Print("[解锁后渐进平仓] 条件满足 → 平掉对冲单 + 完整解锁");
+         Print("[解锁后渐进平仓] 本轮操作净盈利≥$", DoubleToString(minHedge,2));
+         CloseLockHedge();
+         ResetLockState();
+      }
+      return;
+   }
+
+   // ── 未锁仓且未在post-lock等待: 检测是否需要触发锁仓 ──
    if(g_lockDrawdownUSD <= 0) return;
    double buyDD  = GetDirDrawdown(POSITION_TYPE_BUY);
    double sellDD = GetDirDrawdown(POSITION_TYPE_SELL);
@@ -3323,6 +3406,39 @@ void HandlePanelButtonClick(const string sparam)
          return;
       CloseAllPositions(ORDER_TYPE_BUY);
       CloseAllPositions(ORDER_TYPE_SELL);
+      RefreshPanel(true);
+      return;
+   }
+   // ── 手动解锁 (恢复自动交易, 保留锁仓对冲单等待50%触发渐进平仓) ──
+   if(k == "btn_manualUnlock")
+   {
+      ResetPanelButtonState(sparam);
+      double hedgePnl = GetLockHedgeProfit();
+      double unlockR = (g_lockDir==1) ? g_unlockRatioBuy :
+                       (g_lockDir==-1) ? g_unlockRatioSell :
+                       (g_unlockRatioBuy+g_unlockRatioSell)/2.0;
+      double targetPnl = g_lockOrigThresh * unlockR;
+      string msg = "确定要手动解锁吗？\n\n"
+                 + "当前状态: 已锁仓\n"
+                 + "对冲盈亏: $" + DoubleToString(hedgePnl,2) + "\n"
+                 + "解锁目标(50%): $" + DoubleToString(targetPnl,2) + "\n\n"
+                 + "解锁后:\n"
+                 + "• 自动交易恢复 (正常魔术码订单可继续加仓)\n"
+                 + "• 锁仓对冲单保留 (魔术码777777)\n"
+                 + "• 对冲盈利达50%阈值时自动渐进平仓\n\n"
+                 + "是否继续？";
+      if(!ShowConfirmDialog(msg))
+         return;
+      g_locked = false;
+      g_postLockWait = true;
+      g_lockDrawdownUSD = LOCK_DISABLED;
+      Print("════════════════════════════════");
+      Print("[手动解锁] 自动交易恢复, 锁仓对冲单保留");
+      Print("[手动解锁] 锁仓方向:",(g_lockDir==1?"多单":(g_lockDir==-1?"空单":"双向")));
+      Print("[手动解锁] 对冲盈亏:$", DoubleToString(hedgePnl,2),
+            " 解锁目标(50%):$", DoubleToString(targetPnl,2));
+      Print("[手动解锁] 对冲盈利达到50%后将自动执行渐进平仓");
+      Print("════════════════════════════════");
       RefreshPanel(true);
       return;
    }
