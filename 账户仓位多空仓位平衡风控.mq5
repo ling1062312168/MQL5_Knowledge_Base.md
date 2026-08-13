@@ -262,7 +262,7 @@ void MarkPositionAsLocked(ulong ticket)
 
    MqlTradeRequest request = {};
    MqlTradeResult  result  = {};
-   request.action = TRADE_ACTION_SLTP;
+   request.action = TRADE_ACTION_MODIFY;
    request.position = ticket;
    request.symbol = PositionGetString(POSITION_SYMBOL);
 
@@ -270,8 +270,7 @@ void MarkPositionAsLocked(ulong ticket)
       ((ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY?"多":"空") +
       "_" + IntegerToString((int)ticket);
 
-   // 用订单修改方式更新注释 (MQL5通过TRADE_ACTION_MODIFY)
-   request.action = TRADE_ACTION_MODIFY;
+   // 用订单修改方式更新注释
    request.comment = newComment;
    if(!OrderSend(request,result))
       Print("[锁仓标记] 订单#",ticket," 标记失败");
@@ -294,15 +293,16 @@ void UnmarkPositionAsLocked(ulong ticket)
 
    // 移除锁仓标记，保留其他注释
    string newComment = comment;
-   int idx = StringFind(newComment, LOCK_COMMENT);
-   if(idx >= 0)
+   int posFound = StringFind(newComment, LOCK_COMMENT);
+   if(posFound >= 0)
    {
-      // 找到标记开始位置，移除到下一个空格或结尾
+      // 从标记位置找到后续空格或到结尾，构建完整标记并删除
       int endPos = StringLen(newComment);
-      int spacePos = StringFind(newComment, " ", idx);
+      int spacePos = StringFind(newComment, " ", posFound + 1);
       if(spacePos > 0 && spacePos < endPos) endPos = spacePos;
-      newComment = StringSubstr(newComment, 0, idx) +
-                   StringSubstr(newComment, endPos);
+
+      string tagToRemove = StringSubstr(newComment, posFound, endPos - posFound);
+      StringReplace(newComment, tagToRemove, "");
       newComment = StringTrimLeft(newComment);
    }
 
@@ -1324,7 +1324,9 @@ void RefreshPanel(bool force)
 //+------------------------------------------------------------------+
 void HandlePanelButtonClick(const string sparam)
 {
-   string k = StringSubstr(sparam, StringLen(g_prefix));
+   int prefixLen = StringLen(g_prefix);
+   int sparamLen = StringLen(sparam);
+   string k = StringSubstr(sparam, prefixLen, sparamLen - prefixLen);
    string symbol = _Symbol;
 
    // 折叠/展开
