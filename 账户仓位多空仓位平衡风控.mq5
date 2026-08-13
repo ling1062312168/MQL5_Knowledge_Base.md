@@ -14,7 +14,7 @@
 //| 输入参数                                                          |
 //+------------------------------------------------------------------+
 input group "== 锁仓风控参数 =="
-input double      InpLockDrawdownUSD   = -1000.0;  // 浮亏锁仓阈值($,负数=禁用,设为正数如1000则启用)
+input double      InpLockDrawdownUSD   = 1000.0;   // 浮亏锁仓阈值($,设为正数如1000则启用)
 input double      InpUnlockRatio       = 0.50;     // 盈利解锁比例(对冲盈利达锁仓阈值的此比例即解锁)
 input double      InpMinHedgeProfit    = 5.0;      // 最低保留对冲盈利(渐进平仓时需保留此额)
 input int         InpSlippage          = 30;       // 滑点
@@ -663,9 +663,11 @@ void CheckLock()
    g_locked = true;
    g_progressiveClose = false;
 
+   // 确定触发方向: 哪个方向亏损大就对冲哪个, 都超阈值则双向
    if(buyLoss >= g_lockOrigThresh && sellLoss >= g_lockOrigThresh) g_lockDir = 0;
-   else if(buyLoss >= g_lockOrigThresh) g_lockDir = 1;
-   else if(sellLoss >= g_lockOrigThresh) g_lockDir = -1;
+   else if(buyLoss > sellLoss) g_lockDir = 1;
+   else if(sellLoss > buyLoss) g_lockDir = -1;
+   else g_lockDir = 0; // 相等时双向
 
    Print("════════════════════════════════");
    Print("[风控锁仓] ",symbol," 多空平衡 + 浮亏达阈值");
@@ -675,13 +677,14 @@ void CheckLock()
          " 阈值:$",DoubleToString(g_lockOrigThresh,2));
    Print("[风控锁仓] 触发方向:",(g_lockDir==1?"多单":(g_lockDir==-1?"空单":"双向")));
 
-   // 触发对冲: 多亏→开空对冲, 空亏→开多对冲
+   // 触发对冲: 亏损大的方向→反向对冲, 对冲手数=该方向亏损手数 (或按比例)
    if(g_lockDir == 1 || g_lockDir == 0)
    {
       if(buyLoss > 0 && stats.buyLots > 0)
       {
-         Print("[风控锁仓] 多单亏损 → 按比例开空对冲");
-         double hedgeLots = MathMin(stats.buyLots, buyLoss * 0.5 / GetMinLot() * GetMinLot());
+         Print("[风控锁仓] 多单亏损($",DoubleToString(buyLoss,2),") → 开空对冲");
+         double hedgeLots = MathMin(stats.buyLots, AlignVolumeToStep(buyLoss / MathMax(GetMinLot()*10, 1)));
+         if(hedgeLots < GetMinLot()) hedgeLots = AlignVolumeToStep(stats.buyLots * 0.5);
          if(hedgeLots >= GetMinLot()) OpenLockHedge(symbol, POSITION_TYPE_SELL, AlignVolumeToStep(hedgeLots));
       }
    }
@@ -689,8 +692,9 @@ void CheckLock()
    {
       if(sellLoss > 0 && stats.sellLots > 0)
       {
-         Print("[风控锁仓] 空单亏损 → 按比例开多对冲");
-         double hedgeLots = MathMin(stats.sellLots, sellLoss * 0.5 / GetMinLot() * GetMinLot());
+         Print("[风控锁仓] 空单亏损($",DoubleToString(sellLoss,2),") → 开多对冲");
+         double hedgeLots = MathMin(stats.sellLots, AlignVolumeToStep(sellLoss / MathMax(GetMinLot()*10, 1)));
+         if(hedgeLots < GetMinLot()) hedgeLots = AlignVolumeToStep(stats.sellLots * 0.5);
          if(hedgeLots >= GetMinLot()) OpenLockHedge(symbol, POSITION_TYPE_BUY, AlignVolumeToStep(hedgeLots));
       }
    }
@@ -793,6 +797,7 @@ void DrawPanel()
    int ey = 0;
    int btnY = 0;
    int rx = 0;
+   int by = 0;
    string tTxt; color tClr;
 
    // ── 卡片1: 状态卡 ──
