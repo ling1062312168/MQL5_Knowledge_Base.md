@@ -1,25 +1,24 @@
 //+------------------------------------------------------------------+
 //|                                          账户仓位多空仓位平衡风控.mq5  |
 //|                              Copyright 2025, 风控系统               |
-//|   功能: 监测账户中每个品种的仓位平衡, 浮亏达阈值触发锁仓风控          |
-//|   核心: 多空手数≈0(平衡) + 浮亏达阈值 → 反向对冲 → 渐进平仓 → 解锁   |
+//|   功能: 监测账户所有订单, 总浮亏达阈值触发锁仓风控                    |
+//|   核心: 账户浮亏达阈值 → 平衡品种锁仓 → 对冲盈利50% → 渐进平仓      |
 //|   参数: 浮亏锁仓阈值=-1000, 盈利阈值=50%, 最低保留=5                |
 //+------------------------------------------------------------------+
 #property copyright "风控系统"
-#property version   "1.00"
+#property version   "2.00"
 #property description "账户仓位多空仓位平衡风控"
-#property description "监测多空平衡 → 浮亏锁仓 → 反向对冲 → 渐进平仓 → 解锁"
+#property description "账户总浮亏→平衡品种锁仓→对冲盈利→渐进平仓→解锁"
 #include <Trade/Trade.mqh>
+
 //+------------------------------------------------------------------+
 //| 输入参数                                                          |
 //+------------------------------------------------------------------+
 input group "== 锁仓风控参数 =="
-input double      InpLockDrawdownUSD   = 1000.0;   // 浮亏锁仓阈值($,设为正数如1000则启用)
-input double      InpUnlockRatio       = 0.50;     // 盈利解锁比例(对冲盈利达锁仓阈值的此比例即解锁)
+input double      InpLockDrawdownUSD   = 1000.0;   // 账户浮亏锁仓阈值($,正数如1000)
+input double      InpUnlockRatio       = 0.50;     // 盈利解锁比例(对冲盈利达此比例即解锁)
 input double      InpMinHedgeProfit    = 5.0;      // 最低保留对冲盈利(渐进平仓时需保留此额)
 input int         InpSlippage          = 30;       // 滑点
-input int         InpTradeMagic        = 111111;   // 统一魔术码(策略单+对冲单共用)
-input bool        InpAutoDetectBalance = true;     // 自动检测多空平衡状态
 input double      InpBalanceTolerance  = 0.01;     // 平衡容差(多空手数差≤此值视为平衡)
 
 input group "== 面板位置 =="
@@ -47,7 +46,6 @@ input color       InpColorInfo         = C'66,153,225';
 #define CD_PD           10        // 卡片内边距
 #define LW              ((PW - PD*2 - PG)/2)  // 左栏宽度
 #define RW              LW                     // 右栏宽度
-#define THIRD_W         ((LW - PG*2)/3)
 #define HEDGE_COMMENT   "BRC_HEDGE"           // 对冲单标记注释
 
 //+------------------------------------------------------------------+
@@ -56,11 +54,11 @@ input color       InpColorInfo         = C'66,153,225';
 struct PositionInfo
 {
    ulong    ticket;
+   string   symbol;
    double   openPrice;
    double   lots;
    double   profit;
    ENUM_POSITION_TYPE posType;
-   datetime time;
 };
 
 struct SymbolStats
@@ -75,6 +73,7 @@ struct SymbolStats
    int      buyCnt;
    int      sellCnt;
    bool     isBalanced;
+   bool     hasHedge;    // 是否有对冲单
 };
 
 //+------------------------------------------------------------------+
@@ -92,19 +91,16 @@ int            g_panel_drag_oy = 0;
 // ── 锁仓风控状态 ──
 bool           g_locked         = false;     // 锁仓标志
 double         g_lockOrigThresh = 0;         // 锁仓时保存的阈值
-int            g_lockDir        = 0;         // 触发方向(1=多亏触发, -1=空亏触发, 0=双向)
 #define LOCK_DISABLED -999999.0
 double         g_lockDrawdownUSD = -999999.0; // 当前锁仓阈值(运行时)
 double         g_unlockRatio    = 0.50;      // 解锁比例
 double         g_minHedgeProfit = 5.0;       // 最低保留盈利
 bool           g_progressiveClose = false;    // 渐进平仓模式
 bool           g_postLockWait  = false;      // 手动解锁后等待状态
-int            g_tradeMagic     = 111111;    // 统一魔术码(策略单+对冲单共用)
 double         g_balanceTolerance = 0.01;    // 平衡容差
 
-// ── 异步平仓 ──
-CTrade         g_asyncTrade;
-bool           g_isAsyncClosing = false;
+// ── 锁仓品种列表 ──
+string         g_lockedSymbols[];            // 已锁仓品种列表
 
 // ── 多品种监控 ──
 int            g_monitorScroll   = 0;         // 监控列表滚动偏移
@@ -132,7 +128,7 @@ void ClampPanelPosition(int &x, int &y)
    if(x < 0) x = 0;
    if(y < 0) y = 0;
    if(x + PW > cw && cw > PW) x = (int)(cw - PW);
-   if(y + 400 > ch && ch > 400) y = (int)(ch - 400);
+   if(y + 500 > ch && ch > 500) y = (int)(ch - 500);
 }
 void ShiftAll(int dx, int dy)
 {
@@ -183,7 +179,7 @@ void EBtn(string nm, string txt, int x, int y, int w, int h, color bg, color fg,
    if(ObjectFind(0,nm)<0) ObjectCreate(0,nm,OBJ_BUTTON,0,0,0);
    ObjectSetInteger(0,nm,OBJPROP_CORNER,cr); ObjectSetInteger(0,nm,OBJPROP_XDISTANCE,x);
    ObjectSetInteger(0,nm,OBJPROP_YDISTANCE,y); ObjectSetInteger(0,nm,OBJPROP_XSIZE,w);
-   ObjectSetInteger(0,nm,OBJPROP_YSIZE,h); ObjectSetString(0,nm,OBJPROP_FONT,"Microsoft YaHei");
+   ObjectSetInteger(0,nm,OBJPROP_YSIZE,h); ObjectSetInteger(0,nm,OBJPROP_FONT,"Microsoft YaHei");
    ObjectSetInteger(0,nm,OBJPROP_FONTSIZE,F(10)); ObjectSetString(0,nm,OBJPROP_TEXT,txt);
    ObjectSetInteger(0,nm,OBJPROP_COLOR,fg); ObjectSetInteger(0,nm,OBJPROP_BGCOLOR,bg);
    ObjectSetInteger(0,nm,OBJPROP_BORDER_COLOR,bg); ObjectSetInteger(0,nm,OBJPROP_SELECTABLE,false);
@@ -238,9 +234,18 @@ void ResetPanelButtonState(const string button_name)
 //+------------------------------------------------------------------+
 //| 手数辅助函数                                                      |
 //+------------------------------------------------------------------+
-double GetVolumeStep() { double s = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP); return (s > 0 ? s : 0.01); }
-double AlignVolumeToStep(double volume) { double s = GetVolumeStep(); return MathFloor(volume / s + 1e-9) * s; }
-double GetMinLot() { return SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN); }
+double GetVolumeStep(string symbol) { double s = SymbolInfoDouble(symbol, SYMBOL_VOLUME_STEP); return (s > 0 ? s : 0.01); }
+double AlignVolumeToStep(string symbol, double volume) { double s = GetVolumeStep(symbol); return MathFloor(volume / s + 1e-9) * s; }
+double GetMinLot(string symbol) { return SymbolInfoDouble(symbol, SYMBOL_VOLUME_MIN); }
+
+//+------------------------------------------------------------------+
+//| 判断是否为对冲单 (通过注释标记)                                    |
+//+------------------------------------------------------------------+
+bool IsHedgeOrder()
+{
+   string comment = PositionGetString(POSITION_COMMENT);
+   return (StringFind(comment, HEDGE_COMMENT) >= 0);
+}
 
 //+------------------------------------------------------------------+
 //| 单仓平仓                                                          |
@@ -298,12 +303,14 @@ void GetSymbolStats(string symbol, SymbolStats &stats)
    stats.buyLots = 0; stats.sellLots = 0;
    stats.buyPnl = 0; stats.sellPnl = 0;
    stats.buyCnt = 0; stats.sellCnt = 0;
+   stats.hasHedge = false;
    for(int i=(int)PositionsTotal()-1; i>=0; i--)
    {
       ulong ticket = PositionGetTicket(i);
       if(ticket==0) continue;
       if(!PositionSelectByTicket(ticket)) continue;
       if(PositionGetString(POSITION_SYMBOL) != symbol) continue;
+      if(IsHedgeOrder()) { stats.hasHedge = true; continue; }
       double p = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
       if((ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY)
       {
@@ -324,7 +331,7 @@ void GetSymbolStats(string symbol, SymbolStats &stats)
 }
 
 //+------------------------------------------------------------------+
-//| 收集所有持仓品种的统计 (返回品种数量, 填充stats数组)                |
+//| 收集所有持仓品种的统计                                            |
 //+------------------------------------------------------------------+
 int GetAllSymbolsStats(SymbolStats &allStats[])
 {
@@ -373,12 +380,57 @@ int GetAllSymbolsStats(SymbolStats &allStats[])
 }
 
 //+------------------------------------------------------------------+
-//| 判断是否为对冲单 (通过注释标记)                                    |
+//| 统计账户总盈亏 (所有订单, 含对冲单)                                |
 //+------------------------------------------------------------------+
-bool IsHedgeOrder()
+double GetTotalAccountPnl()
 {
-   string comment = PositionGetString(POSITION_COMMENT);
-   return (StringFind(comment, HEDGE_COMMENT) >= 0);
+   double total = 0;
+   for(int i=(int)PositionsTotal()-1; i>=0; i--)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket==0) continue;
+      if(!PositionSelectByTicket(ticket)) continue;
+      total += PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
+   }
+   return total;
+}
+
+//+------------------------------------------------------------------+
+//| 统计账户非对冲单总盈亏                                            |
+//+------------------------------------------------------------------+
+double GetTotalNonHedgePnl()
+{
+   double total = 0;
+   for(int i=(int)PositionsTotal()-1; i>=0; i--)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket==0) continue;
+      if(!PositionSelectByTicket(ticket)) continue;
+      if(IsHedgeOrder()) continue;
+      total += PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
+   }
+   return total;
+}
+
+//+------------------------------------------------------------------+
+//| 获取所有平衡品种列表                                              |
+//+------------------------------------------------------------------+
+int GetBalancedSymbols(SymbolStats &balancedStats[])
+{
+   SymbolStats allStats[];
+   int totalCnt = GetAllSymbolsStats(allStats);
+   int balancedCnt = 0;
+   for(int i=0; i<totalCnt; i++)
+   {
+      if(allStats[i].isBalanced)
+      {
+         int idx = ArraySize(balancedStats);
+         ArrayResize(balancedStats, idx+1);
+         balancedStats[idx] = allStats[i];
+         balancedCnt++;
+      }
+   }
+   return balancedCnt;
 }
 
 //+------------------------------------------------------------------+
@@ -387,20 +439,19 @@ bool IsHedgeOrder()
 void OpenLockHedge(string symbol, ENUM_POSITION_TYPE dir, double lots)
 {
    if(lots <= 0) return;
-   double step = SymbolInfoDouble(symbol, SYMBOL_VOLUME_STEP);
-   double minVol = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MIN);
+   double step = GetVolumeStep(symbol);
+   double minVol = GetMinLot(symbol);
    lots = MathFloor(lots / step) * step;
    if(lots < minVol) return;
    double price = (dir == POSITION_TYPE_BUY) ? SymbolInfoDouble(symbol,SYMBOL_ASK) : SymbolInfoDouble(symbol,SYMBOL_BID);
    string cmnt = HEDGE_COMMENT + (dir==POSITION_TYPE_BUY ? "_多" : "_空");
-   m_trade.SetExpertMagicNumber(g_tradeMagic);
    bool ok = (dir==POSITION_TYPE_BUY) ? m_trade.Buy(lots,symbol,price,0,0,cmnt)
                                        : m_trade.Sell(lots,symbol,price,0,0,cmnt);
    if(ok)
       Print("[风控锁仓] 反向开",(dir==POSITION_TYPE_BUY?"多":"空")," ",symbol," @ ",DoubleToString(price,5),
-            " 手数:",DoubleToString(lots,2)," 魔术码:",g_tradeMagic);
+            " 手数:",DoubleToString(lots,2));
    else
-      Print("[风控锁仓] 开对冲失败: ",m_trade.ResultRetcodeDescription());
+      Print("[风控锁仓] 开对冲失败: ",symbol," ",m_trade.ResultRetcodeDescription());
 }
 
 //+------------------------------------------------------------------+
@@ -485,46 +536,47 @@ void CloseLockHedge(string symbol)
 }
 
 //+------------------------------------------------------------------+
-//| 获取指定方向亏损总额(非锁仓单)                                    |
+//| 检查品种是否在已锁仓列表中                                        |
 //+------------------------------------------------------------------+
-double GetDirLossAmount(string symbol, ENUM_POSITION_TYPE posType)
+bool IsSymbolLocked(string symbol)
 {
-   double loss = 0;
-   for(int i=(int)PositionsTotal()-1;i>=0;i--)
+   for(int i=0; i<ArraySize(g_lockedSymbols); i++)
    {
-      ulong ticket = PositionGetTicket(i);
-      if(ticket==0) continue;
-      if(!PositionSelectByTicket(ticket)) continue;
-      if(PositionGetString(POSITION_SYMBOL) != symbol) continue;
-      if((ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE) != posType) continue;
-      if(IsHedgeOrder()) continue;
-      double p = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
-      if(p < -0.01) loss += -p;
-   }
-   return loss;
-}
-
-//+------------------------------------------------------------------+
-//| 是否存在指定方向亏损单                                            |
-//+------------------------------------------------------------------+
-bool HasLossOrders(string symbol, ENUM_POSITION_TYPE posType)
-{
-   for(int i=(int)PositionsTotal()-1;i>=0;i--)
-   {
-      ulong ticket = PositionGetTicket(i);
-      if(ticket==0) continue;
-      if(!PositionSelectByTicket(ticket)) continue;
-      if(PositionGetString(POSITION_SYMBOL) != symbol) continue;
-      if((ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE) != posType) continue;
-      if(IsHedgeOrder()) continue;
-      double p = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
-      if(p < -0.01) return true;
+      if(g_lockedSymbols[i] == symbol) return true;
    }
    return false;
 }
 
 //+------------------------------------------------------------------+
-//| 渐进平仓: 用对冲盈利平亏损单                                      |
+//| 添加品种到锁仓列表                                                |
+//+------------------------------------------------------------------+
+void AddSymbolToLockedList(string symbol)
+{
+   if(IsSymbolLocked(symbol)) return;
+   int idx = ArraySize(g_lockedSymbols);
+   ArrayResize(g_lockedSymbols, idx+1);
+   g_lockedSymbols[idx] = symbol;
+}
+
+//+------------------------------------------------------------------+
+//| 从锁仓列表移除品种                                                |
+//+------------------------------------------------------------------+
+void RemoveSymbolFromLockedList(string symbol)
+{
+   int newSize = 0;
+   for(int i=0; i<ArraySize(g_lockedSymbols); i++)
+   {
+      if(g_lockedSymbols[i] != symbol)
+      {
+         if(newSize != i) g_lockedSymbols[newSize] = g_lockedSymbols[i];
+         newSize++;
+      }
+   }
+   ArrayResize(g_lockedSymbols, newSize);
+}
+
+//+------------------------------------------------------------------+
+//| 渐进平仓: 用对冲盈利平所有亏损单                                  |
 //+------------------------------------------------------------------+
 bool ProgressiveCloseLossOrders(string symbol)
 {
@@ -533,6 +585,7 @@ bool ProgressiveCloseLossOrders(string symbol)
       g_progressiveClose = true;
       ReadEdits();
    }
+
    double currentHedge = GetLockHedgeProfit(symbol);
    double budget = currentHedge - g_minHedgeProfit;
 
@@ -540,87 +593,144 @@ bool ProgressiveCloseLossOrders(string symbol)
          " 最低保留=$",DoubleToString(g_minHedgeProfit,2),
          " 预算=$",DoubleToString(budget,2));
 
-   if(budget < GetMinLot() * 0.01)
+   if(budget < 1.0)
    {
-      Print("[渐进平仓] 预算不足 → 直接解锁");
-      return true;
+      Print("[渐进平仓] 预算不足 → 跳过");
+      return false;
    }
 
    int count = 0;
    PositionInfo entries[];
    ArrayResize(entries, (int)PositionsTotal());
+
+   // 收集所有非锁仓的亏损单
    for(int i=(int)PositionsTotal()-1;i>=0;i--)
    {
       ulong ticket = PositionGetTicket(i);
       if(ticket==0) continue;
       if(!PositionSelectByTicket(ticket)) continue;
       if(PositionGetString(POSITION_SYMBOL) != symbol) continue;
-      ENUM_POSITION_TYPE pt = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
-      if(g_lockDir==1 && pt!=POSITION_TYPE_BUY) continue;
-      if(g_lockDir==-1 && pt!=POSITION_TYPE_SELL) continue;
       if(IsHedgeOrder()) continue;
+
       double p = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
       if(p >= -0.01) continue;
+
       entries[count].ticket = ticket;
+      entries[count].symbol = symbol;
       entries[count].openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
       entries[count].lots = PositionGetDouble(POSITION_VOLUME);
       entries[count].profit = p;
-      entries[count].posType = pt;
+      entries[count].posType = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
       count++;
    }
-   if(count==0) { Print("[渐进平仓] 无亏损单 → 直接解锁"); return true; }
 
-   bool highFirst = (g_lockDir == 1 || g_lockDir == 0);
+   if(count==0)
+   {
+      Print("[渐进平仓] ",symbol," 无亏损单 → 解锁");
+      return true;
+   }
+
+   // 按亏损程度排序: 多单从高价到低价(亏大优先), 空单从低价到高价
    for(int i=0; i<count-1; i++)
       for(int j=i+1; j<count; j++)
       {
-         bool needSwap = highFirst ? (entries[i].openPrice < entries[j].openPrice)
-                                    : (entries[i].openPrice > entries[j].openPrice);
-         if(needSwap) { PositionInfo tmp = entries[i]; entries[i] = entries[j]; entries[j] = tmp; }
+         bool needSwap = false;
+         if(entries[i].posType == POSITION_TYPE_BUY)
+         {
+            // 多单: 高价先平 (亏大优先)
+            needSwap = (entries[i].openPrice < entries[j].openPrice);
+         }
+         else
+         {
+            // 空单: 低价先平 (亏大优先)
+            needSwap = (entries[i].openPrice > entries[j].openPrice);
+         }
+         if(needSwap)
+         {
+            PositionInfo tmp = entries[i]; entries[i] = entries[j]; entries[j] = tmp;
+         }
       }
 
    int closedCnt = 0;
    double totalReleased = 0;
+   double origBudget = budget;
+
    for(int k=0; k<count; k++)
    {
+      if(budget <= 1.0) break;
+
       ulong ticket = entries[k].ticket;
       if(!PositionSelectByTicket(ticket)) continue;
+
       double realProfit = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
       double realLots = PositionGetDouble(POSITION_VOLUME);
       if(realProfit >= -0.01) continue;
+
       double lossPerLot = (-realProfit) / realLots;
       if(lossPerLot <= 0) continue;
-      double affordable = budget / lossPerLot;
+
+      // 用对冲盈利做"预算", 逐笔平亏损单, 每笔保留5%缓冲
+      double maxLossForThis = budget * 0.95;
+      double affordable = maxLossForThis / lossPerLot;
       double closeLot = MathMin(realLots, affordable);
-      closeLot = MathFloor(closeLot / GetMinLot()) * GetMinLot();
-      if(closeLot < GetMinLot())
-      {
-         if(closedCnt == 0) { Print("[渐进平仓] 预算不足 → 直接解锁"); return true; }
-         break;
-      }
+      double minLot = GetMinLot(symbol);
+      closeLot = MathFloor(closeLot / minLot) * minLot;
+
+      if(closeLot < minLot) continue;
+
       double lossForClose = closeLot * lossPerLot;
       if(lossForClose > budget * 0.95)
       {
-         closeLot = MathFloor(budget * 0.95 / lossPerLot / GetMinLot()) * GetMinLot();
-         if(closeLot < GetMinLot()) break;
+         closeLot = MathFloor(budget * 0.95 / lossPerLot / minLot) * minLot;
+         if(closeLot < minLot) continue;
          lossForClose = closeLot * lossPerLot;
       }
+
       if(ClosePosition(ticket, closeLot, InpSlippage))
       {
          closedCnt++;
          totalReleased += lossForClose;
          budget -= lossForClose;
-         Print("[渐进平仓] 平单#",closedCnt," 平:",DoubleToString(closeLot,2),"手 释放亏损:$",DoubleToString(lossForClose,2));
+         Print("[渐进平仓] 平单#",closedCnt," ",symbol," ",
+               (entries[k].posType==POSITION_TYPE_BUY?"多":"空"),
+               " 平:",DoubleToString(closeLot,2),"手 释放亏损:$",DoubleToString(lossForClose,2));
       }
    }
 
-   double finalHedge = GetLockHedgeProfit(symbol);
-   if(finalHedge >= g_minHedgeProfit)
+   if(closedCnt > 0)
    {
-      Print("[渐进平仓] 对冲盈利=$",DoubleToString(finalHedge,2)," ≥ 最低保留=$",DoubleToString(g_minHedgeProfit,2)," → 解锁!");
+      Print("[渐进平仓] ",symbol," 共平",closedCnt,"单, 释放$",DoubleToString(totalReleased,2),
+            " 剩余预算$",DoubleToString(budget,2));
+   }
+
+   double finalHedge = GetLockHedgeProfit(symbol);
+   Print("[渐进平仓] ",symbol," 对冲盈利=$",DoubleToString(finalHedge,2),
+         " 最低保留=$",DoubleToString(g_minHedgeProfit,2));
+
+   if(finalHedge >= g_minHedgeProfit && closedCnt > 0)
+   {
+      Print("[渐进平仓] ",symbol," 对冲盈利≥最低保留 → 解锁");
       return true;
    }
-   Print("[渐进平仓] 对冲盈利=$",DoubleToString(finalHedge,2)," < 最低保留=$",DoubleToString(g_minHedgeProfit,2)," → 继续等待");
+
+   // 如果所有亏损单都平完了, 也解锁
+   int remainingLoss = 0;
+   for(int i=(int)PositionsTotal()-1;i>=0;i--)
+   {
+      ulong t = PositionGetTicket(i);
+      if(t==0) continue;
+      if(!PositionSelectByTicket(t)) continue;
+      if(PositionGetString(POSITION_SYMBOL) != symbol) continue;
+      if(IsHedgeOrder()) continue;
+      double p = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
+      if(p < -0.01) remainingLoss++;
+   }
+   if(remainingLoss == 0 && closedCnt > 0)
+   {
+      Print("[渐进平仓] ",symbol," 所有亏损单已平 → 解锁");
+      return true;
+   }
+
    return false;
 }
 
@@ -632,9 +742,9 @@ void ResetLockState()
    g_locked = false;
    g_postLockWait = false;
    g_lockOrigThresh = 0;
-   g_lockDir = 0;
    g_lockDrawdownUSD = LOCK_DISABLED;
    g_progressiveClose = false;
+   ArrayResize(g_lockedSymbols, 0);
    Print("[风控解锁] 阈值回到禁用值, 需手动设置新阈值");
    Print("[风控解锁] 风控系统恢复, 持续监测平衡状态");
    RefreshPanel(true);
@@ -642,38 +752,59 @@ void ResetLockState()
 }
 
 //+------------------------------------------------------------------+
-//| 核心: 检查锁仓 (平衡+浮亏→对冲, 对冲盈利→渐进平仓→解锁)            |
+//| 核心: 检查锁仓 (账户浮亏→平衡品种锁仓→对冲盈利→渐进平仓)          |
 //+------------------------------------------------------------------+
 void CheckLock()
 {
-   string symbol = _Symbol;
-   SymbolStats stats;
-   GetSymbolStats(symbol, stats);
+   double totalPnl = GetTotalNonHedgePnl();
 
    // ── 已锁仓: 解锁检测 ──
    if(g_locked)
    {
-      if(!HasLockHedge(symbol))
-      {
-         double totalProfit = stats.totalPnl + GetLockHedgeProfit(symbol);
-         Print("[风控解锁检查] 对冲单已平仓, 总盈亏=$",DoubleToString(totalProfit,2));
-         ResetLockState();
-         return;
-      }
-      double hedgeProfit = GetLockHedgeProfit(symbol);
-      double targetProfit = g_lockOrigThresh * g_unlockRatio;
-      if(!g_progressiveClose && g_lockOrigThresh > 0 && hedgeProfit < targetProfit) return;
+      bool allSymbolsUnlocked = true;
 
-      if(!g_progressiveClose)
+      for(int s=0; s<ArraySize(g_lockedSymbols); s++)
       {
-         Print("════════════════════════════════");
-         Print("[渐进平仓] ",symbol," 对冲盈利达标 → 启动渐进平仓");
-         Print("[渐进平仓] 对冲盈利:$",DoubleToString(hedgeProfit,2)," 解锁目标:$",DoubleToString(targetProfit,2));
+         string sym = g_lockedSymbols[s];
+
+         // 如果对冲单已被平掉
+         if(!HasLockHedge(sym))
+         {
+            Print("[风控解锁检查] ",sym," 对冲单已平仓");
+            RemoveSymbolFromLockedList(sym);
+            continue;
+         }
+
+         double hedgeProfit = GetLockHedgeProfit(sym);
+         double targetProfit = g_lockOrigThresh * g_unlockRatio;
+
+         if(!g_progressiveClose && g_lockOrigThresh > 0 && hedgeProfit < targetProfit)
+         {
+            allSymbolsUnlocked = false;
+            continue;
+         }
+
+         if(!g_progressiveClose)
+         {
+            Print("════════════════════════════════");
+            Print("[渐进平仓] ",sym," 对冲盈利达标 → 启动渐进平仓");
+            Print("[渐进平仓] 对冲盈利:$",DoubleToString(hedgeProfit,2)," 解锁目标:$",DoubleToString(targetProfit,2));
+         }
+
+         if(ProgressiveCloseLossOrders(sym))
+         {
+            Print("[解锁] ",sym," 条件满足 → 平掉对冲单");
+            CloseLockHedge(sym);
+            RemoveSymbolFromLockedList(sym);
+         }
+         else
+         {
+            allSymbolsUnlocked = false;
+         }
       }
-      if(ProgressiveCloseLossOrders(symbol))
+
+      if(allSymbolsUnlocked || ArraySize(g_lockedSymbols) == 0)
       {
-         Print("[解锁] ",symbol," 条件满足 → 平掉对冲单 + 完整解锁");
-         CloseLockHedge(symbol);
          ResetLockState();
       }
       return;
@@ -682,26 +813,44 @@ void CheckLock()
    // ── 手动解锁后: 继续监控对冲盈利 ──
    if(g_postLockWait)
    {
-      if(!HasLockHedge(symbol))
+      bool allDone = true;
+      for(int s=0; s<ArraySize(g_lockedSymbols); s++)
       {
-         Print("[解锁检查] 对冲单已平仓 → 完整解锁");
-         ResetLockState();
-         return;
-      }
-      double hedgeProfit = GetLockHedgeProfit(symbol);
-      double targetProfit = g_lockOrigThresh * g_unlockRatio;
-      if(g_lockOrigThresh > 0 && hedgeProfit < targetProfit) return;
+         string sym = g_lockedSymbols[s];
+         if(!HasLockHedge(sym))
+         {
+            RemoveSymbolFromLockedList(sym);
+            continue;
+         }
 
-      if(!g_progressiveClose)
-      {
-         Print("════════════════════════════════");
-         Print("[解锁后渐进平仓] ",symbol," 对冲盈利达标 → 启动渐进平仓");
-         Print("[解锁后渐进平仓] 对冲盈利:$",DoubleToString(hedgeProfit,2)," 目标:$",DoubleToString(targetProfit,2));
+         double hedgeProfit = GetLockHedgeProfit(sym);
+         double targetProfit = g_lockOrigThresh * g_unlockRatio;
+         if(g_lockOrigThresh > 0 && hedgeProfit < targetProfit)
+         {
+            allDone = false;
+            continue;
+         }
+
+         if(!g_progressiveClose)
+         {
+            Print("════════════════════════════════");
+            Print("[解锁后渐进平仓] ",sym," 对冲盈利达标 → 启动渐进平仓");
+         }
+
+         if(ProgressiveCloseLossOrders(sym))
+         {
+            Print("[解锁后渐进平仓] ",sym," 完成 → 平掉对冲单");
+            CloseLockHedge(sym);
+            RemoveSymbolFromLockedList(sym);
+         }
+         else
+         {
+            allDone = false;
+         }
       }
-      if(ProgressiveCloseLossOrders(symbol))
+
+      if(allDone || ArraySize(g_lockedSymbols) == 0)
       {
-         Print("[解锁后渐进平仓] ",symbol," 完成 → 平掉对冲单 + 完整解锁");
-         CloseLockHedge(symbol);
          ResetLockState();
       }
       return;
@@ -710,68 +859,90 @@ void CheckLock()
    // ── 未锁仓: 检测是否需要锁仓 ──
    if(g_lockDrawdownUSD <= 0) return;
 
-   // 核心触发: 多空平衡 + 浮亏达阈值
-   if(!stats.isBalanced) return;
+   // 账户总浮亏达阈值才触发
+   if(totalPnl > -g_lockDrawdownUSD) return;
 
-   double buyLoss = 0, sellLoss = 0;
-   if(stats.buyPnl < 0) buyLoss = -stats.buyPnl;
-   if(stats.sellPnl < 0) sellLoss = -stats.sellPnl;
-   double totalLoss = buyLoss + sellLoss;
+   // 获取所有平衡品种
+   SymbolStats balancedStats[];
+   int balancedCnt = GetBalancedSymbols(balancedStats);
 
-   if(totalLoss < g_lockDrawdownUSD) return;
+   if(balancedCnt == 0)
+   {
+      Print("[风控监测] 账户浮亏达阈值但无平衡品种, 不触发锁仓");
+      return;
+   }
 
    g_lockOrigThresh = g_lockDrawdownUSD;
    g_locked = true;
    g_progressiveClose = false;
 
-   // 确定触发方向: 哪个方向亏损大就对冲哪个, 都超阈值则双向
-   if(buyLoss >= g_lockOrigThresh && sellLoss >= g_lockOrigThresh) g_lockDir = 0;
-   else if(buyLoss > sellLoss) g_lockDir = 1;
-   else if(sellLoss > buyLoss) g_lockDir = -1;
-   else g_lockDir = 0; // 相等时双向
-
    Print("════════════════════════════════");
-   Print("[风控锁仓] ",symbol," 多空平衡 + 浮亏达阈值");
-   Print("[风控锁仓] 多手:",DoubleToString(stats.buyLots,2)," 空手:",DoubleToString(stats.sellLots,2),
-         " 净额:",DoubleToString(stats.netLots,4));
-   Print("[风控锁仓] 多浮亏:$",DoubleToString(buyLoss,2)," 空浮亏:$",DoubleToString(sellLoss,2),
-         " 阈值:$",DoubleToString(g_lockOrigThresh,2));
-   Print("[风控锁仓] 触发方向:",(g_lockDir==1?"多单":(g_lockDir==-1?"空单":"双向")));
+   Print("[风控锁仓] 账户总浮亏:$",DoubleToString(totalPnl,2)," 达阈值:$",DoubleToString(g_lockDrawdownUSD,2));
+   Print("[风控锁仓] 发现 ",balancedCnt," 个平衡品种, 开始锁仓");
 
-   // 触发对冲: 亏损大的方向→反向对冲, 对冲手数=该方向亏损手数 (或按比例)
-   if(g_lockDir == 1 || g_lockDir == 0)
+   // 对每个平衡品种开对冲单
+   for(int i=0; i<balancedCnt; i++)
    {
-      if(buyLoss > 0 && stats.buyLots > 0)
-      {
-         Print("[风控锁仓] 多单亏损($",DoubleToString(buyLoss,2),") → 开空对冲");
-         double hedgeLots = MathMin(stats.buyLots, AlignVolumeToStep(buyLoss / MathMax(GetMinLot()*10, 1)));
-         if(hedgeLots < GetMinLot()) hedgeLots = AlignVolumeToStep(stats.buyLots * 0.5);
-         if(hedgeLots >= GetMinLot()) OpenLockHedge(symbol, POSITION_TYPE_SELL, AlignVolumeToStep(hedgeLots));
-      }
-   }
-   if(g_lockDir == -1 || g_lockDir == 0)
-   {
-      if(sellLoss > 0 && stats.sellLots > 0)
-      {
-         Print("[风控锁仓] 空单亏损($",DoubleToString(sellLoss,2),") → 开多对冲");
-         double hedgeLots = MathMin(stats.sellLots, AlignVolumeToStep(sellLoss / MathMax(GetMinLot()*10, 1)));
-         if(hedgeLots < GetMinLot()) hedgeLots = AlignVolumeToStep(stats.sellLots * 0.5);
-         if(hedgeLots >= GetMinLot()) OpenLockHedge(symbol, POSITION_TYPE_BUY, AlignVolumeToStep(hedgeLots));
-      }
-   }
+      string sym = balancedStats[i].symbol;
+      if(IsSymbolLocked(sym)) continue;
 
-   // 如果没有触发具体方向对冲, 则开反向对冲
-   if(!HasLockHedge(symbol))
-   {
-      if(stats.netLots > 0 && stats.sellLots > 0)
-         OpenLockHedge(symbol, POSITION_TYPE_BUY, stats.sellLots);
-      else if(stats.netLots < 0 && stats.buyLots > 0)
-         OpenLockHedge(symbol, POSITION_TYPE_SELL, stats.buyLots);
+      double buyLoss = 0, sellLoss = 0;
+      if(balancedStats[i].buyPnl < 0) buyLoss = -balancedStats[i].buyPnl;
+      if(balancedStats[i].sellPnl < 0) sellLoss = -balancedStats[i].sellPnl;
+
+      Print("[风控锁仓] ",sym," 多:",DoubleToString(balancedStats[i].buyLots,2),"手 空:",
+            DoubleToString(balancedStats[i].sellLots,2),"手 净:",
+            DoubleToString(balancedStats[i].netLots,4));
+      Print("[风控锁仓] ",sym," 多浮亏:$",DoubleToString(buyLoss,2)," 空浮亏:$",DoubleToString(sellLoss,2));
+
+      // 对冲亏损大的方向
+      if(buyLoss >= sellLoss && buyLoss > 0 && balancedStats[i].buyLots > 0)
+      {
+         double hedgeLots = MathMin(balancedStats[i].buyLots,
+            AlignVolumeToStep(sym, buyLoss / MathMax(GetMinLot(sym)*10, 1)));
+         if(hedgeLots < GetMinLot(sym)) hedgeLots = AlignVolumeToStep(sym, balancedStats[i].buyLots * 0.5);
+         if(hedgeLots >= GetMinLot(sym))
+         {
+            Print("[风控锁仓] ",sym," 多单亏损 → 开空对冲");
+            OpenLockHedge(sym, POSITION_TYPE_SELL, AlignVolumeToStep(sym, hedgeLots));
+            AddSymbolToLockedList(sym);
+         }
+      }
+
+      if(sellLoss > buyLoss && sellLoss > 0 && balancedStats[i].sellLots > 0)
+      {
+         double hedgeLots = MathMin(balancedStats[i].sellLots,
+            AlignVolumeToStep(sym, sellLoss / MathMax(GetMinLot(sym)*10, 1)));
+         if(hedgeLots < GetMinLot(sym)) hedgeLots = AlignVolumeToStep(sym, balancedStats[i].sellLots * 0.5);
+         if(hedgeLots >= GetMinLot(sym))
+         {
+            Print("[风控锁仓] ",sym," 空单亏损 → 开多对冲");
+            OpenLockHedge(sym, POSITION_TYPE_BUY, AlignVolumeToStep(sym, hedgeLots));
+            AddSymbolToLockedList(sym);
+         }
+      }
+
+      // 如果都没触发, 开反向对冲
+      if(!IsSymbolLocked(sym))
+      {
+         if(balancedStats[i].netLots > 0 && balancedStats[i].sellLots > 0)
+         {
+            Print("[风控锁仓] ",sym," 开多对冲(净多头)");
+            OpenLockHedge(sym, POSITION_TYPE_BUY, balancedStats[i].sellLots);
+            AddSymbolToLockedList(sym);
+         }
+         else if(balancedStats[i].netLots < 0 && balancedStats[i].buyLots > 0)
+         {
+            Print("[风控锁仓] ",sym," 开空对冲(净空头)");
+            OpenLockHedge(sym, POSITION_TYPE_SELL, balancedStats[i].buyLots);
+            AddSymbolToLockedList(sym);
+         }
+      }
    }
 
    g_lockDrawdownUSD = LOCK_DISABLED;
    Print("[风控锁仓] 阈值已设为禁用值, 锁仓期间不再触发");
-   Print("[风控锁仓] 解锁方式: 对冲盈利达50% → 渐进平仓 → 解锁");
+   Print("[风控锁仓] 解锁方式: 对冲盈利达"+DoubleToString(g_unlockRatio*100,0)+"% → 渐进平仓 → 解锁");
    Print("════════════════════════════════");
    RefreshPanel(true);
    ObjectSetString(0, g_prefix+"e1_threshold", OBJPROP_TEXT, "禁用");
@@ -834,12 +1005,31 @@ void DrawPanel()
 {
    if(!g_panel_open) { DelContent(); DrawToggle(); return; }
 
+   // 账户级统计
+   double totalAccountPnl = GetTotalAccountPnl();
+   double totalNonHedgePnl = GetTotalNonHedgePnl();
+
+   // 所有品种统计
+   SymbolStats allStats[];
+   int totalSymbols = GetAllSymbolsStats(allStats);
+
+   // 当前品种统计
    string symbol = _Symbol;
-   SymbolStats stats;
-   GetSymbolStats(symbol, stats);
-   double hedgePnl = GetLockHedgeProfit(symbol);
-   double hedgeBuyLots=0, hedgeSellLots=0;
-   GetLockHedgeLots(symbol, hedgeBuyLots, hedgeSellLots);
+   SymbolStats curStats;
+   GetSymbolStats(symbol, curStats);
+
+   // 锁仓对冲单统计(汇总)
+   int totalBalanced = 0;
+   int totalHedgeSymbols = ArraySize(g_lockedSymbols);
+   double totalHedgePnl = 0;
+   for(int i=0; i<totalHedgeSymbols; i++)
+   {
+      totalHedgePnl += GetLockHedgeProfit(g_lockedSymbols[i]);
+   }
+   for(int i=0; i<totalSymbols; i++)
+   {
+      if(allStats[i].isBalanced) totalBalanced++;
+   }
 
    // 配色
    color BG_PANEL = C'18,20,28', BD_PANEL = C'60,68,88', BG_HDR = C'30,34,48';
@@ -848,82 +1038,77 @@ void DrawPanel()
    int X = g_px, LX = X+PD, RX = LX+LW+PG;
 
    // 外框 + 标题栏
-   ERect(g_prefix+"panel", X, g_py, PW, 660, BG_PANEL, BD_PANEL);
+   ERect(g_prefix+"panel", X, g_py, PW, 700, BG_PANEL, BD_PANEL);
    ERect(g_prefix+"header", X, g_py, PW, HDR_H, BG_HDR, BD_PANEL);
    ELbl(g_prefix+"title", "账户仓位多空仓位平衡风控", LX+4, g_py+8, F(14), C'235,240,250');
-   ELbl(g_prefix+"sub", symbol+" | 平衡容差:"+DoubleToString(g_balanceTolerance,3), LX+4, g_py+30, F(9), cMute);
+
+   // 账户盈亏副标题
+   color accPnlClr = (totalAccountPnl>=0) ? InpColorNormal : InpColorDanger;
+   string accInfo = "账户盈亏:$" + DoubleToString(totalAccountPnl,2) +
+                    " | 品种:" + IntegerToString(totalSymbols) +
+                    " | 平衡容差:" + DoubleToString(g_balanceTolerance,2);
+   ELbl(g_prefix+"sub", accInfo, LX+4, g_py+30, F(9), accPnlClr);
 
    int cy = g_py + HDR_H + SG;
    int ry = 0;
    int ey = 0;
-   int btnY = 0;
-   int rx = 0;
    int by = 0;
    string tTxt; color tClr;
 
-   // ── 卡片1: 状态卡 ──
-   int statusH = 180;
+   // ── 卡片1: 账户状态卡 ──
+   int statusH = 160;
    ERect(g_prefix+"c1",LX,cy,LW,statusH,BG_CARD,BD_PANEL);
-   ELbl(g_prefix+"c1_title","仓位状态",LX+CD_PD,cy+CD_PD,F(11),C'235,240,250');
+   ELbl(g_prefix+"c1_title","账户状态",LX+CD_PD,cy+CD_PD,F(11),C'235,240,250');
    ry = cy + CD_PD + 20;
 
-   // 多空手数
-   ELbl(g_prefix+"r1_lbl","多单", LX+CD_PD, ry+1, F(10), cMute);
-   ELbl(g_prefix+"r1_val", DoubleToString(stats.buyLots,2)+"手 "+IntegerToString(stats.buyCnt)+"单", LX+CD_PD+LW*4/10, ry+1, F(10), InpColorInfo);
-   ry += LH;
-   ELbl(g_prefix+"r2_lbl","空单", LX+CD_PD, ry+1, F(10), cMute);
-   ELbl(g_prefix+"r2_val", DoubleToString(stats.sellLots,2)+"手 "+IntegerToString(stats.sellCnt)+"单", LX+CD_PD+LW*4/10, ry+1, F(10), InpColorDanger);
-   ry += LH;
-   ELbl(g_prefix+"r3_lbl","净头寸", LX+CD_PD, ry+1, F(10), cMute);
-   color netClr = (MathAbs(stats.netLots) <= g_balanceTolerance) ? InpColorWarning : (stats.netLots>0?InpColorInfo:InpColorDanger);
-   ELbl(g_prefix+"r3_val", DoubleToString(stats.netLots,4), LX+CD_PD+LW*4/10, ry+1, F(10), netClr);
-   ry += LH;
-   ELbl(g_prefix+"r4_lbl","多空状态", LX+CD_PD, ry+1, F(10), cMute);
-   if(stats.isBalanced) { tTxt = "≈平衡 (锁仓)"; tClr = InpColorWarning; }
-   else if(stats.netLots > g_balanceTolerance) { tTxt = "净多头"; tClr = InpColorInfo; }
-   else if(stats.netLots < -g_balanceTolerance) { tTxt = "净空头"; tClr = InpColorDanger; }
-   else { tTxt = "空仓"; tClr = cMute; }
-   ELbl(g_prefix+"r4_val", tTxt, LX+CD_PD+LW*4/10, ry+1, F(10), tClr);
+   // 账户总盈亏
+   ELbl(g_prefix+"r1_lbl","账户盈亏", LX+CD_PD, ry+1, F(10), cMute);
+   color accClr = (totalAccountPnl>=0) ? InpColorNormal : InpColorDanger;
+   ELbl(g_prefix+"r1_val", "$"+DoubleToString(totalAccountPnl,2), LX+CD_PD+LW*4/10, ry+1, F(10), accClr);
    ry += LH;
 
-   // 盈亏
-   double totalPnl = stats.totalPnl;
-   color pnlClr = (totalPnl>=0) ? InpColorNormal : InpColorDanger;
-   ELbl(g_prefix+"r5_lbl","浮动盈亏", LX+CD_PD, ry+1, F(10), cMute);
-   ELbl(g_prefix+"r5_val", "$"+DoubleToString(totalPnl,2), LX+CD_PD+LW*4/10, ry+1, F(10), pnlClr);
+   // 非对冲单盈亏
+   ELbl(g_prefix+"r2_lbl","交易盈亏", LX+CD_PD, ry+1, F(10), cMute);
+   color nonHedgeClr = (totalNonHedgePnl>=0) ? InpColorNormal : InpColorDanger;
+   ELbl(g_prefix+"r2_val", "$"+DoubleToString(totalNonHedgePnl,2), LX+CD_PD+LW*4/10, ry+1, F(10), nonHedgeClr);
    ry += LH;
 
-   // 锁仓对冲单
-   ELbl(g_prefix+"r6_lbl","对冲单盈亏", LX+CD_PD, ry+1, F(10), cMute);
-   color hpClr = (hedgePnl>=0) ? InpColorNormal : InpColorDanger;
-   string hpTxt = (hedgeBuyLots+hedgeSellLots>0) ?
-      "$"+DoubleToString(hedgePnl,2)+" "+DoubleToString(hedgeBuyLots,2)+"多/"+DoubleToString(hedgeSellLots,2)+"空" : "无";
-   ELbl(g_prefix+"r6_val", hpTxt, LX+CD_PD+LW*4/10, ry+1, F(10), hpClr);
+   // 对冲单盈亏
+   ELbl(g_prefix+"r3_lbl","对冲盈亏", LX+CD_PD, ry+1, F(10), cMute);
+   color hedgeClr = (totalHedgePnl>=0) ? InpColorNormal : InpColorDanger;
+   ELbl(g_prefix+"r3_val", "$"+DoubleToString(totalHedgePnl,2), LX+CD_PD+LW*4/10, ry+1, F(10), hedgeClr);
    ry += LH;
 
    // 锁仓状态
    string lockStatus; color lockClr;
    if(g_progressiveClose){ lockStatus = "渐进平仓中"; lockClr = InpColorWarning; }
-   else if(g_locked){ lockStatus = "已锁仓"; lockClr = InpColorDanger; }
+   else if(g_locked){ lockStatus = "已锁仓("+IntegerToString(totalHedgeSymbols)+"品种)"; lockClr = InpColorDanger; }
    else if(g_postLockWait){ lockStatus = "锁仓等待50%"; lockClr = InpColorWarning; }
-   else { lockStatus = "正常"; lockClr = InpColorNormal; }
-   ELbl(g_prefix+"r7_lbl","锁仓状态", LX+CD_PD, ry+1, F(10), cMute);
-   ELbl(g_prefix+"r7_val", lockStatus, LX+CD_PD+LW*4/10, ry+1, F(10), lockClr);
+   else { lockStatus = "正常监测"; lockClr = InpColorNormal; }
+   ELbl(g_prefix+"r4_lbl","锁仓状态", LX+CD_PD, ry+1, F(10), cMute);
+   ELbl(g_prefix+"r4_val", lockStatus, LX+CD_PD+LW*4/10, ry+1, F(10), lockClr);
+   ry += LH;
+
+   // 平衡品种数
+   ELbl(g_prefix+"r5_lbl","平衡品种", LX+CD_PD, ry+1, F(10), cMute);
+   string balTxt = IntegerToString(totalBalanced)+"/"+IntegerToString(totalSymbols)+" 品种";
+   color balClr = (totalBalanced > 0) ? InpColorWarning : cMute;
+   ELbl(g_prefix+"r5_val", balTxt, LX+CD_PD+LW*4/10, ry+1, F(10), balClr);
    ry += LH;
 
    // 进度显示
-   if((g_locked || g_postLockWait) && HasLockHedge(symbol))
+   if((g_locked || g_postLockWait) && totalHedgeSymbols > 0)
    {
       double targetP = g_lockOrigThresh * g_unlockRatio;
       string progTxt; color progClr;
       if(g_postLockWait && !g_progressiveClose)
-      { progTxt = "对冲$"+DoubleToString(hedgePnl,2)+" 50%目标$"+DoubleToString(targetP,2);
-         progClr = (hedgePnl>=targetP)?InpColorNormal:InpColorWarning; }
+      { progTxt = "对冲$"+DoubleToString(totalHedgePnl,2)+" 50%目标$"+DoubleToString(targetP,2);
+         progClr = (totalHedgePnl>=targetP)?InpColorNormal:InpColorWarning; }
       else
-      { progTxt = "对冲$"+DoubleToString(hedgePnl,2)+" 最低保留$"+DoubleToString(g_minHedgeProfit,2);
-         progClr = (hedgePnl>=g_minHedgeProfit)?InpColorNormal:InpColorDanger; }
-      ELbl(g_prefix+"r8_lbl","进度", LX+CD_PD, ry+1, F(10), cMute);
-      ELbl(g_prefix+"r8_val", progTxt, LX+CD_PD+LW*4/10, ry+1, F(10), progClr);
+      { progTxt = "对冲$"+DoubleToString(totalHedgePnl,2)+" 最低保留$"+DoubleToString(g_minHedgeProfit,2);
+         progClr = (totalHedgePnl>=g_minHedgeProfit)?InpColorNormal:InpColorDanger; }
+      ELbl(g_prefix+"r6_lbl","进度", LX+CD_PD, ry+1, F(10), cMute);
+      ELbl(g_prefix+"r6_val", progTxt, LX+CD_PD+LW*4/10, ry+1, F(10), progClr);
    }
 
    // ── 卡片2: 风控参数 ──
@@ -953,32 +1138,44 @@ void DrawPanel()
    EEdt(g_prefix+"e4_tolerance", DoubleToString(g_balanceTolerance,2), LX+CD_PD+2, ey, 60, EH);
    ELbl(g_prefix+"e4_lbl","平衡容差", LX+CD_PD+2+60+2, ey+2, F(10), cMute);
 
-   // ── 右栏: 操作卡 ──
+   // ── 右栏: 当前品种 + 操作卡 ──
    rx = RX;
    cy = g_py + HDR_H + SG;
 
-   int actH = 250;
+   int actH = statusH + SG + paramH;
    ERect(g_prefix+"c_act",rx,cy,RW,actH,BG_CARD,BD_PANEL);
-   ELbl(g_prefix+"c_act_title","操作",rx+CD_PD,cy+CD_PD,F(11),C'235,240,250');
+   ELbl(g_prefix+"c_act_title","当前品种:"+symbol,rx+CD_PD,cy+CD_PD,F(11),C'235,240,250');
    by = cy + CD_PD + 22;
 
-   // 统计
-   string statTxt = "多:"+DoubleToString(stats.buyLots,2)+"手 | 空:"+DoubleToString(stats.sellLots,2)+"手 | 净:"+DoubleToString(stats.netLots,4);
-   ELbl(g_prefix+"act_stat", statTxt, rx+CD_PD, by, F(10), cMute);
+   // 当前品种统计
+   string curStat = "多:"+DoubleToString(curStats.buyLots,2)+"手 "+IntegerToString(curStats.buyCnt)+"单 | "+
+                    "空:"+DoubleToString(curStats.sellLots,2)+"手 "+IntegerToString(curStats.sellCnt)+"单";
+   ELbl(g_prefix+"act_cur", curStat, rx+CD_PD, by, F(10), cMute);
+   by += LH;
+
+   // 净头寸
+   color netClr = (MathAbs(curStats.netLots) <= g_balanceTolerance) ? InpColorWarning :
+                   (curStats.netLots>0?InpColorInfo:InpColorDanger);
+   string netTxt = "净头寸:"+DoubleToString(curStats.netLots,4)+
+                   " ["+(curStats.isBalanced?"平衡":"不平衡")+"]";
+   ELbl(g_prefix+"act_net", netTxt, rx+CD_PD, by, F(10), netClr);
    by += LH + PG;
 
-   // 对冲单统计
-   if(hedgeBuyLots+hedgeSellLots > 0)
+   // 当前品种对冲单
+   if(HasLockHedge(symbol))
    {
-      string hTxt = "对冲多:"+DoubleToString(hedgeBuyLots,2)+"手 空:"+DoubleToString(hedgeSellLots,2)+"手 盈亏:$"+DoubleToString(hedgePnl,2);
-      color hClr = (hedgePnl>=0)?InpColorNormal:InpColorDanger;
+      double hPnl = GetLockHedgeProfit(symbol);
+      double hBuy=0, hSell=0;
+      GetLockHedgeLots(symbol, hBuy, hSell);
+      string hTxt = "对冲:"+DoubleToString(hBuy,2)+"多/"+DoubleToString(hSell,2)+"空 盈亏:$"+DoubleToString(hPnl,2);
+      color hClr = (hPnl>=0)?InpColorNormal:InpColorDanger;
       ELbl(g_prefix+"act_hedge", hTxt, rx+CD_PD, by, F(10), hClr);
       by += LH + PG;
    }
 
-   // 手动解锁按钮 (锁仓时显示)
+   // 操作按钮
    int bw = RW - CD_PD*2;
-   if(g_locked)
+   if(g_locked || g_postLockWait)
    {
       EBtn(g_prefix+"btn_manualUnlock","手动解锁(恢复交易)", rx+CD_PD, by, bw, BH, C'50,140,80', C'235,240,250');
       by += BH + PG;
@@ -1000,7 +1197,7 @@ void DrawPanel()
    color hintClr;
    if(g_locked)
    {
-      hintTxt = "⚠ 已锁仓: 对冲单保留, 等待盈利达50%";
+      hintTxt = "⚠ 已锁仓("+IntegerToString(totalHedgeSymbols)+"品种): 等待对冲盈利达"+DoubleToString(g_unlockRatio*100,0)+"%";
       hintClr = InpColorWarning;
    }
    else if(g_postLockWait)
@@ -1008,54 +1205,52 @@ void DrawPanel()
       hintTxt = "⌛ 解锁后等待中: 对冲盈利达标即渐进平仓";
       hintClr = InpColorWarning;
    }
-   else if(stats.isBalanced && g_lockDrawdownUSD > 0)
+   else if(totalNonHedgePnl < -g_lockDrawdownUSD && g_lockDrawdownUSD > 0)
    {
-      double totalLoss = (stats.buyPnl<0?-stats.buyPnl:0) + (stats.sellPnl<0?-stats.sellPnl:0);
-      if(totalLoss >= g_lockDrawdownUSD)
-      { hintTxt = "🔥 平衡+浮亏达阈值, 即将锁仓!"; hintClr = InpColorDanger; }
-      else
-      { hintTxt = "⚡ 多空平衡, 浮亏:"+DoubleToString(totalLoss,1)+"< 阈值$"+DoubleToString(g_lockDrawdownUSD,0);
-         hintClr = cMute; }
+      hintTxt = "🔥 账户浮亏达阈值, 即将锁仓!";
+      hintClr = InpColorDanger;
+   }
+   else if(totalBalanced > 0 && g_lockDrawdownUSD > 0)
+   {
+      hintTxt = "⚡ 有"+IntegerToString(totalBalanced)+"个平衡品种, 浮亏:$"+DoubleToString(totalNonHedgePnl,1);
+      hintClr = InpColorWarning;
    }
    else
    {
-      hintTxt = "正常监测: 多空不平衡时不触发锁仓";
+      hintTxt = "正常监测: 账户浮亏达阈值时锁仓平衡品种";
       hintClr = cMute;
    }
    ELbl(g_prefix+"act_hint", hintTxt, rx+CD_PD, by, F(9), hintClr);
 
    // ── 监控预警卡片 (全品种) ──
-   int monY = g_py + HDR_H + SG + MathMax(180, 250) + SG + 150 + SG;
-   int monH = 240;
+   int monY = cy + actH + SG;
+   int monH = 200;
    ERect(g_prefix+"c_mon", X+PD, monY, PW-PD*2, monH, BG_CARD, BD_PANEL);
    ELbl(g_prefix+"c_mon_title","监控预警 (全品种)", X+PD+CD_PD, monY+CD_PD, F(11), C'235,240,250);
 
-   // 收集所有品种统计
-   SymbolStats allStats[];
-   int totalSymbols = GetAllSymbolsStats(allStats);
-   int balancedCnt = 0, unbalancedCnt = 0, warningCnt = 0;
+   // 标题行统计
+   int balancedCnt=0, unbalancedCnt=0, warningCnt=0;
    for(int i=0; i<totalSymbols; i++)
    {
       if(allStats[i].isBalanced) balancedCnt++;
       else unbalancedCnt++;
       if(allStats[i].totalPnl < 0) warningCnt++;
    }
-
-   // 标题行统计
    string monTitle = "共 "+IntegerToString(totalSymbols)+" 品种 | 平衡:"+IntegerToString(balancedCnt)+" 不平衡:"+IntegerToString(unbalancedCnt);
    color monTitleClr = (warningCnt > 0) ? InpColorWarning : InpColorNormal;
-   ELbl(g_prefix+"c_mon_sub", monTitle, X+PD+CD_PD+150, monY+CD_PD, F(10), monTitleClr);
+   ELbl(g_prefix+"c_mon_sub", monTitle, X+PD+CD_PD+180, monY+CD_PD, F(10), monTitleClr);
 
    // 表头
    int hdrY = monY + CD_PD + 22;
    ELbl(g_prefix+"mon_h1","品种",     X+PD+CD_PD,       hdrY, F(9), cMute);
-   ELbl(g_prefix+"mon_h2","浮亏$",    X+PD+CD_PD+65,    hdrY, F(9), cMute);
-   ELbl(g_prefix+"mon_h3","多单(单/手)", X+PD+CD_PD+120, hdrY, F(9), cMute);
-   ELbl(g_prefix+"mon_h4","空单(单/手)", X+PD+CD_PD+220, hdrY, F(9), cMute);
-   ELbl(g_prefix+"mon_h5","状态",     X+PD+CD_PD+325,   hdrY, F(9), cMute);
+   ELbl(g_prefix+"mon_h2","浮亏$",    X+PD+CD_PD+60,    hdrY, F(9), cMute);
+   ELbl(g_prefix+"mon_h3","多单(单/手)", X+PD+CD_PD+110, hdrY, F(9), cMute);
+   ELbl(g_prefix+"mon_h4","空单(单/手)", X+PD+CD_PD+210, hdrY, F(9), cMute);
+   ELbl(g_prefix+"mon_h5","对冲",     X+PD+CD_PD+310,   hdrY, F(9), cMute);
+   ELbl(g_prefix+"mon_h6","状态",     X+PD+CD_PD+370,   hdrY, F(9), cMute);
 
    // 数据行
-   int monitorRowCount = 6;
+   int monitorRowCount = 5;
    int rowH = (monH - CD_PD*2 - 22 - 24 - 30) / monitorRowCount;
    rowH = MathMax(rowH, 20);
    int maxShow = MathMin(monitorRowCount, totalSymbols);
@@ -1069,6 +1264,7 @@ void DrawPanel()
       ObjectDelete(0, g_prefix+"mon_p"+IntegerToString(clr));
       ObjectDelete(0, g_prefix+"mon_b"+IntegerToString(clr));
       ObjectDelete(0, g_prefix+"mon_sell"+IntegerToString(clr));
+      ObjectDelete(0, g_prefix+"mon_hg"+IntegerToString(clr));
       ObjectDelete(0, g_prefix+"mon_st"+IntegerToString(clr));
    }
 
@@ -1087,17 +1283,22 @@ void DrawPanel()
       double pnl = allStats[idx].totalPnl;
       color pnlClr = (pnl>=0) ? InpColorNormal : InpColorDanger;
       string pnlTxt = (pnl>=0 ? "+" : "") + DoubleToString(pnl,2);
-      ELbl(g_prefix+"mon_p"+IntegerToString(r), pnlTxt, X+PD+CD_PD+65, rowY+2, F(9), pnlClr);
+      ELbl(g_prefix+"mon_p"+IntegerToString(r), pnlTxt, X+PD+CD_PD+60, rowY+2, F(9), pnlClr);
 
       // 多单
       string buyTxt = IntegerToString(allStats[idx].buyCnt) + "/" + DoubleToString(allStats[idx].buyLots,2);
       color buyClr = (allStats[idx].buyLots > 0) ? InpColorInfo : cMute;
-      ELbl(g_prefix+"mon_b"+IntegerToString(r), buyTxt, X+PD+CD_PD+120, rowY+2, F(9), buyClr);
+      ELbl(g_prefix+"mon_b"+IntegerToString(r), buyTxt, X+PD+CD_PD+110, rowY+2, F(9), buyClr);
 
       // 空单
       string sellTxt = IntegerToString(allStats[idx].sellCnt) + "/" + DoubleToString(allStats[idx].sellLots,2);
       color sellClr = (allStats[idx].sellLots > 0) ? InpColorDanger : cMute;
-      ELbl(g_prefix+"mon_sell"+IntegerToString(r), sellTxt, X+PD+CD_PD+220, rowY+2, F(9), sellClr);
+      ELbl(g_prefix+"mon_sell"+IntegerToString(r), sellTxt, X+PD+CD_PD+210, rowY+2, F(9), sellClr);
+
+      // 对冲
+      string hgTxt = allStats[idx].hasHedge ? "是" : "-";
+      color hgClr = allStats[idx].hasHedge ? InpColorWarning : cMute;
+      ELbl(g_prefix+"mon_hg"+IntegerToString(r), hgTxt, X+PD+CD_PD+310, rowY+2, F(9), hgClr);
 
       // 状态
       string statusTxt; color statusClr;
@@ -1107,7 +1308,7 @@ void DrawPanel()
       { statusTxt = "平衡"; statusClr = InpColorWarning; }
       else
       { statusTxt = "不平衡"; statusClr = InpColorDanger; }
-      ELbl(g_prefix+"mon_st"+IntegerToString(r), statusTxt, X+PD+CD_PD+325, rowY+2, F(9), statusClr);
+      ELbl(g_prefix+"mon_st"+IntegerToString(r), statusTxt, X+PD+CD_PD+370, rowY+2, F(9), statusClr);
    }
 
    // 滚动按钮
@@ -1180,22 +1381,23 @@ void HandlePanelButtonClick(const string sparam)
    if(k == "btn_manualUnlock")
    {
       ResetPanelButtonState(sparam);
-      double hedgePnl = GetLockHedgeProfit(symbol);
+      double hedgePnl = 0;
+      for(int i=0; i<ArraySize(g_lockedSymbols); i++)
+         hedgePnl += GetLockHedgeProfit(g_lockedSymbols[i]);
       double targetP = g_lockOrigThresh * g_unlockRatio;
       string msg = "确定要手动解锁吗？\n\n"
                  + "对冲盈亏: $"+DoubleToString(hedgePnl,2)+"\n"
                  + "50%目标: $"+DoubleToString(targetP,2)+"\n\n"
                  + "解锁后:\n"
                  + "• 风控系统恢复监测\n"
-                 + "• 锁仓对冲单保留(通过注释标记:"+HEDGE_COMMENT+")\n"
+                 + "• 锁仓对冲单保留\n"
                  + "• 对冲盈利达50%时自动渐进平仓";
       if(!ShowConfirmDialog(msg)) return;
       g_locked = false;
       g_postLockWait = true;
       g_lockDrawdownUSD = LOCK_DISABLED;
       Print("════════════════════════════════");
-      Print("[手动解锁] ",symbol," 风控恢复, 对冲单保留");
-      Print("[手动解锁] 对冲盈亏:$",DoubleToString(hedgePnl,2)," 目标:$",DoubleToString(targetP,2));
+      Print("[手动解锁] 风控恢复, 对冲单保留");
       RefreshPanel(true);
       return;
    }
@@ -1238,24 +1440,21 @@ void HandlePanelButtonClick(const string sparam)
 //+------------------------------------------------------------------+
 int OnInit()
 {
-   g_tradeMagic = InpTradeMagic;
    g_lockDrawdownUSD = InpLockDrawdownUSD;
    g_unlockRatio = InpUnlockRatio;
    g_minHedgeProfit = InpMinHedgeProfit;
    g_balanceTolerance = InpBalanceTolerance;
    g_px = InpPanelX; g_py = InpPanelY;
    LoadParamsFromGV();
-   m_trade.SetExpertMagicNumber(InpTradeMagic);
    EventSetTimer(1);
    DrawPanel();
    Print("═══════════════════════════════════════════════════");
-   Print("[账户仓位多空仓位平衡风控] v1.00 启动");
-   Print("  监控品种: ", _Symbol);
-   Print("  浮亏锁仓阈值: $", DoubleToString(g_lockDrawdownUSD,1));
+   Print("[账户仓位多空仓位平衡风控] v2.00 启动");
+   Print("  账户浮亏锁仓阈值: $", DoubleToString(g_lockDrawdownUSD,1));
    Print("  解锁比例: ", DoubleToString(g_unlockRatio*100,0), "%");
    Print("  最低保留盈利: $", DoubleToString(g_minHedgeProfit,1));
    Print("  平衡容差: ", DoubleToString(g_balanceTolerance,2));
-   Print("  统一魔术码: ", g_tradeMagic);
+   Print("  对冲标记: ", HEDGE_COMMENT);
    Print("═══════════════════════════════════════════════════");
    return INIT_SUCCEEDED;
 }
