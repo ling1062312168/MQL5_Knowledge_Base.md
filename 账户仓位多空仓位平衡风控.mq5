@@ -36,6 +36,7 @@ input color       InpColorInfo         = C'66,153,225';
 //| 面板布局常量                                                      |
 //+------------------------------------------------------------------+
 #define PW              520       // 面板总宽度
+#define MONITOR_H        240       // 监控卡片高度
 #define PD              12        // 面板内边距
 #define PG              8         // 行间距
 #define HDR_H           48        // 标题栏高度
@@ -104,6 +105,10 @@ double         g_balanceTolerance = 0.01;    // 平衡容差
 // ── 异步平仓 ──
 CTrade         g_asyncTrade;
 bool           g_isAsyncClosing = false;
+
+// ── 多品种监控 ──
+int            g_monitorScroll   = 0;         // 监控列表滚动偏移
+#define MONITOR_MAX_ROWS   6                  // 监控卡片最多显示行数
 
 //+------------------------------------------------------------------+
 //| 字体缩放                                                          |
@@ -317,6 +322,55 @@ void GetSymbolStats(string symbol, SymbolStats &stats)
    stats.netLots = stats.buyLots - stats.sellLots;
    stats.totalPnl = stats.buyPnl + stats.sellPnl;
    stats.isBalanced = (MathAbs(stats.netLots) <= g_balanceTolerance && (stats.buyCnt > 0 || stats.sellCnt > 0));
+}
+
+//+------------------------------------------------------------------+
+//| 收集所有持仓品种的统计 (返回品种数量, 填充stats数组)                |
+//+------------------------------------------------------------------+
+int GetAllSymbolsStats(SymbolStats &allStats[])
+{
+   string symbols[];
+   ArrayResize(symbols, 0);
+
+   for(int i=(int)PositionsTotal()-1; i>=0; i--)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket==0) continue;
+      if(!PositionSelectByTicket(ticket)) continue;
+      string sym = PositionGetString(POSITION_SYMBOL);
+      bool found = false;
+      for(int j=0; j<ArraySize(symbols); j++)
+      {
+         if(symbols[j] == sym) { found = true; break; }
+      }
+      if(!found)
+      {
+         int idx = ArraySize(symbols);
+         ArrayResize(symbols, idx+1);
+         symbols[idx] = sym;
+      }
+   }
+
+   int cnt = ArraySize(symbols);
+   ArrayResize(allStats, cnt);
+   for(int i=0; i<cnt; i++)
+   {
+      GetSymbolStats(symbols[i], allStats[i]);
+   }
+
+   // 按浮亏金额排序 (亏大的排前面)
+   for(int i=0; i<cnt-1; i++)
+      for(int j=i+1; j<cnt; j++)
+      {
+         double lossI = (allStats[i].totalPnl < 0) ? -allStats[i].totalPnl : 0;
+         double lossJ = (allStats[j].totalPnl < 0) ? -allStats[j].totalPnl : 0;
+         if(lossJ > lossI)
+         {
+            SymbolStats tmp = allStats[i]; allStats[i] = allStats[j]; allStats[j] = tmp;
+         }
+      }
+
+   return cnt;
 }
 
 //+------------------------------------------------------------------+
@@ -787,7 +841,7 @@ void DrawPanel()
    int X = g_px, LX = X+PD, RX = LX+LW+PG;
 
    // 外框 + 标题栏
-   ERect(g_prefix+"panel", X, g_py, PW, 420, BG_PANEL, BD_PANEL);
+   ERect(g_prefix+"panel", X, g_py, PW, 420+MONITOR_H, BG_PANEL, BD_PANEL);
    ERect(g_prefix+"header", X, g_py, PW, HDR_H, BG_HDR, BD_PANEL);
    ELbl(g_prefix+"title", "账户仓位多空仓位平衡风控", LX+4, g_py+8, F(14), C'235,240,250');
    ELbl(g_prefix+"sub", symbol+" | 平衡容差:"+DoubleToString(g_balanceTolerance,3), LX+4, g_py+30, F(9), cMute);
@@ -962,6 +1016,108 @@ void DrawPanel()
       hintClr = cMute;
    }
    ELbl(g_prefix+"act_hint", hintTxt, rx+CD_PD, by, F(9), hintClr);
+
+   // ── 监控预警卡片 (全品种) ──
+   int monY = g_py + HDR_H + SG + MathMax(180, 250) + SG + 150 + SG;
+   int monH = MONITOR_H;
+   ERect(g_prefix+"c_mon", X+PD, monY, PW-PD*2, monH, BG_CARD, BD_PANEL);
+   ELbl(g_prefix+"c_mon_title","监控预警 (全品种)", X+PD+CD_PD, monY+CD_PD, F(11), C'235,240,250);
+
+   // 收集所有品种统计
+   SymbolStats allStats[];
+   int totalSymbols = GetAllSymbolsStats(allStats);
+   int balancedCnt = 0, unbalancedCnt = 0, warningCnt = 0;
+   for(int i=0; i<totalSymbols; i++)
+   {
+      if(allStats[i].isBalanced) balancedCnt++;
+      else unbalancedCnt++;
+      if(allStats[i].totalPnl < 0) warningCnt++;
+   }
+
+   // 标题行统计
+   string monTitle = "共 "+IntegerToString(totalSymbols)+" 品种 | 平衡:"+IntegerToString(balancedCnt)+" 不平衡:"+IntegerToString(unbalancedCnt);
+   color monTitleClr = (warningCnt > 0) ? InpColorWarning : InpColorNormal;
+   ELbl(g_prefix+"c_mon_sub", monTitle, X+PD+CD_PD+150, monY+CD_PD, F(10), monTitleClr);
+
+   // 表头
+   int hdrY = monY + CD_PD + 22;
+   ELbl(g_prefix+"mon_h1","品种",     X+PD+CD_PD,       hdrY, F(9), cMute);
+   ELbl(g_prefix+"mon_h2","浮亏$",    X+PD+CD_PD+65,    hdrY, F(9), cMute);
+   ELbl(g_prefix+"mon_h3","多单(单/手)", X+PD+CD_PD+120, hdrY, F(9), cMute);
+   ELbl(g_prefix+"mon_h4","空单(单/手)", X+PD+CD_PD+220, hdrY, F(9), cMute);
+   ELbl(g_prefix+"mon_h5","状态",     X+PD+CD_PD+325,   hdrY, F(9), cMute);
+
+   // 数据行
+   int rowH = (monH - CD_PD*2 - 22 - 24 - 30) / MONITOR_MAX_ROWS;
+   rowH = MathMax(rowH, 20);
+   int maxShow = MathMin(MONITOR_MAX_ROWS, totalSymbols);
+   int startIdx = MathMax(0, MathMin(g_monitorScroll, totalSymbols - maxShow));
+   g_monitorScroll = startIdx;
+
+   // 清理多余的旧行标签
+   for(int clr = maxShow; clr < MONITOR_MAX_ROWS; clr++)
+   {
+      ObjectDelete(0, g_prefix+"mon_s"+IntegerToString(clr));
+      ObjectDelete(0, g_prefix+"mon_p"+IntegerToString(clr));
+      ObjectDelete(0, g_prefix+"mon_b"+IntegerToString(clr));
+      ObjectDelete(0, g_prefix+"mon_sell"+IntegerToString(clr));
+      ObjectDelete(0, g_prefix+"mon_st"+IntegerToString(clr));
+   }
+
+   for(int r=0; r<maxShow; r++)
+   {
+      int idx = startIdx + r;
+      if(idx >= totalSymbols) break;
+      int rowY = hdrY + 24 + r * rowH;
+
+      // 品种名
+      string symName = allStats[idx].symbol;
+      if(StringLen(symName) > 8) symName = StringSubstr(symName, 0, 8);
+      ELbl(g_prefix+"mon_s"+IntegerToString(r), symName, X+PD+CD_PD, rowY+2, F(9), C'200,210,230);
+
+      // 浮亏
+      double pnl = allStats[idx].totalPnl;
+      color pnlClr = (pnl>=0) ? InpColorNormal : InpColorDanger;
+      string pnlTxt = (pnl>=0 ? "+" : "") + DoubleToString(pnl,2);
+      ELbl(g_prefix+"mon_p"+IntegerToString(r), pnlTxt, X+PD+CD_PD+65, rowY+2, F(9), pnlClr);
+
+      // 多单
+      string buyTxt = IntegerToString(allStats[idx].buyCnt) + "/" + DoubleToString(allStats[idx].buyLots,2);
+      color buyClr = (allStats[idx].buyLots > 0) ? InpColorInfo : cMute;
+      ELbl(g_prefix+"mon_b"+IntegerToString(r), buyTxt, X+PD+CD_PD+120, rowY+2, F(9), buyClr);
+
+      // 空单
+      string sellTxt = IntegerToString(allStats[idx].sellCnt) + "/" + DoubleToString(allStats[idx].sellLots,2);
+      color sellClr = (allStats[idx].sellLots > 0) ? InpColorDanger : cMute;
+      ELbl(g_prefix+"mon_sell"+IntegerToString(r), sellTxt, X+PD+CD_PD+220, rowY+2, F(9), sellClr);
+
+      // 状态
+      string statusTxt; color statusClr;
+      if(allStats[idx].buyCnt == 0 && allStats[idx].sellCnt == 0)
+      { statusTxt = "空仓"; statusClr = cMute; }
+      else if(allStats[idx].isBalanced)
+      { statusTxt = "平衡"; statusClr = InpColorWarning; }
+      else
+      { statusTxt = "不平衡"; statusClr = InpColorDanger; }
+      ELbl(g_prefix+"mon_st"+IntegerToString(r), statusTxt, X+PD+CD_PD+325, rowY+2, F(9), statusClr);
+   }
+
+   // 滚动按钮
+   if(totalSymbols > maxShow)
+   {
+      int scrollY = monY + monH - BH - CD_PD;
+      int sbw = 80;
+      int rightX = X + PW - PD - CD_PD - sbw*2 - PG;
+      EBtn(g_prefix+"mon_scrollUp","↑ 上移", rightX, scrollY, sbw, BH, C'50,60,80', C'200,210,230');
+      EBtn(g_prefix+"mon_scrollDown","↓ 下移", rightX+sbw+PG, scrollY, sbw, BH, C'50,60,80', C'200,210,230');
+      ELbl(g_prefix+"mon_page", IntegerToString(startIdx+1)+"-"+IntegerToString(MathMin(startIdx+maxShow,totalSymbols))+"/"+IntegerToString(totalSymbols), rightX-60, scrollY+4, F(9), cMute);
+   }
+   else
+   {
+      if(ObjectFind(0,g_prefix+"mon_scrollUp")>=0) ObjectDelete(0, g_prefix+"mon_scrollUp");
+      if(ObjectFind(0,g_prefix+"mon_scrollDown")>=0) ObjectDelete(0, g_prefix+"mon_scrollDown");
+      if(ObjectFind(0,g_prefix+"mon_page")>=0) ObjectDelete(0, g_prefix+"mon_page");
+   }
 }
 
 void RefreshPanel(bool force)
@@ -989,6 +1145,22 @@ void HandlePanelButtonClick(const string sparam)
       g_panel_open = !g_panel_open;
       g_panel_dragging = false;
       SetPanelDragHighlight(false);
+      RefreshPanel(true);
+      return;
+   }
+
+   // ── 监控列表滚动 ──
+   if(k == "mon_scrollUp")
+   {
+      ResetPanelButtonState(sparam);
+      if(g_monitorScroll > 0) g_monitorScroll -= 1;
+      RefreshPanel(true);
+      return;
+   }
+   if(k == "mon_scrollDown")
+   {
+      ResetPanelButtonState(sparam);
+      g_monitorScroll += 1;
       RefreshPanel(true);
       return;
    }
