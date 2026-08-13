@@ -34,16 +34,17 @@ input color       InpColorInfo         = C'66,153,225';
 //+------------------------------------------------------------------+
 //| 面板布局常量                                                      |
 //+------------------------------------------------------------------+
-#define PW              520       // 面板总宽度
+#define PW              580       // 面板总宽度
 #define PD              12        // 面板内边距
 #define PG              8         // 行间距
 #define HDR_H           48        // 标题栏高度
 #define SG              8         // 卡片间距
-#define LH              22        // 文本行高
+#define LH              24        // 文本行高
 #define BH              28        // 按钮高度
-#define EH              22        // 输入框高度
+#define EH              24        // 输入框高度
 #define BD_W            2         // 外边框宽度
 #define CD_PD           10        // 卡片内边距
+#define LABEL_W         85        // 标签区域宽度
 #define LW              ((PW - PD*2 - PG)/2)  // 左栏宽度
 #define RW              LW                     // 右栏宽度
 #define LOCK_COMMENT    "BRC_LOCK"          // 锁仓标记注释
@@ -1021,8 +1022,16 @@ void DrawPanel()
 
    int X = g_px, LX = X+PD, RX = LX+LW+PG;
 
+   // 预计算卡片高度
+   int preStatusH = CD_PD*2 + 22 + 6*LH;
+   int preParamH = CD_PD*2 + 22 + 4*LH;
+   int preActH = preStatusH + SG + preParamH;
+   int preMonH = CD_PD*2 + 22 + 24 + 5*LH + BH + CD_PD;
+
    // 外框 + 标题栏
-   ERect(g_prefix+"panel", X, g_py, PW, 720, BG_PANEL, BD_PANEL);
+   int totalH = HDR_H + SG + preStatusH + SG + preParamH + SG + preActH + SG + preMonH + CD_PD;
+   if(totalH < 600) totalH = 600;
+   ERect(g_prefix+"panel", X, g_py, PW, totalH, BG_PANEL, BD_PANEL);
    ERect(g_prefix+"header", X, g_py, PW, HDR_H, BG_HDR, BD_PANEL);
    ELbl(g_prefix+"title", "账户仓位多空仓位平衡风控", LX+4, g_py+8, F(14), C'235,240,250');
 
@@ -1040,27 +1049,30 @@ void DrawPanel()
    int rx = 0;
 
    // ── 卡片1: 账户状态卡 ──
-   int statusH = 170;
+   int statusRows = 6;
+   int statusH = CD_PD*2 + 22 + statusRows*LH;
+   int labelStartX = LX+CD_PD;
+   int valueStartX = LX+CD_PD+LABEL_W;
    ERect(g_prefix+"c1",LX,cy,LW,statusH,BG_CARD,BD_PANEL);
    ELbl(g_prefix+"c1_title","账户状态",LX+CD_PD,cy+CD_PD,F(11),C'235,240,250');
-   ry = cy + CD_PD + 20;
+   ry = cy + CD_PD + 22;
 
    // 账户总盈亏
-   ELbl(g_prefix+"r1_lbl","账户盈亏", LX+CD_PD, ry+1, F(10), cMute);
+   ELbl(g_prefix+"r1_lbl","账户盈亏", labelStartX, ry+4, F(10), cMute);
    color accClr = (totalAccountPnl>=0) ? InpColorNormal : InpColorDanger;
-   ELbl(g_prefix+"r1_val", "$"+DoubleToString(totalAccountPnl,2), LX+CD_PD+LW*4/10, ry+1, F(10), accClr);
+   ELbl(g_prefix+"r1_val", "$"+DoubleToString(totalAccountPnl,2), valueStartX, ry+4, F(10), accClr);
    ry += LH;
 
    // 多单盈利
-   ELbl(g_prefix+"r2_lbl","多单盈亏", LX+CD_PD, ry+1, F(10), cMute);
+   ELbl(g_prefix+"r2_lbl","多单盈亏", labelStartX, ry+4, F(10), cMute);
    color buyProfitClr = (totalBuyProfit>=0) ? InpColorNormal : InpColorDanger;
-   ELbl(g_prefix+"r2_val", "$"+DoubleToString(totalBuyProfit,2), LX+CD_PD+LW*4/10, ry+1, F(10), buyProfitClr);
+   ELbl(g_prefix+"r2_val", "$"+DoubleToString(totalBuyProfit,2), valueStartX, ry+4, F(10), buyProfitClr);
    ry += LH;
 
    // 空单盈利
-   ELbl(g_prefix+"r3_lbl","空单盈亏", LX+CD_PD, ry+1, F(10), cMute);
+   ELbl(g_prefix+"r3_lbl","空单盈亏", labelStartX, ry+4, F(10), cMute);
    color sellProfitClr = (totalSellProfit>=0) ? InpColorNormal : InpColorDanger;
-   ELbl(g_prefix+"r3_val", "$"+DoubleToString(totalSellProfit,2), LX+CD_PD+LW*4/10, ry+1, F(10), sellProfitClr);
+   ELbl(g_prefix+"r3_val", "$"+DoubleToString(totalSellProfit,2), valueStartX, ry+4, F(10), sellProfitClr);
    ry += LH;
 
    // 锁仓状态
@@ -1068,58 +1080,60 @@ void DrawPanel()
    if(g_progressiveClose){ lockStatus = "渐进平仓中"; lockClr = InpColorWarning; }
    else if(g_locked){ lockStatus = "已锁仓("+IntegerToString(totalLockedSymbols)+"品种)"; lockClr = InpColorDanger; }
    else { lockStatus = "正常监测"; lockClr = InpColorNormal; }
-   ELbl(g_prefix+"r4_lbl","锁仓状态", LX+CD_PD, ry+1, F(10), cMute);
-   ELbl(g_prefix+"r4_val", lockStatus, LX+CD_PD+LW*4/10, ry+1, F(10), lockClr);
+   ELbl(g_prefix+"r4_lbl","锁仓状态", labelStartX, ry+4, F(10), cMute);
+   ELbl(g_prefix+"r4_val", lockStatus, valueStartX, ry+4, F(10), lockClr);
    ry += LH;
 
    // 平衡品种数
-   ELbl(g_prefix+"r5_lbl","平衡品种", LX+CD_PD, ry+1, F(10), cMute);
+   ELbl(g_prefix+"r5_lbl","平衡品种", labelStartX, ry+4, F(10), cMute);
    string balTxt = IntegerToString(totalBalanced)+"/"+IntegerToString(totalSymbols)+" 品种";
    color balClr = (totalBalanced > 0) ? InpColorWarning : cMute;
-   ELbl(g_prefix+"r5_val", balTxt, LX+CD_PD+LW*4/10, ry+1, F(10), balClr);
+   ELbl(g_prefix+"r5_val", balTxt, valueStartX, ry+4, F(10), balClr);
    ry += LH;
 
    // 进度显示
+   string progTxt = "等待锁仓";
+   color progClr = cMute;
    if(g_locked && totalLockedSymbols > 0)
    {
       double targetP = g_lockOrigThresh * g_unlockRatio;
-      string progTxt; color progClr;
-      int bestDir = 0; double bestProfit = -999999;
-      if(totalBuyProfit >= totalSellProfit) { bestDir = 1; bestProfit = totalBuyProfit; }
-      else { bestDir = -1; bestProfit = totalSellProfit; }
-
-      progTxt = (bestDir==1?"多":"空")+"盈利:$"+DoubleToString(bestProfit,2)+" 50%目标:$"+DoubleToString(targetP,2);
+      int bestDir = (totalBuyProfit >= totalSellProfit) ? 1 : -1;
+      double bestProfit = (bestDir==1) ? totalBuyProfit : totalSellProfit;
+      progTxt = (bestDir==1?"多":"空")+"盈利:$"+DoubleToString(bestProfit,2)+" 50%:$"+DoubleToString(targetP,0);
       progClr = (bestProfit>=targetP)?InpColorNormal:InpColorWarning;
-      ELbl(g_prefix+"r6_lbl","进度", LX+CD_PD, ry+1, F(10), cMute);
-      ELbl(g_prefix+"r6_val", progTxt, LX+CD_PD+LW*4/10, ry+1, F(10), progClr);
    }
+   ELbl(g_prefix+"r6_lbl","解锁进度", labelStartX, ry+4, F(10), cMute);
+   ELbl(g_prefix+"r6_val", progTxt, valueStartX, ry+4, F(10), progClr);
 
    // ── 卡片2: 风控参数 ──
    cy += statusH + SG;
-   int paramH = 150;
+   int paramRows = 4;
+   int paramH = CD_PD*2 + 22 + paramRows*LH;
+   int paramLabelX = LX+CD_PD;
+   int paramInputX = LX+CD_PD+LABEL_W;
    ERect(g_prefix+"c2",LX,cy,LW,paramH,BG_CARD,BD_PANEL);
    ELbl(g_prefix+"c2_title","风控参数",LX+CD_PD,cy+CD_PD,F(11),C'235,240,250');
    ey = cy + CD_PD + 22;
 
    // 浮亏锁仓阈值
    string threshVal = (g_lockDrawdownUSD <= 0) ? "禁用" : DoubleToString(g_lockDrawdownUSD,0);
-   EEdt(g_prefix+"e1_threshold", threshVal, LX+CD_PD+2, ey, 60, EH);
-   ELbl(g_prefix+"e1_lbl","浮亏锁仓$", LX+CD_PD+2+60+2, ey+2, F(10), cMute);
+   ELbl(g_prefix+"e1_lbl","浮亏锁仓$", paramLabelX, ey+4, F(10), cMute);
+   EEdt(g_prefix+"e1_threshold", threshVal, paramInputX, ey+2, 80, EH);
    ey += LH;
 
    // 解锁比例
-   EEdt(g_prefix+"e2_ratio", DoubleToString(g_unlockRatio*100,0), LX+CD_PD+2, ey, 60, EH);
-   ELbl(g_prefix+"e2_lbl","解锁比例%", LX+CD_PD+2+60+2, ey+2, F(10), cMute);
+   ELbl(g_prefix+"e2_lbl","解锁比例%", paramLabelX, ey+4, F(10), cMute);
+   EEdt(g_prefix+"e2_ratio", DoubleToString(g_unlockRatio*100,0), paramInputX, ey+2, 80, EH);
    ey += LH;
 
    // 最低保留
-   EEdt(g_prefix+"e3_minHedge", DoubleToString(g_minHedgeProfit,0), LX+CD_PD+2, ey, 60, EH);
-   ELbl(g_prefix+"e3_lbl","最低保留$", LX+CD_PD+2+60+2, ey+2, F(10), cMute);
+   ELbl(g_prefix+"e3_lbl","最低保留$", paramLabelX, ey+4, F(10), cMute);
+   EEdt(g_prefix+"e3_minHedge", DoubleToString(g_minHedgeProfit,0), paramInputX, ey+2, 80, EH);
    ey += LH;
 
    // 平衡容差
-   EEdt(g_prefix+"e4_tolerance", DoubleToString(g_balanceTolerance,2), LX+CD_PD+2, ey, 60, EH);
-   ELbl(g_prefix+"e4_lbl","平衡容差", LX+CD_PD+2+60+2, ey+2, F(10), cMute);
+   ELbl(g_prefix+"e4_lbl","平衡容差", paramLabelX, ey+4, F(10), cMute);
+   EEdt(g_prefix+"e4_tolerance", DoubleToString(g_balanceTolerance,2), paramInputX, ey+2, 80, EH);
 
    // ── 右栏: 当前品种 + 操作卡 ──
    rx = RX;
@@ -1131,9 +1145,11 @@ void DrawPanel()
    by = cy + CD_PD + 22;
 
    // 当前品种统计
-   string curStat = "多:"+DoubleToString(curStats.buyLots,2)+"手 "+IntegerToString(curStats.buyCnt)+"单 | "+
-                    "空:"+DoubleToString(curStats.sellLots,2)+"手 "+IntegerToString(curStats.sellCnt)+"单";
-   ELbl(g_prefix+"act_cur", curStat, rx+CD_PD, by, F(10), cMute);
+   string curBuyTxt = "多:"+DoubleToString(curStats.buyLots,2)+"手 "+IntegerToString(curStats.buyCnt)+"单";
+   string curSellTxt = "空:"+DoubleToString(curStats.sellLots,2)+"手 "+IntegerToString(curStats.sellCnt)+"单";
+   ELbl(g_prefix+"act_buy", curBuyTxt, rx+CD_PD, by+4, F(10), InpColorInfo);
+   by += LH;
+   ELbl(g_prefix+"act_sell", curSellTxt, rx+CD_PD, by+4, F(10), InpColorDanger);
    by += LH;
 
    // 净头寸
@@ -1141,8 +1157,8 @@ void DrawPanel()
                    (curStats.netLots>0?InpColorInfo:InpColorDanger);
    string netTxt = "净头寸:"+DoubleToString(curStats.netLots,4)+
                    " ["+(curStats.isBalanced?"平衡":"不平衡")+"]";
-   ELbl(g_prefix+"act_net", netTxt, rx+CD_PD, by, F(10), netClr);
-   by += LH + PG;
+   ELbl(g_prefix+"act_net", netTxt, rx+CD_PD, by+4, F(10), netClr);
+   by += LH;
 
    // 当前品种锁仓状态
    if(curStats.isLocked)
@@ -1150,11 +1166,13 @@ void DrawPanel()
       int lockDir = GetLockDirection(symbol);
       double buyP = GetDirectionProfit(symbol, 1);
       double sellP = GetDirectionProfit(symbol, -1);
-      string hTxt = "已锁仓-"+(lockDir==1?"多盈利":"空盈利")+"解锁 多盈利:$"+DoubleToString(buyP,2)+" 空盈利:$"+DoubleToString(sellP,2);
-      color hClr = (lockDir==1 && buyP>0) ? InpColorNormal :
-                   (lockDir==-1 && sellP>0) ? InpColorNormal : InpColorWarning;
-      ELbl(g_prefix+"act_hedge", hTxt, rx+CD_PD, by, F(10), hClr);
-      by += LH + PG;
+      string hTxt = "已锁仓-"+(lockDir==1?"多盈利":"空盈利")+"解锁";
+      color hClr = InpColorWarning;
+      ELbl(g_prefix+"act_hedge", hTxt, rx+CD_PD, by+4, F(10), hClr);
+      by += LH;
+      string hDetail = "多盈利:$"+DoubleToString(buyP,2)+" 空盈利:$"+DoubleToString(sellP,2);
+      ELbl(g_prefix+"act_hedge2", hDetail, rx+CD_PD, by+4, F(9), cMute);
+      by += LH;
    }
 
    // 操作按钮
@@ -1181,63 +1199,68 @@ void DrawPanel()
    color hintClr;
    if(g_locked)
    {
-      hintTxt = "⚠ 已锁仓("+IntegerToString(totalLockedSymbols)+"品种): 等待方向盈利达"+DoubleToString(g_unlockRatio*100,0)+"%";
+      hintTxt = "已锁仓("+IntegerToString(totalLockedSymbols)+"品种)";
       hintClr = InpColorWarning;
    }
    else if(totalAccountPnl < -g_lockDrawdownUSD && g_lockDrawdownUSD > 0)
    {
-      hintTxt = "🔥 账户浮亏达阈值, 即将锁仓!";
+      hintTxt = "账户浮亏达阈值";
       hintClr = InpColorDanger;
    }
    else if(totalBalanced > 0 && g_lockDrawdownUSD > 0)
    {
-      hintTxt = "⚡ 有"+IntegerToString(totalBalanced)+"个平衡品种, 浮亏:$"+DoubleToString(totalAccountPnl,1);
+      hintTxt = "有"+IntegerToString(totalBalanced)+"个平衡品种";
       hintClr = InpColorWarning;
    }
    else
    {
-      hintTxt = "正常监测: 账户浮亏达阈值时锁仓平衡品种";
+      hintTxt = "正常监测中";
       hintClr = cMute;
    }
-   ELbl(g_prefix+"act_hint", hintTxt, rx+CD_PD, by, F(9), hintClr);
+   ELbl(g_prefix+"act_hint", hintTxt, rx+CD_PD, by+4, F(9), hintClr);
 
    // ── 监控预警卡片 (全品种) ──
    int monY = cy + actH + SG;
-   int monH = 200;
+   int monRows = 5;
+   int monH = CD_PD*2 + 22 + 24 + monRows*LH + BH + CD_PD;
    ERect(g_prefix+"c_mon", X+PD, monY, PW-PD*2, monH, BG_CARD, BD_PANEL);
    ELbl(g_prefix+"c_mon_title","监控预警-全品种", X+PD+CD_PD, monY+CD_PD, F(11), C'235,240,250');
 
    // 标题行统计
-   int balancedCnt=0, unbalancedCnt=0, warningCnt=0;
+   int balancedCnt2=0, unbalancedCnt2=0, warningCnt=0;
    for(int i=0; i<totalSymbols; i++)
    {
-      if(allStats[i].isBalanced) balancedCnt++;
-      else unbalancedCnt++;
+      if(allStats[i].isBalanced) balancedCnt2++;
+      else unbalancedCnt2++;
       if(allStats[i].totalPnl < 0) warningCnt++;
    }
-   string monTitle = "共 "+IntegerToString(totalSymbols)+" 品种 | 平衡:"+IntegerToString(balancedCnt)+" 不平衡:"+IntegerToString(unbalancedCnt);
+   string monTitle = "共 "+IntegerToString(totalSymbols)+" 品种 | 平衡:"+IntegerToString(balancedCnt2)+" 不平衡:"+IntegerToString(unbalancedCnt2);
    color monTitleClr = (warningCnt > 0) ? InpColorWarning : InpColorNormal;
-   ELbl(g_prefix+"c_mon_sub", monTitle, X+PD+CD_PD+180, monY+CD_PD, F(10), monTitleClr);
+   ELbl(g_prefix+"c_mon_sub", monTitle, X+PW-PD-CD_PD-200, monY+CD_PD, F(10), monTitleClr);
 
-   // 表头
+   // 表头 - 固定列位置
    int hdrY = monY + CD_PD + 22;
-   ELbl(g_prefix+"mon_h1","品种",     X+PD+CD_PD,       hdrY, F(9), cMute);
-   ELbl(g_prefix+"mon_h2","浮亏$",    X+PD+CD_PD+60,    hdrY, F(9), cMute);
-   ELbl(g_prefix+"mon_h3","多单-单/手", X+PD+CD_PD+110, hdrY, F(9), cMute);
-   ELbl(g_prefix+"mon_h4","空单-单/手", X+PD+CD_PD+210, hdrY, F(9), cMute);
-   ELbl(g_prefix+"mon_h5","锁仓",     X+PD+CD_PD+310,   hdrY, F(9), cMute);
-   ELbl(g_prefix+"mon_h6","状态",     X+PD+CD_PD+370,   hdrY, F(9), cMute);
+   int c1 = X+PD+CD_PD;
+   int c2 = c1+70;
+   int c3 = c2+70;
+   int c4 = c3+80;
+   int c5 = c4+60;
+   int c6 = c5+50;
+   ELbl(g_prefix+"mon_h1","品种", c1, hdrY+4, F(9), cMute);
+   ELbl(g_prefix+"mon_h2","盈亏$", c2, hdrY+4, F(9), cMute);
+   ELbl(g_prefix+"mon_h3","多单-单/手", c3, hdrY+4, F(9), cMute);
+   ELbl(g_prefix+"mon_h4","空单-单/手", c4, hdrY+4, F(9), cMute);
+   ELbl(g_prefix+"mon_h5","锁仓", c5, hdrY+4, F(9), cMute);
+   ELbl(g_prefix+"mon_h6","状态", c6, hdrY+4, F(9), cMute);
 
    // 数据行
-   int monitorRowCount = 5;
-   int rowH = (monH - CD_PD*2 - 22 - 24 - 30) / monitorRowCount;
-   rowH = MathMax(rowH, 20);
-   int maxShow = MathMin(monitorRowCount, totalSymbols);
+   int rowStartY = hdrY + 24;
+   int maxShow = MathMin(monRows, totalSymbols);
    int startIdx = MathMax(0, MathMin(g_monitorScroll, totalSymbols - maxShow));
    g_monitorScroll = startIdx;
 
    // 清理多余的旧行标签
-   for(int clr = maxShow; clr < monitorRowCount; clr++)
+   for(int clr = maxShow; clr < monRows; clr++)
    {
       ObjectDelete(0, g_prefix+"mon_s"+IntegerToString(clr));
       ObjectDelete(0, g_prefix+"mon_p"+IntegerToString(clr));
@@ -1251,34 +1274,33 @@ void DrawPanel()
    {
       int idx = startIdx + r;
       if(idx >= totalSymbols) break;
-      int rowY = hdrY + 24 + r * rowH;
+      int rowY = rowStartY + r * LH;
 
       // 品种名
       string symName = allStats[idx].symbol;
-      if(StringLen(symName) > 8) symName = StringSubstr(symName, 0, 8);
-      color symClr = C'200,210,230';
-      ELbl(g_prefix+"mon_s"+IntegerToString(r), symName, X+PD+CD_PD, rowY+2, F(9), symClr);
+      if(StringLen(symName) > 7) symName = StringSubstr(symName, 0, 7);
+      ELbl(g_prefix+"mon_s"+IntegerToString(r), symName, c1, rowY+4, F(9), C'200,210,230');
 
-      // 浮亏
+      // 盈亏
       double pnl = allStats[idx].totalPnl;
       color pnlClr = (pnl>=0) ? InpColorNormal : InpColorDanger;
       string pnlTxt = (pnl>=0 ? "+" : "") + DoubleToString(pnl,2);
-      ELbl(g_prefix+"mon_p"+IntegerToString(r), pnlTxt, X+PD+CD_PD+60, rowY+2, F(9), pnlClr);
+      ELbl(g_prefix+"mon_p"+IntegerToString(r), pnlTxt, c2, rowY+4, F(9), pnlClr);
 
       // 多单
-      string buyTxt = IntegerToString(allStats[idx].buyCnt) + "/" + DoubleToString(allStats[idx].buyLots,2);
+      string buyTxt = IntegerToString(allStats[idx].buyCnt)+"/"+DoubleToString(allStats[idx].buyLots,2);
       color buyClr = (allStats[idx].buyLots > 0) ? InpColorInfo : cMute;
-      ELbl(g_prefix+"mon_b"+IntegerToString(r), buyTxt, X+PD+CD_PD+110, rowY+2, F(9), buyClr);
+      ELbl(g_prefix+"mon_b"+IntegerToString(r), buyTxt, c3, rowY+4, F(9), buyClr);
 
       // 空单
-      string sellTxt = IntegerToString(allStats[idx].sellCnt) + "/" + DoubleToString(allStats[idx].sellLots,2);
+      string sellTxt = IntegerToString(allStats[idx].sellCnt)+"/"+DoubleToString(allStats[idx].sellLots,2);
       color sellClr = (allStats[idx].sellLots > 0) ? InpColorDanger : cMute;
-      ELbl(g_prefix+"mon_sell"+IntegerToString(r), sellTxt, X+PD+CD_PD+210, rowY+2, F(9), sellClr);
+      ELbl(g_prefix+"mon_sell"+IntegerToString(r), sellTxt, c4, rowY+4, F(9), sellClr);
 
       // 锁仓
       string hgTxt = allStats[idx].isLocked ? (allStats[idx].lockDirection==1?"多":"空") : "-";
       color hgClr = allStats[idx].isLocked ? InpColorWarning : cMute;
-      ELbl(g_prefix+"mon_hg"+IntegerToString(r), hgTxt, X+PD+CD_PD+310, rowY+2, F(9), hgClr);
+      ELbl(g_prefix+"mon_hg"+IntegerToString(r), hgTxt, c5, rowY+4, F(9), hgClr);
 
       // 状态
       string statusTxt; color statusClr;
@@ -1288,7 +1310,7 @@ void DrawPanel()
       { statusTxt = "平衡"; statusClr = InpColorWarning; }
       else
       { statusTxt = "不平衡"; statusClr = InpColorDanger; }
-      ELbl(g_prefix+"mon_st"+IntegerToString(r), statusTxt, X+PD+CD_PD+370, rowY+2, F(9), statusClr);
+      ELbl(g_prefix+"mon_st"+IntegerToString(r), statusTxt, c6, rowY+4, F(9), statusClr);
    }
 
    // 滚动按钮
@@ -1301,7 +1323,9 @@ void DrawPanel()
       color btnFg = C'200,210,230';
       EBtn(g_prefix+"mon_scrollUp","上移", rightX, scrollY, sbw, BH, btnBg, btnFg);
       EBtn(g_prefix+"mon_scrollDown","下移", rightX+sbw+PG, scrollY, sbw, BH, btnBg, btnFg);
-      ELbl(g_prefix+"mon_page", IntegerToString(startIdx+1)+"-"+IntegerToString(MathMin(startIdx+maxShow,totalSymbols))+"/"+IntegerToString(totalSymbols), rightX-60, scrollY+4, F(9), cMute);
+      int pageStart = startIdx+1;
+      int pageEnd = MathMin(startIdx+maxShow,totalSymbols);
+      ELbl(g_prefix+"mon_page", IntegerToString(pageStart)+"-"+IntegerToString(pageEnd)+"/"+IntegerToString(totalSymbols), rightX-70, scrollY+4, F(9), cMute);
    }
    else
    {
