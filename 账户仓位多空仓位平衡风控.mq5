@@ -1628,27 +1628,23 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
    int click_x=(int)lparam;
    int click_y=(int)dparam;
 
-   // ── 鼠标按下: 开始拖拽 ──
-   if(id == CHARTEVENT_MOUSE_DOWN)
+   // ── 图表点击: 开始拖拽 / 处理点击 ──
+   if(id == CHARTEVENT_CLICK)
    {
-      if(IsClickOnPanelDragArea(click_x,click_y))
+      if(g_panel_dragging)
       {
+         // 拖拽中再次点击 → 结束拖拽
+         g_panel_dragging = false;
+         SetPanelDragHighlight(false);
+         ChartRedraw(0);
+      }
+      else if(IsClickOnPanelDragArea(click_x,click_y))
+      {
+         // 点击在面板标题栏 → 开始拖拽
          g_panel_dragging = true;
          g_panel_drag_ox = click_x - g_px;
          g_panel_drag_oy = click_y - g_py;
          SetPanelDragHighlight(true);
-         ChartRedraw(0);
-      }
-      return;
-   }
-
-   // ── 鼠标释放: 结束拖拽 ──
-   if(id == CHARTEVENT_MOUSE_UP)
-   {
-      if(g_panel_dragging)
-      {
-         g_panel_dragging = false;
-         SetPanelDragHighlight(false);
          ChartRedraw(0);
       }
       return;
@@ -1661,19 +1657,6 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
       int new_y = click_y - g_panel_drag_oy;
       ClampPanelPosition(new_x, new_y);
       MovePanelTo(new_x, new_y);
-      return;
-   }
-
-   // ── 图表点击: 处理折叠按钮等 ──
-   if(id == CHARTEVENT_CLICK)
-   {
-      // 点击面板外部时结束拖拽
-      if(g_panel_dragging)
-      {
-         g_panel_dragging = false;
-         SetPanelDragHighlight(false);
-         ChartRedraw(0);
-      }
       return;
    }
 
