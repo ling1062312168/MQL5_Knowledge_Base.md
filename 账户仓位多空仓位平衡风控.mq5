@@ -60,7 +60,7 @@ input color       InpColorInfo         = C'66,153,225';
 #define LABEL_W         85        // 标签区域宽度
 #define LW              ((PW - PD*2 - PG)/2)  // 左栏宽度
 #define RW              LW                     // 右栏宽度
-#define MARK_COMMENT    "BRC_MARK"          // 监控标记注释 (仅加注释, 不开新单)
+#define MARK_COMMENT    "BRC_MARK"          // 监控标记标识 (仅为标识, 实际用数组跟踪)
 
 //+------------------------------------------------------------------+
 //| 结构体                                                            |
@@ -114,6 +114,9 @@ double         g_unlockRatio    = 0.50;      // 解锁比例
 double         g_minHedgeProfit = 5.0;       // 最低保留盈利
 bool           g_progressiveClose = false;    // 渐进平仓模式
 double         g_balanceTolerance = 0.01;    // 平衡容差
+
+// ── 标记跟踪 (用全局数组代替修改订单注释) ──
+ulong          g_markedTickets[];            // 已标记的持仓ticket列表
 
 // ── 标记监控品种列表 ──
 string         g_markedSymbols[];            // 已标记品种列表
@@ -266,74 +269,58 @@ double AlignVolumeToStep(string symbol, double volume) { double s = GetVolumeSte
 double GetMinLot(string symbol) { return SymbolInfoDouble(symbol, SYMBOL_VOLUME_MIN); }
 
 //+------------------------------------------------------------------+
-//| 判断是否为已标记监控订单 (通过注释标记)                              |
+//| 判断是否为已标记监控订单 (通过全局数组跟踪)                           |
 //| 注意: 此标记仅为监控标识, 不代表任何开仓/锁仓动作                     |
 //+------------------------------------------------------------------+
 bool IsMarkedOrder()
 {
-   string comment = PositionGetString(POSITION_COMMENT);
-   return (StringFind(comment, MARK_COMMENT) >= 0);
+   ulong ticket = PositionGetTicket(POSITION_TICKET);
+   for(int i=0; i<ArraySize(g_markedTickets); i++)
+   {
+      if(g_markedTickets[i] == ticket) return true;
+   }
+   return false;
 }
 
 //+------------------------------------------------------------------+
-//| 标记订单为监控状态 (仅修改注释, 不开新单)                             |
+//| 标记订单为监控状态 (添加到全局数组, 不开新单)                          |
 //+------------------------------------------------------------------+
 void MarkPositionForMonitor(ulong ticket)
 {
    if(!PositionSelectByTicket(ticket)) return;
-   string comment = PositionGetString(POSITION_COMMENT);
-   if(StringFind(comment, MARK_COMMENT) >= 0) return;
 
-   MqlTradeRequest request = {};
-   MqlTradeResult  result  = {};
-   request.action = TRADE_ACTION_MODIFY;
-   request.position = ticket;
-   request.symbol = PositionGetString(POSITION_SYMBOL);
+   // 检查是否已标记
+   for(int i=0; i<ArraySize(g_markedTickets); i++)
+   {
+      if(g_markedTickets[i] == ticket) return;
+   }
 
-   string newComment = MARK_COMMENT + "_" +
-      ((ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY?"多":"空") +
-      "_" + IntegerToString((int)ticket);
-
-   request.comment = newComment;
-   if(!OrderSend(request,result))
-      Print("[标记监控] 订单#",ticket," 标记失败");
+   // 添加到标记列表
+   int idx = ArraySize(g_markedTickets);
+   ArrayResize(g_markedTickets, idx+1);
+   g_markedTickets[idx] = ticket;
 }
 
 //+------------------------------------------------------------------+
-//| 取消订单监控标记                                                   |
+//| 取消订单监控标记 (从全局数组移除)                                     |
 //+------------------------------------------------------------------+
 void UnmarkPositionForMonitor(ulong ticket)
 {
-   if(!PositionSelectByTicket(ticket)) return;
-   string comment = PositionGetString(POSITION_COMMENT);
-   if(StringFind(comment, MARK_COMMENT) < 0) return;
-
-   MqlTradeRequest request = {};
-   MqlTradeResult  result  = {};
-   request.action = TRADE_ACTION_MODIFY;
-   request.position = ticket;
-   request.symbol = PositionGetString(POSITION_SYMBOL);
-
-   string newComment = comment;
-   int posFound = StringFind(newComment, MARK_COMMENT);
-   if(posFound >= 0)
+   int newSize = 0;
+   for(int i=0; i<ArraySize(g_markedTickets); i++)
    {
-      int endPos = StringLen(newComment);
-      int spacePos = StringFind(newComment, " ", posFound + 1);
-      if(spacePos > 0 && spacePos < endPos) endPos = spacePos;
-
-      string tagToRemove = StringSubstr(newComment, posFound, endPos - posFound);
-      StringReplace(newComment, tagToRemove, "");
-      StringTrimLeft(newComment);
+      if(g_markedTickets[i] != ticket)
+      {
+         if(newSize != i)
+            g_markedTickets[newSize] = g_markedTickets[i];
+         newSize++;
+      }
    }
-
-   request.comment = newComment;
-   if(!OrderSend(request,result))
-      Print("[取消标记] 订单#",ticket," 取消标记失败");
+   ArrayResize(g_markedTickets, newSize);
 }
 
 //+------------------------------------------------------------------+
-//| 给品种所有订单添加监控标记 (仅加注释, 不开新单)                       |
+//| 给品种所有订单添加监控标记 (仅加数组, 不改注释)                        |
 //+------------------------------------------------------------------+
 void MarkSymbolForMonitor(string symbol, int markDir)
 {
@@ -372,6 +359,35 @@ void UnmarkSymbolForMonitor(string symbol)
    }
    if(unmarked > 0)
       Print("[取消标记] ",symbol," 已取消 ",unmarked," 笔订单标记");
+}
+
+//+------------------------------------------------------------------+
+//| 清理已平仓订单的标记                                                |
+//+------------------------------------------------------------------+
+void CleanupMarkedTickets()
+{
+   int removed = 0;
+   int newSize = 0;
+   for(int i=0; i<ArraySize(g_markedTickets); i++)
+   {
+      ulong ticket = g_markedTickets[i];
+      bool stillExists = false;
+      for(int j=(int)PositionsTotal()-1; j>=0; j--)
+      {
+         if(PositionGetTicket(j) == ticket) { stillExists = true; break; }
+      }
+      if(stillExists)
+      {
+         if(newSize != i) g_markedTickets[newSize] = g_markedTickets[i];
+         newSize++;
+      }
+      else removed++;
+   }
+   if(removed > 0)
+   {
+      ArrayResize(g_markedTickets, newSize);
+      Print("[清理标记] 移除 ",removed," 笔已平仓订单的标记");
+   }
 }
 
 //+------------------------------------------------------------------+
@@ -902,6 +918,7 @@ void ResetMonitorState()
    ArrayResize(g_markedSymbols, 0);
    ArrayResize(g_markDirections, 0);
    ArrayResize(g_markInitialLosses, 0);
+   ArrayResize(g_markedTickets, 0);  // 清理所有标记
 
    // 根据当前模式设置阈值
    if(InpMonitorDrawdownUSD == 0)
@@ -1686,6 +1703,7 @@ void OnDeinit(const int reason)
 
 void OnTick()
 {
+   CleanupMarkedTickets();  // 清理已平仓订单的标记
    CheckMonitor();
 }
 
