@@ -1011,33 +1011,40 @@ void CheckMonitor()
             continue;
          }
 
-         // 监控多空方向盈利
+         // 监控多空方向盈利 (仅统计已标记订单)
          double buyProfit = GetDirectionProfit(sym, 1);
          double sellProfit = GetDirectionProfit(sym, -1);
 
-         // 使用标记时保存的初始亏损作为固定基准
+         // 获取标记时的初始亏损作为基准
          double initialLoss = GetMarkInitialLoss(sym);
-         double targetProfit = initialLoss * g_unlockRatio;
+         SymbolStats curStats;
+         GetSymbolStats(sym, curStats);
 
-         // 如果没有保存初始亏损，用当前浮亏作为基准
-         if(targetProfit <= 0)
+         // 计算两个方向的50%目标
+         double targetBuy = 0, targetSell = 0;
+
+         if(initialLoss > 0)
          {
-            SymbolStats curStats;
-            GetSymbolStats(sym, curStats);
-            if(markDir == 1 && curStats.buyPnl < 0)
-               targetProfit = (-curStats.buyPnl) * g_unlockRatio;
-            else if(markDir == -1 && curStats.sellPnl < 0)
-               targetProfit = (-curStats.sellPnl) * g_unlockRatio;
+            // 使用保存的初始亏损
+            targetBuy = initialLoss * g_unlockRatio;
+            targetSell = initialLoss * g_unlockRatio;
+         }
+         else
+         {
+            // 没有保存初始亏损，用当前浮亏计算
+            if(curStats.buyPnl < 0) targetBuy = (-curStats.buyPnl) * g_unlockRatio;
+            if(curStats.sellPnl < 0) targetSell = (-curStats.sellPnl) * g_unlockRatio;
          }
 
          Print("[监控检查] ",sym," 多盈利:$",DoubleToString(buyProfit,2),
                " 空盈利:$",DoubleToString(sellProfit,2),
-               " 50%目标:$",DoubleToString(targetProfit,2));
+               " 多目标:$",DoubleToString(targetBuy,2),
+               " 空目标:$",DoubleToString(targetSell,2));
 
-         // 判断哪个方向先盈利达50%
+         // 检查任一方向盈利达50% (实际盈利的方向作为预算来源)
          int triggerDir = 0;
-         if(markDir == 1 && buyProfit >= targetProfit && targetProfit > 0) triggerDir = 1;
-         else if(markDir == -1 && sellProfit >= targetProfit && targetProfit > 0) triggerDir = -1;
+         if(targetBuy > 0 && buyProfit >= targetBuy) triggerDir = 1;
+         else if(targetSell > 0 && sellProfit >= targetSell) triggerDir = -1;
 
          if(triggerDir == 0)
          {
@@ -1117,14 +1124,13 @@ void CheckMonitor()
             DoubleToString(balancedStats[i].netLots,4));
       Print("[标记监控] ",sym," 多浮亏:$",DoubleToString(buyLoss,2)," 空浮亏:$",DoubleToString(sellLoss,2));
 
-      // 决定解锁方向: 亏损小的方向作为盈利解锁目标 (更可能先盈利)
-      // 例: 多亏$20, 空亏$27 → markDir=1(多), 目标=多亏损的50%=$10
-      // 当多单盈利达$10时, 用多单盈利平空单亏损
+      // 决定初始亏损基准: 使用较大的亏损作为50%目标的基准
+      // 例: 多亏$100, 空亏$50 → initialLoss=$100 → 目标=$50
+      // 当任一方向盈利达$50时触发渐进平仓
       int markDir = 1;
-      double initialLoss = buyLoss;
-      if(buyLoss == 0 && sellLoss > 0) { markDir = -1; initialLoss = sellLoss; }
-      else if(sellLoss == 0 && buyLoss > 0) { markDir = 1; initialLoss = buyLoss; }
-      else if(sellLoss < buyLoss) { markDir = -1; initialLoss = sellLoss; }
+      double initialLoss = MathMax(buyLoss, sellLoss);
+      if(buyLoss >= sellLoss) markDir = 1;
+      else markDir = -1;
 
       // 仅标记, 不开新单!
       MarkSymbolForMonitor(sym, markDir);
