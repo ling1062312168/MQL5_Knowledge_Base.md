@@ -1,21 +1,34 @@
 //+------------------------------------------------------------------+
-//|                                          账户仓位多空仓位平衡风控.mq5  |
+//|                                      账户仓位多空仓位平衡风控.mq5  |
 //|                              Copyright 2025, 风控系统               |
-//|   功能: 监测账户所有订单, 总浮亏达阈值触发锁仓风控                    |
-//|   核心: 账户浮亏达阈值 → 平衡品种锁仓 → 方向盈利50% → 渐进平仓      |
-//|   参数: 浮亏锁仓阈值=-1000, 盈利阈值=50%, 最低保留=5                |
+//|                                                                  |
+//|   ⚠️ 核心定位: 监控为主, 平仓辅助, 绝不开仓                         |
+//|                                                                  |
+//|   功能: 监测账户所有持仓, 识别多空平衡品种, 标记监控,                 |
+//|         条件满足时渐进平仓, 提供手动平仓面板                         |
+//|                                                                  |
+//|   逻辑流程:                                                       |
+//|     1. 持续监测账户所有品种的多空持仓                               |
+//|     2. 识别平衡品种 (多空手数相抵, 净头寸≈0)                        |
+//|     3. 账户浮亏达阈值 → 标记平衡品种 (仅加注释, 不开新单)            |
+//|     4. 方向盈利达50% → 渐进平仓亏损单                               |
+//|     5. 亏损平完 → 取消标记, 恢复监测                                |
+//|                                                                  |
+//|   ⛔ 本EA不负责: 开仓, 加仓, 锁仓开单                              |
+//|                                                                  |
+//|   参数: 标记阈值=-1000, 盈利解锁=50%, 最低保留=5                    |
 //+------------------------------------------------------------------+
 #property copyright "风控系统"
-#property version   "3.00"
-#property description "账户仓位多空仓位平衡风控"
-#property description "账户总浮亏→平衡品种锁仓→方向盈利→渐进平仓→解锁"
+#property version   "4.00"
+#property description "账户仓位多空仓位平衡风控 - 仅监控和平仓, 不开仓"
+#property description "识别平衡品种 → 标记监控 → 渐进平仓 → 解锁"
 #include <Trade/Trade.mqh>
 
 //+------------------------------------------------------------------+
 //| 输入参数                                                          |
 //+------------------------------------------------------------------+
-input group "== 锁仓风控参数 =="
-input double      InpLockDrawdownUSD   = 1000.0;   // 账户浮亏锁仓阈值($,正数如1000)
+input group "== 标记监控参数 =="
+input double      InpMonitorDrawdownUSD = 1000.0;   // 账户浮亏标记阈值($,正数如1000)
 input double      InpUnlockRatio       = 0.50;     // 盈利解锁比例(方向盈利达此比例即解锁)
 input double      InpMinHedgeProfit    = 5.0;      // 最低保留盈利(渐进平仓时需保留此额)
 input int         InpSlippage          = 30;       // 滑点
@@ -47,7 +60,7 @@ input color       InpColorInfo         = C'66,153,225';
 #define LABEL_W         85        // 标签区域宽度
 #define LW              ((PW - PD*2 - PG)/2)  // 左栏宽度
 #define RW              LW                     // 右栏宽度
-#define LOCK_COMMENT    "BRC_LOCK"          // 锁仓标记注释
+#define MARK_COMMENT    "BRC_MARK"          // 监控标记注释 (仅加注释, 不开新单)
 
 //+------------------------------------------------------------------+
 //| 结构体                                                            |
@@ -73,11 +86,11 @@ struct SymbolStats
    double   totalPnl;
    int      buyCnt;
    int      sellCnt;
-   bool     isBalanced;
-   bool     isLocked;     // 是否已锁仓
-   int      lockDirection; // 锁仓方向: 1=多盈利解锁, -1=空盈利解锁
-   double   lockBuyLoss;   // 锁仓时多单亏损
-   double   lockSellLoss;  // 锁仓时空单亏损
+   bool     isBalanced;   // 是否平衡 (多空手数相抵)
+   bool     isMarked;     // 是否已标记监控
+   int      markDirection; // 标记方向: 1=多盈利解锁, -1=空盈利解锁
+   double   markBuyLoss;   // 标记时多单亏损
+   double   markSellLoss;  // 标记时空单亏损
 };
 
 //+------------------------------------------------------------------+
@@ -92,19 +105,19 @@ bool           g_panel_dragging = false;
 int            g_panel_drag_ox = 0;
 int            g_panel_drag_oy = 0;
 
-// ── 锁仓风控状态 ──
-bool           g_locked         = false;     // 锁仓标志
-double         g_lockOrigThresh = 0;         // 锁仓时保存的阈值
-#define LOCK_DISABLED -999999.0
-double         g_lockDrawdownUSD = -999999.0; // 当前锁仓阈值(运行时)
+// ── 标记监控状态 ──
+bool           g_monitoring     = false;     // 监控中标志
+double         g_monitorOrigThresh = 0;      // 标记时保存的阈值
+#define MONITOR_DISABLED -999999.0
+double         g_monitorDrawdownUSD = -999999.0; // 当前标记阈值(运行时)
 double         g_unlockRatio    = 0.50;      // 解锁比例
 double         g_minHedgeProfit = 5.0;       // 最低保留盈利
 bool           g_progressiveClose = false;    // 渐进平仓模式
 double         g_balanceTolerance = 0.01;    // 平衡容差
 
-// ── 锁仓品种列表 ──
-string         g_lockedSymbols[];            // 已锁仓品种列表
-int            g_lockDirections[];           // 对应锁仓方向
+// ── 标记监控品种列表 ──
+string         g_markedSymbols[];            // 已标记品种列表
+int            g_markDirections[];           // 对应标记方向
 
 // ── 多品种监控 ──
 int            g_monitorScroll   = 0;         // 监控列表滚动偏移
@@ -244,22 +257,23 @@ double AlignVolumeToStep(string symbol, double volume) { double s = GetVolumeSte
 double GetMinLot(string symbol) { return SymbolInfoDouble(symbol, SYMBOL_VOLUME_MIN); }
 
 //+------------------------------------------------------------------+
-//| 判断是否为锁仓订单 (通过注释标记)                                   |
+//| 判断是否为已标记监控订单 (通过注释标记)                              |
+//| 注意: 此标记仅为监控标识, 不代表任何开仓/锁仓动作                     |
 //+------------------------------------------------------------------+
-bool IsLockedOrder()
+bool IsMarkedOrder()
 {
    string comment = PositionGetString(POSITION_COMMENT);
-   return (StringFind(comment, LOCK_COMMENT) >= 0);
+   return (StringFind(comment, MARK_COMMENT) >= 0);
 }
 
 //+------------------------------------------------------------------+
-//| 标记订单为锁仓状态                                                |
+//| 标记订单为监控状态 (仅修改注释, 不开新单)                             |
 //+------------------------------------------------------------------+
-void MarkPositionAsLocked(ulong ticket)
+void MarkPositionForMonitor(ulong ticket)
 {
    if(!PositionSelectByTicket(ticket)) return;
    string comment = PositionGetString(POSITION_COMMENT);
-   if(StringFind(comment, LOCK_COMMENT) >= 0) return;
+   if(StringFind(comment, MARK_COMMENT) >= 0) return;
 
    MqlTradeRequest request = {};
    MqlTradeResult  result  = {};
@@ -267,24 +281,23 @@ void MarkPositionAsLocked(ulong ticket)
    request.position = ticket;
    request.symbol = PositionGetString(POSITION_SYMBOL);
 
-   string newComment = LOCK_COMMENT + "_" +
+   string newComment = MARK_COMMENT + "_" +
       ((ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY?"多":"空") +
       "_" + IntegerToString((int)ticket);
 
-   // 用订单修改方式更新注释
    request.comment = newComment;
    if(!OrderSend(request,result))
-      Print("[锁仓标记] 订单#",ticket," 标记失败");
+      Print("[标记监控] 订单#",ticket," 标记失败");
 }
 
 //+------------------------------------------------------------------+
-//| 取消订单锁仓标记                                                  |
+//| 取消订单监控标记                                                   |
 //+------------------------------------------------------------------+
-void UnmarkPositionAsLocked(ulong ticket)
+void UnmarkPositionForMonitor(ulong ticket)
 {
    if(!PositionSelectByTicket(ticket)) return;
    string comment = PositionGetString(POSITION_COMMENT);
-   if(StringFind(comment, LOCK_COMMENT) < 0) return;
+   if(StringFind(comment, MARK_COMMENT) < 0) return;
 
    MqlTradeRequest request = {};
    MqlTradeResult  result  = {};
@@ -292,12 +305,10 @@ void UnmarkPositionAsLocked(ulong ticket)
    request.position = ticket;
    request.symbol = PositionGetString(POSITION_SYMBOL);
 
-   // 移除锁仓标记，保留其他注释
    string newComment = comment;
-   int posFound = StringFind(newComment, LOCK_COMMENT);
+   int posFound = StringFind(newComment, MARK_COMMENT);
    if(posFound >= 0)
    {
-      // 从标记位置找到后续空格或到结尾，构建完整标记并删除
       int endPos = StringLen(newComment);
       int spacePos = StringFind(newComment, " ", posFound + 1);
       if(spacePos > 0 && spacePos < endPos) endPos = spacePos;
@@ -309,13 +320,13 @@ void UnmarkPositionAsLocked(ulong ticket)
 
    request.comment = newComment;
    if(!OrderSend(request,result))
-      Print("[锁仓取消] 订单#",ticket," 取消标记失败");
+      Print("[取消标记] 订单#",ticket," 取消标记失败");
 }
 
 //+------------------------------------------------------------------+
-//| 给品种所有订单添加锁仓标记                                        |
+//| 给品种所有订单添加监控标记 (仅加注释, 不开新单)                       |
 //+------------------------------------------------------------------+
-void MarkSymbolAsLocked(string symbol, int lockDir)
+void MarkSymbolForMonitor(string symbol, int markDir)
 {
    int marked = 0;
    for(int i=(int)PositionsTotal()-1; i>=0; i--)
@@ -324,19 +335,19 @@ void MarkSymbolAsLocked(string symbol, int lockDir)
       if(ticket==0) continue;
       if(!PositionSelectByTicket(ticket)) continue;
       if(PositionGetString(POSITION_SYMBOL) != symbol) continue;
-      if(IsLockedOrder()) continue;
+      if(IsMarkedOrder()) continue;
 
-      MarkPositionAsLocked(ticket);
+      MarkPositionForMonitor(ticket);
       marked++;
    }
    if(marked > 0)
-      Print("[锁仓标记] ",symbol," 已标记 ",marked," 笔订单, 方向:",(lockDir==1?"多盈利解锁":"空盈利解锁"));
+      Print("[标记监控] ",symbol," 已标记 ",marked," 笔订单, 方向:",(markDir==1?"多盈利解锁":"空盈利解锁"));
 }
 
 //+------------------------------------------------------------------+
-//| 取消品种所有订单锁仓标记                                          |
+//| 取消品种所有订单监控标记                                            |
 //+------------------------------------------------------------------+
-void UnmarkSymbolAsLocked(string symbol)
+void UnmarkSymbolForMonitor(string symbol)
 {
    int unmarked = 0;
    for(int i=(int)PositionsTotal()-1; i>=0; i--)
@@ -345,13 +356,13 @@ void UnmarkSymbolAsLocked(string symbol)
       if(ticket==0) continue;
       if(!PositionSelectByTicket(ticket)) continue;
       if(PositionGetString(POSITION_SYMBOL) != symbol) continue;
-      if(!IsLockedOrder()) continue;
+      if(!IsMarkedOrder()) continue;
 
-      UnmarkPositionAsLocked(ticket);
+      UnmarkPositionForMonitor(ticket);
       unmarked++;
    }
    if(unmarked > 0)
-      Print("[锁仓取消] ",symbol," 已取消 ",unmarked," 笔订单标记");
+      Print("[取消标记] ",symbol," 已取消 ",unmarked," 笔订单标记");
 }
 
 //+------------------------------------------------------------------+
@@ -410,10 +421,10 @@ void GetSymbolStats(string symbol, SymbolStats &stats)
    stats.buyLots = 0; stats.sellLots = 0;
    stats.buyPnl = 0; stats.sellPnl = 0;
    stats.buyCnt = 0; stats.sellCnt = 0;
-   stats.isLocked = false;
-   stats.lockDirection = 0;
-   stats.lockBuyLoss = 0;
-   stats.lockSellLoss = 0;
+   stats.isMarked = false;
+   stats.markDirection = 0;
+   stats.markBuyLoss = 0;
+   stats.markSellLoss = 0;
 
    for(int i=(int)PositionsTotal()-1; i>=0; i--)
    {
@@ -422,7 +433,7 @@ void GetSymbolStats(string symbol, SymbolStats &stats)
       if(!PositionSelectByTicket(ticket)) continue;
       if(PositionGetString(POSITION_SYMBOL) != symbol) continue;
 
-      bool locked = IsLockedOrder();
+      bool marked = IsMarkedOrder();
       double p = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
 
       if((ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY)
@@ -430,23 +441,22 @@ void GetSymbolStats(string symbol, SymbolStats &stats)
          stats.buyLots += PositionGetDouble(POSITION_VOLUME);
          stats.buyPnl += p;
          stats.buyCnt++;
-         if(locked && p < 0) stats.lockBuyLoss += (-p);
+         if(marked && p < 0) stats.markBuyLoss += (-p);
       }
       else
       {
          stats.sellLots += PositionGetDouble(POSITION_VOLUME);
          stats.sellPnl += p;
          stats.sellCnt++;
-         if(locked && p < 0) stats.lockSellLoss += (-p);
+         if(marked && p < 0) stats.markSellLoss += (-p);
       }
 
-      if(locked)
+      if(marked)
       {
-         stats.isLocked = true;
-         // 从注释中解析方向
+         stats.isMarked = true;
          string comment = PositionGetString(POSITION_COMMENT);
-         if(StringFind(comment, "LOCK_多") >= 0) stats.lockDirection = 1;
-         else if(StringFind(comment, "LOCK_空") >= 0) stats.lockDirection = -1;
+         if(StringFind(comment, "MARK_多") >= 0) stats.markDirection = 1;
+         else if(StringFind(comment, "MARK_空") >= 0) stats.markDirection = -1;
       }
    }
 
@@ -521,7 +531,7 @@ double GetTotalAccountPnl()
 }
 
 //+------------------------------------------------------------------+
-//| 获取所有平衡品种列表                                              |
+//| 获取所有平衡品种列表 (未标记的)                                     |
 //+------------------------------------------------------------------+
 int GetBalancedSymbols(SymbolStats &balancedStats[])
 {
@@ -530,7 +540,7 @@ int GetBalancedSymbols(SymbolStats &balancedStats[])
    int balancedCnt = 0;
    for(int i=0; i<totalCnt; i++)
    {
-      if(allStats[i].isBalanced && !allStats[i].isLocked)
+      if(allStats[i].isBalanced && !allStats[i].isMarked)
       {
          int idx = ArraySize(balancedStats);
          ArrayResize(balancedStats, idx+1);
@@ -542,64 +552,64 @@ int GetBalancedSymbols(SymbolStats &balancedStats[])
 }
 
 //+------------------------------------------------------------------+
-//| 检查品种是否在已锁仓列表中                                        |
+//| 检查品种是否在已标记列表中                                          |
 //+------------------------------------------------------------------+
-bool IsSymbolLocked(string symbol)
+bool IsSymbolMarked(string symbol)
 {
-   for(int i=0; i<ArraySize(g_lockedSymbols); i++)
+   for(int i=0; i<ArraySize(g_markedSymbols); i++)
    {
-      if(g_lockedSymbols[i] == symbol) return true;
+      if(g_markedSymbols[i] == symbol) return true;
    }
    return false;
 }
 
 //+------------------------------------------------------------------+
-//| 获取锁仓方向                                                      |
+//| 获取标记方向                                                      |
 //+------------------------------------------------------------------+
-int GetLockDirection(string symbol)
+int GetMarkDirection(string symbol)
 {
-   for(int i=0; i<ArraySize(g_lockedSymbols); i++)
+   for(int i=0; i<ArraySize(g_markedSymbols); i++)
    {
-      if(g_lockedSymbols[i] == symbol && i < ArraySize(g_lockDirections))
-         return g_lockDirections[i];
+      if(g_markedSymbols[i] == symbol && i < ArraySize(g_markDirections))
+         return g_markDirections[i];
    }
    return 0;
 }
 
 //+------------------------------------------------------------------+
-//| 添加品种到锁仓列表                                                |
+//| 添加品种到标记列表                                                |
 //+------------------------------------------------------------------+
-void AddSymbolToLockedList(string symbol, int direction)
+void AddSymbolToMarkedList(string symbol, int direction)
 {
-   if(IsSymbolLocked(symbol)) return;
-   int idx = ArraySize(g_lockedSymbols);
-   ArrayResize(g_lockedSymbols, idx+1);
-   ArrayResize(g_lockDirections, idx+1);
-   g_lockedSymbols[idx] = symbol;
-   g_lockDirections[idx] = direction;
+   if(IsSymbolMarked(symbol)) return;
+   int idx = ArraySize(g_markedSymbols);
+   ArrayResize(g_markedSymbols, idx+1);
+   ArrayResize(g_markDirections, idx+1);
+   g_markedSymbols[idx] = symbol;
+   g_markDirections[idx] = direction;
 }
 
 //+------------------------------------------------------------------+
-//| 从锁仓列表移除品种                                                |
+//| 从标记列表移除品种                                                |
 //+------------------------------------------------------------------+
-void RemoveSymbolFromLockedList(string symbol)
+void RemoveSymbolFromMarkedList(string symbol)
 {
    int newSize = 0;
-   for(int i=0; i<ArraySize(g_lockedSymbols); i++)
+   for(int i=0; i<ArraySize(g_markedSymbols); i++)
    {
-      if(g_lockedSymbols[i] != symbol)
+      if(g_markedSymbols[i] != symbol)
       {
          if(newSize != i)
          {
-            g_lockedSymbols[newSize] = g_lockedSymbols[i];
-            if(i < ArraySize(g_lockDirections))
-               g_lockDirections[newSize] = g_lockDirections[i];
+            g_markedSymbols[newSize] = g_markedSymbols[i];
+            if(i < ArraySize(g_markDirections))
+               g_markDirections[newSize] = g_markDirections[i];
          }
          newSize++;
       }
    }
-   ArrayResize(g_lockedSymbols, newSize);
-   ArrayResize(g_lockDirections, newSize);
+   ArrayResize(g_markedSymbols, newSize);
+   ArrayResize(g_markDirections, newSize);
 }
 
 //+------------------------------------------------------------------+
@@ -614,7 +624,7 @@ double GetDirectionProfit(string symbol, int direction)
       if(ticket==0) continue;
       if(!PositionSelectByTicket(ticket)) continue;
       if(PositionGetString(POSITION_SYMBOL) != symbol) continue;
-      if(!IsLockedOrder()) continue;
+      if(!IsMarkedOrder()) continue;
 
       ENUM_POSITION_TYPE ptype = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
       if(direction == 1 && ptype == POSITION_TYPE_BUY)
@@ -628,15 +638,14 @@ double GetDirectionProfit(string symbol, int direction)
 //+------------------------------------------------------------------+
 //| 渐进平仓: 用盈利方向做预算平亏损单                                |
 //+------------------------------------------------------------------+
-bool ProgressiveCloseLossOrders(string symbol, int lockDirection)
+bool ProgressiveCloseLossOrders(string symbol, int markDirection)
 {
    if(!g_progressiveClose)
    {
       g_progressiveClose = true;
    }
 
-   // 计算盈利方向的盈利作为预算
-   double directionProfit = GetDirectionProfit(symbol, lockDirection);
+   double directionProfit = GetDirectionProfit(symbol, markDirection);
    double budget = directionProfit - g_minHedgeProfit;
 
    Print("[渐进平仓] ",symbol," 方向盈利=$",DoubleToString(directionProfit,2),
@@ -653,14 +662,14 @@ bool ProgressiveCloseLossOrders(string symbol, int lockDirection)
    PositionInfo entries[];
    ArrayResize(entries, (int)PositionsTotal());
 
-   // 收集所有锁仓的亏损单
+   // 收集所有已标记的亏损单
    for(int i=(int)PositionsTotal()-1;i>=0;i--)
    {
       ulong ticket = PositionGetTicket(i);
       if(ticket==0) continue;
       if(!PositionSelectByTicket(ticket)) continue;
       if(PositionGetString(POSITION_SYMBOL) != symbol) continue;
-      if(!IsLockedOrder()) continue;
+      if(!IsMarkedOrder()) continue;
 
       double p = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
       if(p >= -0.01) continue;
@@ -747,7 +756,7 @@ bool ProgressiveCloseLossOrders(string symbol, int lockDirection)
    }
 
    // 检查是否完成
-   double finalDirectionProfit = GetDirectionProfit(symbol, lockDirection);
+   double finalDirectionProfit = GetDirectionProfit(symbol, markDirection);
    Print("[渐进平仓] ",symbol," 方向盈利=$",DoubleToString(finalDirectionProfit,2),
          " 最低保留=$",DoubleToString(g_minHedgeProfit,2));
 
@@ -765,7 +774,7 @@ bool ProgressiveCloseLossOrders(string symbol, int lockDirection)
       if(t==0) continue;
       if(!PositionSelectByTicket(t)) continue;
       if(PositionGetString(POSITION_SYMBOL) != symbol) continue;
-      if(!IsLockedOrder()) continue;
+      if(!IsMarkedOrder()) continue;
       double p = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
       if(p < -0.01) remainingLoss++;
    }
@@ -779,70 +788,73 @@ bool ProgressiveCloseLossOrders(string symbol, int lockDirection)
 }
 
 //+------------------------------------------------------------------+
-//| 重置锁仓状态                                                      |
+//| 重置标记监控状态                                                  |
 //+------------------------------------------------------------------+
-void ResetLockState()
+void ResetMonitorState()
 {
-   g_locked = false;
-   g_lockOrigThresh = 0;
-   g_lockDrawdownUSD = LOCK_DISABLED;
+   g_monitoring = false;
+   g_monitorOrigThresh = 0;
+   g_monitorDrawdownUSD = MONITOR_DISABLED;
    g_progressiveClose = false;
-   ArrayResize(g_lockedSymbols, 0);
-   ArrayResize(g_lockDirections, 0);
-   Print("[风控解锁] 阈值回到禁用值, 需手动设置新阈值");
-   Print("[风控解锁] 风控系统恢复, 持续监测平衡状态");
+   ArrayResize(g_markedSymbols, 0);
+   ArrayResize(g_markDirections, 0);
+   Print("[监控解锁] 阈值回到禁用值, 需手动设置新阈值");
+   Print("[监控解锁] 风控系统恢复, 持续监测平衡状态");
    RefreshPanel(true);
    ObjectSetString(0, g_prefix+"e1_threshold", OBJPROP_TEXT, "禁用");
 }
 
 //+------------------------------------------------------------------+
-//| 核心: 检查锁仓 (账户浮亏→平衡品种锁仓→方向盈利→渐进平仓)          |
+//| 核心: 标记监控流程                                               |
+//|   1. 已标记 → 检查方向盈利 → 渐进平仓 → 解锁                      |
+//|   2. 未标记 → 账户浮亏达阈值 → 识别平衡品种 → 标记监控             |
+//|   ⚠️ 本函数仅做标记和平仓, 绝不开仓                               |
 //+------------------------------------------------------------------+
-void CheckLock()
+void CheckMonitor()
 {
    double totalPnl = GetTotalAccountPnl();
 
-   // ── 已锁仓: 解锁检测 ──
-   if(g_locked)
+   // ── 已标记监控中: 检查解锁条件 ──
+   if(g_monitoring)
    {
       bool allSymbolsUnlocked = true;
 
-      for(int s=0; s<ArraySize(g_lockedSymbols); s++)
+      for(int s=0; s<ArraySize(g_markedSymbols); s++)
       {
-         string sym = g_lockedSymbols[s];
-         int lockDir = g_lockDirections[s];
+         string sym = g_markedSymbols[s];
+         int markDir = g_markDirections[s];
 
-         // 检查是否还有锁仓订单
-         bool hasLocked = false;
+         // 检查是否还有标记订单
+         bool hasMarked = false;
          for(int i=(int)PositionsTotal()-1; i>=0; i--)
          {
             ulong t = PositionGetTicket(i);
             if(t==0) continue;
             if(!PositionSelectByTicket(t)) continue;
             if(PositionGetString(POSITION_SYMBOL) != sym) continue;
-            if(IsLockedOrder()) { hasLocked = true; break; }
+            if(IsMarkedOrder()) { hasMarked = true; break; }
          }
 
-         if(!hasLocked)
+         if(!hasMarked)
          {
-            Print("[风控解锁检查] ",sym," 锁仓订单已清空");
-            RemoveSymbolFromLockedList(sym);
+            Print("[监控检查] ",sym," 标记订单已清空");
+            RemoveSymbolFromMarkedList(sym);
             continue;
          }
 
          // 监控多空方向盈利
          double buyProfit = GetDirectionProfit(sym, 1);
          double sellProfit = GetDirectionProfit(sym, -1);
-         double targetProfit = g_lockOrigThresh * g_unlockRatio;
+         double targetProfit = g_monitorOrigThresh * g_unlockRatio;
 
-         Print("[风控解锁检查] ",sym," 多盈利:$",DoubleToString(buyProfit,2),
+         Print("[监控检查] ",sym," 多盈利:$",DoubleToString(buyProfit,2),
                " 空盈利:$",DoubleToString(sellProfit,2),
                " 50%目标:$",DoubleToString(targetProfit,2));
 
          // 判断哪个方向先盈利达50%
          int triggerDir = 0;
-         if(lockDir == 1 && buyProfit >= targetProfit) triggerDir = 1;
-         else if(lockDir == -1 && sellProfit >= targetProfit) triggerDir = -1;
+         if(markDir == 1 && buyProfit >= targetProfit) triggerDir = 1;
+         else if(markDir == -1 && sellProfit >= targetProfit) triggerDir = -1;
 
          if(triggerDir == 0)
          {
@@ -850,7 +862,7 @@ void CheckLock()
             continue;
          }
 
-         // 触发渐进平仓
+         // 触发渐进平仓 (仅平亏损单, 不开新仓)
          if(!g_progressiveClose)
          {
             Print("════════════════════════════════");
@@ -859,9 +871,9 @@ void CheckLock()
 
          if(ProgressiveCloseLossOrders(sym, triggerDir))
          {
-            Print("[解锁] ",sym," 渐进平仓完成 → 取消锁仓标记");
-            UnmarkSymbolAsLocked(sym);
-            RemoveSymbolFromLockedList(sym);
+            Print("[解锁] ",sym," 渐进平仓完成 → 取消监控标记");
+            UnmarkSymbolForMonitor(sym);
+            RemoveSymbolFromMarkedList(sym);
          }
          else
          {
@@ -869,64 +881,64 @@ void CheckLock()
          }
       }
 
-      if(allSymbolsUnlocked || ArraySize(g_lockedSymbols) == 0)
+      if(allSymbolsUnlocked || ArraySize(g_markedSymbols) == 0)
       {
-         ResetLockState();
+         ResetMonitorState();
       }
       return;
    }
 
-   // ── 未锁仓: 检测是否需要锁仓 ──
-   if(g_lockDrawdownUSD <= 0) return;
+   // ── 未标记: 检测是否需要标记监控 ──
+   if(g_monitorDrawdownUSD <= 0) return;
 
-   // 账户总浮亏达阈值才触发
-   if(totalPnl > -g_lockDrawdownUSD) return;
+   // 账户总浮亏达阈值才触发标记
+   if(totalPnl > -g_monitorDrawdownUSD) return;
 
-   // 获取所有平衡品种
+   // 获取所有平衡品种 (多空手数相抵, 净头寸≈0)
    SymbolStats balancedStats[];
    int balancedCnt = GetBalancedSymbols(balancedStats);
 
    if(balancedCnt == 0)
    {
-      Print("[风控监测] 账户浮亏达阈值但无平衡品种, 不触发锁仓");
+      Print("[监控检测] 账户浮亏达阈值但无平衡品种, 不标记监控");
       return;
    }
 
-   g_lockOrigThresh = g_lockDrawdownUSD;
-   g_locked = true;
+   g_monitorOrigThresh = g_monitorDrawdownUSD;
+   g_monitoring = true;
    g_progressiveClose = false;
 
    Print("════════════════════════════════");
-   Print("[风控锁仓] 账户总浮亏:$",DoubleToString(totalPnl,2)," 达阈值:$",DoubleToString(g_lockDrawdownUSD,2));
-   Print("[风控锁仓] 发现 ",balancedCnt," 个平衡品种, 开始锁仓");
+   Print("[标记监控] 账户总浮亏:$",DoubleToString(totalPnl,2)," 达阈值:$",DoubleToString(g_monitorDrawdownUSD,2));
+   Print("[标记监控] 发现 ",balancedCnt," 个平衡品种, 开始标记监控");
 
-   // 对每个平衡品种标记锁仓
+   // 对每个平衡品种添加监控标记 (仅加注释, 不开新单)
    for(int i=0; i<balancedCnt; i++)
    {
       string sym = balancedStats[i].symbol;
-      if(IsSymbolLocked(sym)) continue;
+      if(IsSymbolMarked(sym)) continue;
 
       double buyLoss = 0, sellLoss = 0;
       if(balancedStats[i].buyPnl < 0) buyLoss = -balancedStats[i].buyPnl;
       if(balancedStats[i].sellPnl < 0) sellLoss = -balancedStats[i].sellPnl;
 
-      Print("[风控锁仓] ",sym," 多:",DoubleToString(balancedStats[i].buyLots,2),"手 空:",
+      Print("[标记监控] ",sym," 多:",DoubleToString(balancedStats[i].buyLots,2),"手 空:",
             DoubleToString(balancedStats[i].sellLots,2),"手 净:",
             DoubleToString(balancedStats[i].netLots,4));
-      Print("[风控锁仓] ",sym," 多浮亏:$",DoubleToString(buyLoss,2)," 空浮亏:$",DoubleToString(sellLoss,2));
+      Print("[标记监控] ",sym," 多浮亏:$",DoubleToString(buyLoss,2)," 空浮亏:$",DoubleToString(sellLoss,2));
 
       // 决定解锁方向: 亏损大的方向作为盈利解锁目标
-      int lockDir = 1; // 默认多盈利解锁
-      if(sellLoss > buyLoss) lockDir = -1; // 空亏损大则空盈利解锁
+      int markDir = 1;
+      if(sellLoss > buyLoss) markDir = -1;
 
-      // 标记品种所有订单为锁仓状态
-      MarkSymbolAsLocked(sym, lockDir);
-      AddSymbolToLockedList(sym, lockDir);
+      // 仅标记, 不开新单!
+      MarkSymbolForMonitor(sym, markDir);
+      AddSymbolToMarkedList(sym, markDir);
    }
 
-   g_lockDrawdownUSD = LOCK_DISABLED;
-   Print("[风控锁仓] 阈值已设为禁用值, 锁仓期间不再触发");
-   Print("[风控锁仓] 解锁方式: 方向盈利达"+DoubleToString(g_unlockRatio*100,0)+"% → 渐进平仓 → 解锁");
+   g_monitorDrawdownUSD = MONITOR_DISABLED;
+   Print("[标记监控] 阈值已设为禁用值, 监控期间不再触发");
+   Print("[标记监控] 解锁方式: 方向盈利达"+DoubleToString(g_unlockRatio*100,0)+"% → 渐进平仓 → 解锁");
    Print("════════════════════════════════");
    RefreshPanel(true);
    ObjectSetString(0, g_prefix+"e1_threshold", OBJPROP_TEXT, "禁用");
@@ -942,8 +954,8 @@ void ReadEdits()
    {
       t = ObjectGetString(0,g_prefix+"e1_threshold",OBJPROP_TEXT);
       v = StringToDouble(t);
-      if(v > 0) g_lockDrawdownUSD = v;
-      else g_lockDrawdownUSD = LOCK_DISABLED;
+      if(v > 0) g_monitorDrawdownUSD = v;
+      else g_monitorDrawdownUSD = MONITOR_DISABLED;
    }
    if(ObjectFind(0,g_prefix+"e2_ratio")>=0)
    {
@@ -967,7 +979,7 @@ void ReadEdits()
 //+------------------------------------------------------------------+
 void SaveParamsToGV()
 {
-   GlobalVariableSet(g_prefix+"thresh", g_lockDrawdownUSD);
+   GlobalVariableSet(g_prefix+"thresh", g_monitorDrawdownUSD);
    GlobalVariableSet(g_prefix+"ratio", g_unlockRatio);
    GlobalVariableSet(g_prefix+"minHedge", g_minHedgeProfit);
    GlobalVariableSet(g_prefix+"tolerance", g_balanceTolerance);
@@ -975,11 +987,11 @@ void SaveParamsToGV()
 
 void LoadParamsFromGV()
 {
-   if(GlobalVariableCheck(g_prefix+"thresh")) g_lockDrawdownUSD = GlobalVariableGet(g_prefix+"thresh");
+   if(GlobalVariableCheck(g_prefix+"thresh")) g_monitorDrawdownUSD = GlobalVariableGet(g_prefix+"thresh");
    if(GlobalVariableCheck(g_prefix+"ratio")) g_unlockRatio = GlobalVariableGet(g_prefix+"ratio");
    if(GlobalVariableCheck(g_prefix+"minHedge")) g_minHedgeProfit = GlobalVariableGet(g_prefix+"minHedge");
    if(GlobalVariableCheck(g_prefix+"tolerance")) g_balanceTolerance = GlobalVariableGet(g_prefix+"tolerance");
-   if(g_lockDrawdownUSD == 0) g_lockDrawdownUSD = LOCK_DISABLED;
+   if(g_monitorDrawdownUSD == 0) g_monitorDrawdownUSD = MONITOR_DISABLED;
 }
 
 //+------------------------------------------------------------------+
@@ -1001,15 +1013,15 @@ void DrawPanel()
    SymbolStats curStats;
    GetSymbolStats(symbol, curStats);
 
-   // 锁仓汇总
+   // 监控汇总
    int totalBalanced = 0;
-   int totalLockedSymbols = ArraySize(g_lockedSymbols);
+   int totalMarkedSymbols = ArraySize(g_markedSymbols);
    double totalBuyProfit = 0;
    double totalSellProfit = 0;
-   for(int i=0; i<totalLockedSymbols; i++)
+   for(int i=0; i<totalMarkedSymbols; i++)
    {
-      totalBuyProfit += GetDirectionProfit(g_lockedSymbols[i], 1);
-      totalSellProfit += GetDirectionProfit(g_lockedSymbols[i], -1);
+      totalBuyProfit += GetDirectionProfit(g_markedSymbols[i], 1);
+      totalSellProfit += GetDirectionProfit(g_markedSymbols[i], -1);
    }
    for(int i=0; i<totalSymbols; i++)
    {
@@ -1035,11 +1047,12 @@ void DrawPanel()
    ERect(g_prefix+"header", X, g_py, PW, HDR_H, BG_HDR, BD_PANEL);
    ELbl(g_prefix+"title", "账户仓位多空仓位平衡风控", LX+4, g_py+8, F(14), C'235,240,250');
 
-   // 账户盈亏副标题
+   // 账户盈亏副标题 - 明确显示仅监控
    color accPnlClr = (totalAccountPnl>=0) ? InpColorNormal : InpColorDanger;
    string accInfo = "账户盈亏:$" + DoubleToString(totalAccountPnl,2) +
                     " | 品种:" + IntegerToString(totalSymbols) +
-                    " | 平衡容差:" + DoubleToString(g_balanceTolerance,2);
+                    " | 容差:" + DoubleToString(g_balanceTolerance,2) +
+                    " | 仅监控";
    ELbl(g_prefix+"sub", accInfo, LX+4, g_py+30, F(9), accPnlClr);
 
    int cy = g_py + HDR_H + SG;
@@ -1075,13 +1088,13 @@ void DrawPanel()
    ELbl(g_prefix+"r3_val", "$"+DoubleToString(totalSellProfit,2), valueStartX, ry+4, F(10), sellProfitClr);
    ry += LH;
 
-   // 锁仓状态
-   string lockStatus; color lockClr;
-   if(g_progressiveClose){ lockStatus = "渐进平仓中"; lockClr = InpColorWarning; }
-   else if(g_locked){ lockStatus = "已锁仓("+IntegerToString(totalLockedSymbols)+"品种)"; lockClr = InpColorDanger; }
-   else { lockStatus = "正常监测"; lockClr = InpColorNormal; }
-   ELbl(g_prefix+"r4_lbl","锁仓状态", labelStartX, ry+4, F(10), cMute);
-   ELbl(g_prefix+"r4_val", lockStatus, valueStartX, ry+4, F(10), lockClr);
+   // 标记监控状态
+   string markStatus; color markClr;
+   if(g_progressiveClose){ markStatus = "渐进平仓中"; markClr = InpColorWarning; }
+   else if(g_monitoring){ markStatus = "监控中("+IntegerToString(totalMarkedSymbols)+"品种)"; markClr = InpColorDanger; }
+   else { markStatus = "正常监测"; markClr = InpColorNormal; }
+   ELbl(g_prefix+"r4_lbl","监控状态", labelStartX, ry+4, F(10), cMute);
+   ELbl(g_prefix+"r4_val", markStatus, valueStartX, ry+4, F(10), markClr);
    ry += LH;
 
    // 平衡品种数
@@ -1092,11 +1105,11 @@ void DrawPanel()
    ry += LH;
 
    // 进度显示
-   string progTxt = "等待锁仓";
+   string progTxt = "等待标记";
    color progClr = cMute;
-   if(g_locked && totalLockedSymbols > 0)
+   if(g_monitoring && totalMarkedSymbols > 0)
    {
-      double targetP = g_lockOrigThresh * g_unlockRatio;
+      double targetP = g_monitorOrigThresh * g_unlockRatio;
       int bestDir = (totalBuyProfit >= totalSellProfit) ? 1 : -1;
       double bestProfit = (bestDir==1) ? totalBuyProfit : totalSellProfit;
       progTxt = (bestDir==1?"多":"空")+"盈利:$"+DoubleToString(bestProfit,2)+" 50%:$"+DoubleToString(targetP,0);
@@ -1105,19 +1118,19 @@ void DrawPanel()
    ELbl(g_prefix+"r6_lbl","解锁进度", labelStartX, ry+4, F(10), cMute);
    ELbl(g_prefix+"r6_val", progTxt, valueStartX, ry+4, F(10), progClr);
 
-   // ── 卡片2: 风控参数 ──
+   // ── 卡片2: 监控参数 ──
    cy += statusH + SG;
    int paramRows = 4;
    int paramH = CD_PD*2 + 22 + paramRows*LH;
    int paramLabelX = LX+CD_PD;
    int paramInputX = LX+CD_PD+LABEL_W;
    ERect(g_prefix+"c2",LX,cy,LW,paramH,BG_CARD,BD_PANEL);
-   ELbl(g_prefix+"c2_title","风控参数",LX+CD_PD,cy+CD_PD,F(11),C'235,240,250');
+   ELbl(g_prefix+"c2_title","监控参数",LX+CD_PD,cy+CD_PD,F(11),C'235,240,250');
    ey = cy + CD_PD + 22;
 
-   // 浮亏锁仓阈值
-   string threshVal = (g_lockDrawdownUSD <= 0) ? "禁用" : DoubleToString(g_lockDrawdownUSD,0);
-   ELbl(g_prefix+"e1_lbl","浮亏锁仓$", paramLabelX, ey+4, F(10), cMute);
+   // 浮亏标记阈值
+   string threshVal = (g_monitorDrawdownUSD <= 0) ? "禁用" : DoubleToString(g_monitorDrawdownUSD,0);
+   ELbl(g_prefix+"e1_lbl","浮亏标记$", paramLabelX, ey+4, F(10), cMute);
    EEdt(g_prefix+"e1_threshold", threshVal, paramInputX, ey+2, 80, EH);
    ey += LH;
 
@@ -1160,13 +1173,13 @@ void DrawPanel()
    ELbl(g_prefix+"act_net", netTxt, rx+CD_PD, by+4, F(10), netClr);
    by += LH;
 
-   // 当前品种锁仓状态
-   if(curStats.isLocked)
+   // 当前品种标记状态
+   if(curStats.isMarked)
    {
-      int lockDir = GetLockDirection(symbol);
+      int markDir = GetMarkDirection(symbol);
       double buyP = GetDirectionProfit(symbol, 1);
       double sellP = GetDirectionProfit(symbol, -1);
-      string hTxt = "已锁仓-"+(lockDir==1?"多盈利":"空盈利")+"解锁";
+      string hTxt = "已标记-"+(markDir==1?"多盈利":"空盈利")+"解锁";
       color hClr = InpColorWarning;
       ELbl(g_prefix+"act_hedge", hTxt, rx+CD_PD, by+4, F(10), hClr);
       by += LH;
@@ -1177,7 +1190,7 @@ void DrawPanel()
 
    // 操作按钮
    int bw = RW - CD_PD*2;
-   if(g_locked)
+   if(g_monitoring)
    {
       EBtn(g_prefix+"btn_manualUnlock","手动解锁(恢复交易)", rx+CD_PD, by, bw, BH, C'50,140,80', C'235,240,250');
       by += BH + PG;
@@ -1197,17 +1210,17 @@ void DrawPanel()
    // 提示文字
    string hintTxt;
    color hintClr;
-   if(g_locked)
+   if(g_monitoring)
    {
-      hintTxt = "已锁仓("+IntegerToString(totalLockedSymbols)+"品种)";
+      hintTxt = "标记监控中("+IntegerToString(totalMarkedSymbols)+"品种)";
       hintClr = InpColorWarning;
    }
-   else if(totalAccountPnl < -g_lockDrawdownUSD && g_lockDrawdownUSD > 0)
+   else if(totalAccountPnl < -g_monitorDrawdownUSD && g_monitorDrawdownUSD > 0)
    {
       hintTxt = "账户浮亏达阈值";
       hintClr = InpColorDanger;
    }
-   else if(totalBalanced > 0 && g_lockDrawdownUSD > 0)
+   else if(totalBalanced > 0 && g_monitorDrawdownUSD > 0)
    {
       hintTxt = "有"+IntegerToString(totalBalanced)+"个平衡品种";
       hintClr = InpColorWarning;
@@ -1250,7 +1263,7 @@ void DrawPanel()
    ELbl(g_prefix+"mon_h2","盈亏$", c2, hdrY+4, F(9), cMute);
    ELbl(g_prefix+"mon_h3","多单-单/手", c3, hdrY+4, F(9), cMute);
    ELbl(g_prefix+"mon_h4","空单-单/手", c4, hdrY+4, F(9), cMute);
-   ELbl(g_prefix+"mon_h5","锁仓", c5, hdrY+4, F(9), cMute);
+   ELbl(g_prefix+"mon_h5","标记", c5, hdrY+4, F(9), cMute);
    ELbl(g_prefix+"mon_h6","状态", c6, hdrY+4, F(9), cMute);
 
    // 数据行
@@ -1297,9 +1310,9 @@ void DrawPanel()
       color sellClr = (allStats[idx].sellLots > 0) ? InpColorDanger : cMute;
       ELbl(g_prefix+"mon_sell"+IntegerToString(r), sellTxt, c4, rowY+4, F(9), sellClr);
 
-      // 锁仓
-      string hgTxt = allStats[idx].isLocked ? (allStats[idx].lockDirection==1?"多":"空") : "-";
-      color hgClr = allStats[idx].isLocked ? InpColorWarning : cMute;
+      // 标记
+      string hgTxt = allStats[idx].isMarked ? (allStats[idx].markDirection==1?"多":"空") : "-";
+      color hgClr = allStats[idx].isMarked ? InpColorWarning : cMute;
       ELbl(g_prefix+"mon_hg"+IntegerToString(r), hgTxt, c5, rowY+4, F(9), hgClr);
 
       // 状态
@@ -1392,14 +1405,14 @@ void HandlePanelButtonClick(const string sparam)
       string msg = "确定要手动解锁吗？\n\n"
                  + "解锁后:\n"
                  + "• 风控系统恢复监测\n"
-                 + "• 锁仓标记保留\n"
+                 + "• 监控标记保留\n"
                  + "• 方向盈利达50%时自动渐进平仓";
       if(!ShowConfirmDialog(msg)) return;
 
-      // 取消所有锁仓标记
-      for(int i=0; i<ArraySize(g_lockedSymbols); i++)
-         UnmarkSymbolAsLocked(g_lockedSymbols[i]);
-      ResetLockState();
+      // 取消所有监控标记
+      for(int i=0; i<ArraySize(g_markedSymbols); i++)
+         UnmarkSymbolForMonitor(g_markedSymbols[i]);
+      ResetMonitorState();
       RefreshPanel(true);
       return;
    }
@@ -1442,7 +1455,7 @@ void HandlePanelButtonClick(const string sparam)
 //+------------------------------------------------------------------+
 int OnInit()
 {
-   g_lockDrawdownUSD = InpLockDrawdownUSD;
+   g_monitorDrawdownUSD = InpMonitorDrawdownUSD;
    g_unlockRatio = InpUnlockRatio;
    g_minHedgeProfit = InpMinHedgeProfit;
    g_balanceTolerance = InpBalanceTolerance;
@@ -1451,12 +1464,13 @@ int OnInit()
    EventSetTimer(1);
    DrawPanel();
    Print("═══════════════════════════════════════════════════");
-   Print("[账户仓位多空仓位平衡风控] v3.00 启动");
-   Print("  账户浮亏锁仓阈值: $", DoubleToString(g_lockDrawdownUSD,1));
+   Print("[账户仓位多空仓位平衡风控] v4.00 启动 (仅监控, 不开仓)");
+   Print("  浮亏标记阈值: $", DoubleToString(g_monitorDrawdownUSD,1));
    Print("  解锁比例: ", DoubleToString(g_unlockRatio*100,0), "%");
    Print("  最低保留盈利: $", DoubleToString(g_minHedgeProfit,1));
    Print("  平衡容差: ", DoubleToString(g_balanceTolerance,2));
-   Print("  锁仓标记: ", LOCK_COMMENT);
+   Print("  标记注释: ", MARK_COMMENT);
+   Print("  ⚠️ 本EA仅做标记/平仓, 绝不开仓/加仓!");
    Print("═══════════════════════════════════════════════════");
    return INIT_SUCCEEDED;
 }
@@ -1472,7 +1486,7 @@ void OnDeinit(const int reason)
 
 void OnTick()
 {
-   CheckLock();
+   CheckMonitor();
 }
 
 void OnTimer()
