@@ -19,7 +19,7 @@
 //|   参数: 标记阈值=-1000, 盈利解锁=50%, 最低保留=5                    |
 //+------------------------------------------------------------------+
 #property copyright "风控系统"
-#property version   "4.00"
+#property version   "4.01"
 #property description "账户仓位多空仓位平衡风控 - 仅监控和平仓, 不开仓"
 #property description "识别平衡品种 → 标记监控 → 渐进平仓 → 解锁"
 #include <Trade/Trade.mqh>
@@ -28,7 +28,7 @@
 //| 输入参数                                                          |
 //+------------------------------------------------------------------+
 input group "== 标记监控参数 =="
-input double      InpMonitorDrawdownUSD = 1000.0;   // 账户浮亏标记阈值($,正数如1000)
+input double      InpMonitorDrawdownUSD = 0;   // 浮亏标记阈值(0=自动监控所有平衡品种, >0=浮亏达阈值才触发)
 input double      InpUnlockRatio       = 0.50;     // 盈利解锁比例(方向盈利达此比例即解锁)
 input double      InpMinHedgeProfit    = 5.0;      // 最低保留盈利(渐进平仓时需保留此额)
 input int         InpSlippage          = 30;       // 滑点
@@ -118,6 +118,7 @@ double         g_balanceTolerance = 0.01;    // 平衡容差
 // ── 标记监控品种列表 ──
 string         g_markedSymbols[];            // 已标记品种列表
 int            g_markDirections[];           // 对应标记方向
+double         g_markInitialLosses[];        // 标记时的初始亏损(固定基准)
 
 // ── 多品种监控 ──
 int            g_monitorScroll   = 0;         // 监控列表滚动偏移
@@ -664,14 +665,16 @@ int GetMarkDirection(string symbol)
 //+------------------------------------------------------------------+
 //| 添加品种到标记列表                                                |
 //+------------------------------------------------------------------+
-void AddSymbolToMarkedList(string symbol, int direction)
+void AddSymbolToMarkedList(string symbol, int direction, double initialLoss)
 {
    if(IsSymbolMarked(symbol)) return;
    int idx = ArraySize(g_markedSymbols);
    ArrayResize(g_markedSymbols, idx+1);
    ArrayResize(g_markDirections, idx+1);
+   ArrayResize(g_markInitialLosses, idx+1);
    g_markedSymbols[idx] = symbol;
    g_markDirections[idx] = direction;
+   g_markInitialLosses[idx] = initialLoss;
 }
 
 //+------------------------------------------------------------------+
@@ -689,12 +692,28 @@ void RemoveSymbolFromMarkedList(string symbol)
             g_markedSymbols[newSize] = g_markedSymbols[i];
             if(i < ArraySize(g_markDirections))
                g_markDirections[newSize] = g_markDirections[i];
+            if(i < ArraySize(g_markInitialLosses))
+               g_markInitialLosses[newSize] = g_markInitialLosses[i];
          }
          newSize++;
       }
    }
    ArrayResize(g_markedSymbols, newSize);
    ArrayResize(g_markDirections, newSize);
+   ArrayResize(g_markInitialLosses, newSize);
+}
+
+//+------------------------------------------------------------------+
+//| 获取标记时的初始亏损                                              |
+//+------------------------------------------------------------------+
+double GetMarkInitialLoss(string symbol)
+{
+   for(int i=0; i<ArraySize(g_markedSymbols); i++)
+   {
+      if(g_markedSymbols[i] == symbol && i < ArraySize(g_markInitialLosses))
+         return g_markInitialLosses[i];
+   }
+   return 0;
 }
 
 //+------------------------------------------------------------------+
@@ -879,27 +898,40 @@ void ResetMonitorState()
 {
    g_monitoring = false;
    g_monitorOrigThresh = 0;
-   g_monitorDrawdownUSD = MONITOR_DISABLED;
    g_progressiveClose = false;
    ArrayResize(g_markedSymbols, 0);
    ArrayResize(g_markDirections, 0);
-   Print("[监控解锁] 阈值回到禁用值, 需手动设置新阈值");
-   Print("[监控解锁] 风控系统恢复, 持续监测平衡状态");
+   ArrayResize(g_markInitialLosses, 0);
+
+   // 根据当前模式设置阈值
+   if(InpMonitorDrawdownUSD == 0)
+   {
+      g_monitorDrawdownUSD = 0;  // 自动模式保持为0
+      Print("[监控解锁] 自动模式, 继续监测新平衡品种");
+      ObjectSetString(0, g_prefix+"e1_threshold", OBJPROP_TEXT, "自动");
+   }
+   else
+   {
+      g_monitorDrawdownUSD = MONITOR_DISABLED;
+      Print("[监控解锁] 阈值模式, 需手动设置新阈值");
+      ObjectSetString(0, g_prefix+"e1_threshold", OBJPROP_TEXT, "禁用");
+   }
    RefreshPanel(true);
-   ObjectSetString(0, g_prefix+"e1_threshold", OBJPROP_TEXT, "禁用");
 }
 
 //+------------------------------------------------------------------+
 //| 核心: 标记监控流程                                               |
-//|   1. 已标记 → 检查方向盈利 → 渐进平仓 → 解锁                      |
-//|   2. 未标记 → 账户浮亏达阈值 → 识别平衡品种 → 标记监控             |
+//|   1. 已标记 → 检查方向盈利达50% → 渐进平仓 → 解锁                |
+//|   2. 未标记 → 检测平衡品种 → 标记监控                            |
+//|      - 阈值>0: 账户浮亏达阈值才触发                              |
+//|      - 阈值=0: 自动监控所有平衡品种                              |
 //|   ⚠️ 本函数仅做标记和平仓, 绝不开仓                               |
 //+------------------------------------------------------------------+
 void CheckMonitor()
 {
    double totalPnl = GetTotalAccountPnl();
 
-   // ── 已标记监控中: 检查解锁条件 ──
+   // ── 已标记监控中: 检查方向盈利达50% ──
    if(g_monitoring)
    {
       bool allSymbolsUnlocked = true;
@@ -930,7 +962,21 @@ void CheckMonitor()
          // 监控多空方向盈利
          double buyProfit = GetDirectionProfit(sym, 1);
          double sellProfit = GetDirectionProfit(sym, -1);
-         double targetProfit = g_monitorOrigThresh * g_unlockRatio;
+
+         // 使用标记时保存的初始亏损作为固定基准
+         double initialLoss = GetMarkInitialLoss(sym);
+         double targetProfit = initialLoss * g_unlockRatio;
+
+         // 如果没有保存初始亏损，用当前浮亏作为基准
+         if(targetProfit <= 0)
+         {
+            SymbolStats curStats;
+            GetSymbolStats(sym, curStats);
+            if(markDir == 1 && curStats.buyPnl < 0)
+               targetProfit = (-curStats.buyPnl) * g_unlockRatio;
+            else if(markDir == -1 && curStats.sellPnl < 0)
+               targetProfit = (-curStats.sellPnl) * g_unlockRatio;
+         }
 
          Print("[监控检查] ",sym," 多盈利:$",DoubleToString(buyProfit,2),
                " 空盈利:$",DoubleToString(sellProfit,2),
@@ -938,8 +984,8 @@ void CheckMonitor()
 
          // 判断哪个方向先盈利达50%
          int triggerDir = 0;
-         if(markDir == 1 && buyProfit >= targetProfit) triggerDir = 1;
-         else if(markDir == -1 && sellProfit >= targetProfit) triggerDir = -1;
+         if(markDir == 1 && buyProfit >= targetProfit && targetProfit > 0) triggerDir = 1;
+         else if(markDir == -1 && sellProfit >= targetProfit && targetProfit > 0) triggerDir = -1;
 
          if(triggerDir == 0)
          {
@@ -974,10 +1020,12 @@ void CheckMonitor()
    }
 
    // ── 未标记: 检测是否需要标记监控 ──
-   if(g_monitorDrawdownUSD <= 0) return;
+   // 阈值=0时自动监控所有平衡品种; 阈值>0时需浮亏达标
+   bool shouldMonitor = false;
+   if(g_monitorDrawdownUSD == 0) shouldMonitor = true;  // 自动模式
+   else if(g_monitorDrawdownUSD > 0 && totalPnl <= -g_monitorDrawdownUSD) shouldMonitor = true;
 
-   // 账户总浮亏达阈值才触发标记
-   if(totalPnl > -g_monitorDrawdownUSD) return;
+   if(!shouldMonitor) return;
 
    // 获取所有平衡品种 (多空手数相抵, 净头寸≈0)
    SymbolStats balancedStats[];
@@ -985,7 +1033,10 @@ void CheckMonitor()
 
    if(balancedCnt == 0)
    {
-      Print("[监控检测] 账户浮亏达阈值但无平衡品种, 不标记监控");
+      if(g_monitorDrawdownUSD == 0)
+         Print("[监控检测] 无平衡品种, 等待...");
+      else
+         Print("[监控检测] 账户浮亏达阈值但无平衡品种, 不标记监控");
       return;
    }
 
@@ -994,8 +1045,10 @@ void CheckMonitor()
    g_progressiveClose = false;
 
    Print("════════════════════════════════");
-   Print("[标记监控] 账户总浮亏:$",DoubleToString(totalPnl,2)," 达阈值:$",DoubleToString(g_monitorDrawdownUSD,2));
-   Print("[标记监控] 发现 ",balancedCnt," 个平衡品种, 开始标记监控");
+   if(g_monitorDrawdownUSD == 0)
+      Print("[自动监控] 发现 ",balancedCnt," 个平衡品种, 开始标记监控");
+   else
+      Print("[标记监控] 账户总浮亏:$",DoubleToString(totalPnl,2)," 达阈值:$",DoubleToString(g_monitorDrawdownUSD,2));
 
    // 对每个平衡品种添加监控标记 (仅加注释, 不开新单)
    for(int i=0; i<balancedCnt; i++)
@@ -1014,19 +1067,28 @@ void CheckMonitor()
 
       // 决定解锁方向: 亏损大的方向作为盈利解锁目标
       int markDir = 1;
-      if(sellLoss > buyLoss) markDir = -1;
+      double initialLoss = buyLoss;
+      if(sellLoss > buyLoss) { markDir = -1; initialLoss = sellLoss; }
 
       // 仅标记, 不开新单!
       MarkSymbolForMonitor(sym, markDir);
-      AddSymbolToMarkedList(sym, markDir);
+      AddSymbolToMarkedList(sym, markDir, initialLoss);
    }
 
-   g_monitorDrawdownUSD = MONITOR_DISABLED;
-   Print("[标记监控] 阈值已设为禁用值, 监控期间不再触发");
+   // 仅在阈值模式下调为禁用; 自动模式保持为0继续检测新平衡品种
+   if(g_monitorDrawdownUSD > 0)
+   {
+      g_monitorDrawdownUSD = MONITOR_DISABLED;
+      Print("[标记监控] 阈值已设为禁用值, 监控期间不再触发");
+      ObjectSetString(0, g_prefix+"e1_threshold", OBJPROP_TEXT, "禁用");
+   }
+   else if(g_monitorDrawdownUSD == 0)
+   {
+      ObjectSetString(0, g_prefix+"e1_threshold", OBJPROP_TEXT, "自动");
+   }
    Print("[标记监控] 解锁方式: 方向盈利达"+DoubleToString(g_unlockRatio*100,0)+"% → 渐进平仓 → 解锁");
    Print("════════════════════════════════");
    RefreshPanel(true);
-   ObjectSetString(0, g_prefix+"e1_threshold", OBJPROP_TEXT, "禁用");
 }
 
 //+------------------------------------------------------------------+
@@ -1039,7 +1101,9 @@ void ReadEdits()
    {
       t = ObjectGetString(0,g_prefix+"e1_threshold",OBJPROP_TEXT);
       v = StringToDouble(t);
-      if(v > 0) g_monitorDrawdownUSD = v;
+      // 输入0或"自动" → 自动监控模式
+      if(v == 0 || t == "自动") g_monitorDrawdownUSD = 0;
+      else if(v > 0) g_monitorDrawdownUSD = v;
       else g_monitorDrawdownUSD = MONITOR_DISABLED;
    }
    if(ObjectFind(0,g_prefix+"e2_ratio")>=0)
@@ -1228,7 +1292,10 @@ void DrawPanel()
    ey = cy + CD_PD + 22;
 
    // 浮亏标记阈值
-   string threshVal = (g_monitorDrawdownUSD <= 0) ? "禁用" : DoubleToString(g_monitorDrawdownUSD,0);
+   string threshVal;
+   if(g_monitorDrawdownUSD == 0) threshVal = "自动";
+   else if(g_monitorDrawdownUSD < 0) threshVal = "禁用";
+   else threshVal = DoubleToString(g_monitorDrawdownUSD,0);
    ELbl(g_prefix+"e1_lbl","浮亏标记$", paramLabelX, ey+4, F(10), cMute);
    EEdt(g_prefix+"e1_threshold", threshVal, paramInputX, ey+2, 80, EH);
    ey += LH;
@@ -1589,8 +1656,13 @@ int OnInit()
    EventSetTimer(1);
    DrawPanel();
    Print("═══════════════════════════════════════════════════");
-   Print("[账户仓位多空仓位平衡风控] v4.00 启动 (仅监控, 不开仓)");
-   Print("  浮亏标记阈值: $", DoubleToString(g_monitorDrawdownUSD,1));
+   Print("[账户仓位多空仓位平衡风控] v4.01 启动 (仅监控, 不开仓)");
+   if(g_monitorDrawdownUSD == 0)
+      Print("  监控模式: 自动 (监控所有平衡品种)");
+   else if(g_monitorDrawdownUSD > 0)
+      Print("  监控模式: 阈值模式 (浮亏达$", DoubleToString(g_monitorDrawdownUSD,1), "触发)");
+   else
+      Print("  监控模式: 禁用");
    Print("  解锁比例: ", DoubleToString(g_unlockRatio*100,0), "%");
    Print("  最低保留盈利: $", DoubleToString(g_minHedgeProfit,1));
    Print("  平衡容差: ", DoubleToString(g_balanceTolerance,2));
