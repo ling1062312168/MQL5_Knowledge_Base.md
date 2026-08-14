@@ -402,22 +402,99 @@ bool ClosePosition(ulong positionTicket, double volume, int slippage)
 }
 
 //+------------------------------------------------------------------+
-//| 全平指定品种持仓                                                  |
+//| 全平账户所有持仓 (指定方向)                                         |
 //+------------------------------------------------------------------+
-void CloseAllPositionsBySymbol(string symbol, ENUM_POSITION_TYPE posType)
+void CloseAllPositionsAccount(ENUM_POSITION_TYPE posType)
 {
    int count = 0;
+   double totalLots = 0;
+   string symbols[];
+   ArrayResize(symbols, 0);
+
    for(int i=(int)PositionsTotal()-1; i>=0; i--)
    {
       ulong ticket = PositionGetTicket(i);
       if(ticket==0) continue;
       if(!PositionSelectByTicket(ticket)) continue;
-      if(PositionGetString(POSITION_SYMBOL) != symbol) continue;
       if((ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE) != posType) continue;
+      string sym = PositionGetString(POSITION_SYMBOL);
       double vol = PositionGetDouble(POSITION_VOLUME);
-      if(vol > 0 && ClosePosition(ticket, vol, InpSlippage)) count++;
+      if(vol > 0 && ClosePosition(ticket, vol, InpSlippage))
+      {
+         count++;
+         totalLots += vol;
+         // 记录品种
+         bool found = false;
+         for(int j=0; j<ArraySize(symbols); j++)
+            if(symbols[j] == sym) { found = true; break; }
+         if(!found)
+         {
+            int idx = ArraySize(symbols);
+            ArrayResize(symbols, idx+1);
+            symbols[idx] = sym;
+         }
+      }
    }
-   Print("[风控全平] ", symbol, " ", (posType==POSITION_TYPE_BUY?"多单":"空单"), " 平 ", count, " 笔");
+
+   string symList = "";
+   for(int j=0; j<ArraySize(symbols); j++)
+   {
+      if(j>0) symList += ",";
+      symList += symbols[j];
+   }
+
+   Print("[账户全平] ", (posType==POSITION_TYPE_BUY?"多单":"空单"), " 共平 ", count, " 笔, ",
+         DoubleToString(totalLots,2), "手, 涉及品种: ", symList);
+}
+
+//+------------------------------------------------------------------+
+//| 全平账户所有持仓 (多空)                                             |
+//+------------------------------------------------------------------+
+void CloseAllPositionsAccountAll()
+{
+   int buyCount = 0, sellCount = 0;
+   double buyLots = 0, sellLots = 0;
+   string symbols[];
+   ArrayResize(symbols, 0);
+
+   for(int i=(int)PositionsTotal()-1; i>=0; i--)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket==0) continue;
+      if(!PositionSelectByTicket(ticket)) continue;
+      double vol = PositionGetDouble(POSITION_VOLUME);
+      if(vol <= 0) continue;
+
+      string sym = PositionGetString(POSITION_SYMBOL);
+      bool isBuy = ((ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY);
+
+      if(ClosePosition(ticket, vol, InpSlippage))
+      {
+         if(isBuy) { buyCount++; buyLots += vol; }
+         else { sellCount++; sellLots += vol; }
+
+         bool found = false;
+         for(int j=0; j<ArraySize(symbols); j++)
+            if(symbols[j] == sym) { found = true; break; }
+         if(!found)
+         {
+            int idx = ArraySize(symbols);
+            ArrayResize(symbols, idx+1);
+            symbols[idx] = sym;
+         }
+      }
+   }
+
+   string symList = "";
+   for(int j=0; j<ArraySize(symbols); j++)
+   {
+      if(j>0) symList += ",";
+      symList += symbols[j];
+   }
+
+   Print("[账户一键全平] 多单 ", buyCount, " 笔/", DoubleToString(buyLots,2), "手, ",
+         "空单 ", sellCount, " 笔/", DoubleToString(sellLots,2), "手, ",
+         "涉及品种: ", symList);
 }
 
 //+------------------------------------------------------------------+
@@ -1222,11 +1299,11 @@ void DrawPanel()
       ObjectDelete(0, g_prefix+"btn_manualUnlock");
    }
 
-   // 平多 / 平空 / 全平
+   // 平多 / 平空 / 全平 (账户级别)
    int bw3 = (RW - CD_PD*2 - PG*2) / 3;
-   EBtn(g_prefix+"btn_closeBuy","全平多", rx+CD_PD, by, bw3, BH, InpColorInfo, C'235,240,250');
-   EBtn(g_prefix+"btn_closeSell","全平空", rx+CD_PD+bw3+PG, by, bw3, BH, InpColorDanger, C'235,240,250');
-   EBtn(g_prefix+"btn_closeAll","一键全平", rx+CD_PD+bw3*2+PG*2, by, bw3, BH, C'180,50,50', C'235,240,250');
+   EBtn(g_prefix+"btn_closeBuy","全平多(账户)", rx+CD_PD, by, bw3, BH, InpColorInfo, C'235,240,250');
+   EBtn(g_prefix+"btn_closeSell","全平空(账户)", rx+CD_PD+bw3+PG, by, bw3, BH, InpColorDanger, C'235,240,250');
+   EBtn(g_prefix+"btn_closeAll","一键全平(账户)", rx+CD_PD+bw3*2+PG*2, by, bw3, BH, C'180,50,50', C'235,240,250');
    by += BH + PG;
 
    // 提示文字
@@ -1446,35 +1523,54 @@ void HandlePanelButtonClick(const string sparam)
       return;
    }
 
-   // 全平多单
+   // 全平账户所有多单
    if(k == "btn_closeBuy")
    {
       ResetPanelButtonState(sparam);
-      SymbolStats stats; GetSymbolStats(symbol, stats);
-      if(!ShowConfirmDialog("确定全平 "+symbol+" 多单?\n"+DoubleToString(stats.buyLots,2)+"手 "+IntegerToString(stats.buyCnt)+"单")) return;
-      CloseAllPositionsBySymbol(symbol, POSITION_TYPE_BUY);
+      SymbolStats allStats[];
+      int totalSym = GetAllSymbolsStats(allStats);
+      int totalBuyCnt = 0; double totalBuyLots = 0;
+      for(int i=0; i<totalSym; i++)
+      {
+         totalBuyCnt += allStats[i].buyCnt;
+         totalBuyLots += allStats[i].buyLots;
+      }
+      if(!ShowConfirmDialog("确定全平账户所有多单?\n"+DoubleToString(totalBuyLots,2)+"手 "+IntegerToString(totalBuyCnt)+"单")) return;
+      CloseAllPositionsAccount(POSITION_TYPE_BUY);
       RefreshPanel(true); return;
    }
 
-   // 全平空单
+   // 全平账户所有空单
    if(k == "btn_closeSell")
    {
       ResetPanelButtonState(sparam);
-      SymbolStats stats; GetSymbolStats(symbol, stats);
-      if(!ShowConfirmDialog("确定全平 "+symbol+" 空单?\n"+DoubleToString(stats.sellLots,2)+"手 "+IntegerToString(stats.sellCnt)+"单")) return;
-      CloseAllPositionsBySymbol(symbol, POSITION_TYPE_SELL);
+      SymbolStats allStats[];
+      int totalSym = GetAllSymbolsStats(allStats);
+      int totalSellCnt = 0; double totalSellLots = 0;
+      for(int i=0; i<totalSym; i++)
+      {
+         totalSellCnt += allStats[i].sellCnt;
+         totalSellLots += allStats[i].sellLots;
+      }
+      if(!ShowConfirmDialog("确定全平账户所有空单?\n"+DoubleToString(totalSellLots,2)+"手 "+IntegerToString(totalSellCnt)+"单")) return;
+      CloseAllPositionsAccount(POSITION_TYPE_SELL);
       RefreshPanel(true); return;
    }
 
-   // 一键全平
+   // 一键全平账户所有持仓
    if(k == "btn_closeAll")
    {
       ResetPanelButtonState(sparam);
-      SymbolStats stats; GetSymbolStats(symbol, stats);
-      int total = stats.buyCnt + stats.sellCnt;
-      if(!ShowConfirmDialog("确定一键全平 "+symbol+" 全部 "+IntegerToString(total)+" 单?")) return;
-      CloseAllPositionsBySymbol(symbol, POSITION_TYPE_BUY);
-      CloseAllPositionsBySymbol(symbol, POSITION_TYPE_SELL);
+      SymbolStats allStats[];
+      int totalSym = GetAllSymbolsStats(allStats);
+      int totalCnt = 0; double totalLots = 0;
+      for(int i=0; i<totalSym; i++)
+      {
+         totalCnt += allStats[i].buyCnt + allStats[i].sellCnt;
+         totalLots += allStats[i].buyLots + allStats[i].sellLots;
+      }
+      if(!ShowConfirmDialog("确定一键全平账户所有持仓?\n"+DoubleToString(totalLots,2)+"手 "+IntegerToString(totalCnt)+"单")) return;
+      CloseAllPositionsAccountAll();
       RefreshPanel(true); return;
    }
 }
