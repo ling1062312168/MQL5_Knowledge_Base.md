@@ -230,13 +230,21 @@ void DelContent()
    {
       string nm=ObjectName(0,i,-1,-1);
       if(StringFind(nm,g_prefix,0)!=0) continue;
-      if(nm==g_prefix+"toggle_panel") continue;
+      // 保留折叠状态下的展开按钮
+      if(nm==g_prefix+"panel_collapsed" || nm==g_prefix+"header_collapsed" ||
+         nm==g_prefix+"title_collapsed" || nm==g_prefix+"btn_expand") continue;
       ObjectDelete(0,nm);
    }
 }
 void DrawToggle()
 {
-   EBtn(g_prefix+"toggle_panel",g_panel_open?"▲ 隐藏":"▼ 展开",PD,PD+BH,90,BH,C'56,132,216',C'235,240,250',CORNER_LEFT_LOWER);
+   // 折叠状态下显示展开按钮，在面板标题栏位置
+   int x = g_px, y = g_py;
+   int w = PW, h = HDR_H;
+   ERect(g_prefix+"panel_collapsed", x, y, w, h, C'18,20,28', C'60,68,88');
+   ERect(g_prefix+"header_collapsed", x, y, w, h, C'30,34,48', C'60,68,88');
+   ELbl(g_prefix+"title_collapsed", "账户仓位多空仓位平衡风控 (已折叠)", x+PD+4, y+8, F(11), C'235,240,250');
+   EBtn(g_prefix+"btn_expand", "▼ 展开", x+w-80, y+(h-BH)/2, 70, BH, C'56,132,216', C'235,240,250');
 }
 bool ShowConfirmDialog(const string message)
 {
@@ -999,6 +1007,15 @@ void LoadParamsFromGV()
 //+------------------------------------------------------------------+
 void DrawPanel()
 {
+   // 展开时清理折叠状态的控件
+   if(g_panel_open)
+   {
+      ObjectDelete(0, g_prefix+"panel_collapsed");
+      ObjectDelete(0, g_prefix+"header_collapsed");
+      ObjectDelete(0, g_prefix+"title_collapsed");
+      ObjectDelete(0, g_prefix+"btn_expand");
+   }
+
    if(!g_panel_open) { DelContent(); DrawToggle(); return; }
 
    // 账户级统计
@@ -1046,6 +1063,11 @@ void DrawPanel()
    ERect(g_prefix+"panel", X, g_py, PW, totalH, BG_PANEL, BD_PANEL);
    ERect(g_prefix+"header", X, g_py, PW, HDR_H, BG_HDR, BD_PANEL);
    ELbl(g_prefix+"title", "账户仓位多空仓位平衡风控", LX+4, g_py+8, F(14), C'235,240,250');
+
+   // 折叠按钮 (右上角)
+   int btnX = X + PW - PD - 30;
+   int btnY = g_py + (HDR_H - BH) / 2;
+   EBtn(g_prefix+"btn_collapse", "▼", btnX, btnY, 26, BH, C'56,132,216', C'235,240,250');
 
    // 账户盈亏副标题 - 明确显示仅监控
    color accPnlClr = (totalAccountPnl>=0) ? InpColorNormal : InpColorDanger;
@@ -1366,15 +1388,22 @@ void HandlePanelButtonClick(const string sparam)
    string k = StringSubstr(sparam, prefixLen, sparamLen - prefixLen);
    string symbol = _Symbol;
 
-   // 折叠/展开
-   if(k == "toggle_panel")
+   // 折叠/展开 (点击标题栏右上角按钮)
+   if(k == "btn_collapse")
    {
       ResetPanelButtonState(sparam);
-      if(g_panel_open)
-      { if(!ShowConfirmDialog("确定要隐藏面板吗？")) return; }
-      g_panel_open = !g_panel_open;
+      g_panel_open = false;
       g_panel_dragging = false;
       SetPanelDragHighlight(false);
+      RefreshPanel(true);
+      return;
+   }
+
+   // 展开 (折叠状态下点击底部按钮)
+   if(k == "btn_expand")
+   {
+      ResetPanelButtonState(sparam);
+      g_panel_open = true;
       RefreshPanel(true);
       return;
    }
@@ -1478,7 +1507,10 @@ int OnInit()
 void OnDeinit(const int reason)
 {
    DelContent();
-   ObjectDelete(0,g_prefix+"toggle_panel");
+   ObjectDelete(0, g_prefix+"panel_collapsed");
+   ObjectDelete(0, g_prefix+"header_collapsed");
+   ObjectDelete(0, g_prefix+"title_collapsed");
+   ObjectDelete(0, g_prefix+"btn_expand");
    EventKillTimer();
    SaveParamsToGV();
    Print("[账户仓位多空仓位平衡风控] 已停止");
@@ -1499,20 +1531,25 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
 {
    int click_x=(int)lparam;
    int click_y=(int)dparam;
-   if(id == CHARTEVENT_CLICK)
+
+   // ── 鼠标按下: 开始拖拽 ──
+   if(id == CHARTEVENT_MOUSE_DOWN)
    {
-      if(!g_panel_dragging)
+      if(IsClickOnPanelDragArea(click_x,click_y))
       {
-         if(IsClickOnPanelDragArea(click_x,click_y))
-         {
-            g_panel_dragging = true;
-            g_panel_drag_ox = click_x - g_px;
-            g_panel_drag_oy = click_y - g_py;
-            SetPanelDragHighlight(true);
-            ChartRedraw(0);
-         }
+         g_panel_dragging = true;
+         g_panel_drag_ox = click_x - g_px;
+         g_panel_drag_oy = click_y - g_py;
+         SetPanelDragHighlight(true);
+         ChartRedraw(0);
       }
-      else
+      return;
+   }
+
+   // ── 鼠标释放: 结束拖拽 ──
+   if(id == CHARTEVENT_MOUSE_UP)
+   {
+      if(g_panel_dragging)
       {
          g_panel_dragging = false;
          SetPanelDragHighlight(false);
@@ -1520,6 +1557,8 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
       }
       return;
    }
+
+   // ── 鼠标移动: 拖拽中更新位置 ──
    if(id == CHARTEVENT_MOUSE_MOVE && g_panel_dragging)
    {
       int new_x = click_x - g_panel_drag_ox;
@@ -1528,6 +1567,21 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
       MovePanelTo(new_x, new_y);
       return;
    }
+
+   // ── 图表点击: 处理折叠按钮等 ──
+   if(id == CHARTEVENT_CLICK)
+   {
+      // 点击面板外部时结束拖拽
+      if(g_panel_dragging)
+      {
+         g_panel_dragging = false;
+         SetPanelDragHighlight(false);
+         ChartRedraw(0);
+      }
+      return;
+   }
+
+   // ── 对象点击: 处理按钮 ──
    if(id == CHARTEVENT_OBJECT_CLICK)
    {
       if(sparam != "") HandlePanelButtonClick(sparam);
