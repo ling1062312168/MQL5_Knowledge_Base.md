@@ -1400,11 +1400,11 @@ void DrawPanel()
    if(MathAbs(curStats.netLots) <= g_balanceTolerance) netClr = InpColorWarning;
    else if(curStats.netLots > 0) netClr = InpColorInfo;
    else netClr = InpColorDanger;
-   string balTxt;
-   if(curStats.isBalanced) balTxt = "平衡";
-   else balTxt = "不平衡";
+   string netBalTxt;
+   if(curStats.isBalanced) netBalTxt = "平衡";
+   else netBalTxt = "不平衡";
    string netTxt = "净头寸:"+DoubleToString(curStats.netLots,4)+
-                   " ["+balTxt+"]";
+                   " ["+netBalTxt+"]";
    ELbl(g_prefix+"act_net", netTxt, rx+CD_PD, by+4, F(10), netClr);
    by += LH;
 
