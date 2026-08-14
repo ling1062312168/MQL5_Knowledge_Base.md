@@ -756,7 +756,7 @@ double GetDirectionProfit(string symbol, int direction)
 }
 
 //+------------------------------------------------------------------+
-//| 渐进平仓: 用盈利方向做预算平亏损单                                |
+//| 渐进平仓: 用盈利方向做预算平另一个方向的亏损单                      |
 //+------------------------------------------------------------------+
 bool ProgressiveCloseLossOrders(string symbol, int markDirection)
 {
@@ -765,12 +765,13 @@ bool ProgressiveCloseLossOrders(string symbol, int markDirection)
       g_progressiveClose = true;
    }
 
+   // 计算盈利方向的盈利额作为预算
    double directionProfit = GetDirectionProfit(symbol, markDirection);
    double budget = directionProfit - g_minHedgeProfit;
 
-   Print("[渐进平仓] ",symbol," 方向盈利=$",DoubleToString(directionProfit,2),
+   Print("[渐进平仓] ",symbol," 盈利方向(",markDirection==1?"多":"空")盈利=$",DoubleToString(directionProfit,2),
          " 最低保留=$",DoubleToString(g_minHedgeProfit,2),
-         " 预算=$",DoubleToString(budget,2));
+         " 可平仓预算=$",DoubleToString(budget,2));
 
    if(budget < 1.0)
    {
@@ -782,7 +783,11 @@ bool ProgressiveCloseLossOrders(string symbol, int markDirection)
    PositionInfo entries[];
    ArrayResize(entries, (int)PositionsTotal());
 
-   // 收集所有已标记的亏损单
+   // 收集所有已标记的非盈利方向的亏损单
+   // markDirection=1(多盈利) → 平空单亏损
+   // markDirection=-1(空盈利) → 平多单亏损
+   ENUM_POSITION_TYPE closeType = (markDirection == 1) ? POSITION_TYPE_SELL : POSITION_TYPE_BUY;
+
    for(int i=(int)PositionsTotal()-1;i>=0;i--)
    {
       ulong ticket = PositionGetTicket(i);
@@ -791,8 +796,11 @@ bool ProgressiveCloseLossOrders(string symbol, int markDirection)
       if(PositionGetString(POSITION_SYMBOL) != symbol) continue;
       if(!IsMarkedOrder()) continue;
 
+      // 只平非盈利方向的单
+      if((ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE) != closeType) continue;
+
       double p = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
-      if(p >= -0.01) continue;
+      if(p >= -0.01) continue;  // 只收集亏损单
 
       entries[count].ticket = ticket;
       entries[count].symbol = symbol;
@@ -805,7 +813,7 @@ bool ProgressiveCloseLossOrders(string symbol, int markDirection)
 
    if(count==0)
    {
-      Print("[渐进平仓] ",symbol," 无亏损单 → 解锁");
+      Print("[渐进平仓] ",symbol," 无",(markDirection==1?"空":"多"),"单亏损 → 解锁");
       return true;
    }
 
@@ -1082,10 +1090,14 @@ void CheckMonitor()
             DoubleToString(balancedStats[i].netLots,4));
       Print("[标记监控] ",sym," 多浮亏:$",DoubleToString(buyLoss,2)," 空浮亏:$",DoubleToString(sellLoss,2));
 
-      // 决定解锁方向: 亏损大的方向作为盈利解锁目标
+      // 决定解锁方向: 亏损小的方向作为盈利解锁目标 (更可能先盈利)
+      // 例: 多亏$20, 空亏$27 → markDir=1(多), 目标=多亏损的50%=$10
+      // 当多单盈利达$10时, 用多单盈利平空单亏损
       int markDir = 1;
       double initialLoss = buyLoss;
-      if(sellLoss > buyLoss) { markDir = -1; initialLoss = sellLoss; }
+      if(buyLoss == 0 && sellLoss > 0) { markDir = -1; initialLoss = sellLoss; }
+      else if(sellLoss == 0 && buyLoss > 0) { markDir = 1; initialLoss = buyLoss; }
+      else if(sellLoss < buyLoss) { markDir = -1; initialLoss = sellLoss; }
 
       // 仅标记, 不开新单!
       MarkSymbolForMonitor(sym, markDir);
