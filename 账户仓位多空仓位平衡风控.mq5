@@ -172,8 +172,20 @@ void SetPanelDragHighlight(bool on)
 {
    string p = g_prefix+"panel";
    if(ObjectFind(0,p)<0) return;
-   ObjectSetInteger(0,p,OBJPROP_COLOR, on?InpColorInfo:C'45,58,74');
-   ObjectSetInteger(0,p,OBJPROP_WIDTH,on?2:1);
+   color panelColor;
+   int panelWidth;
+   if(on)
+   {
+      panelColor = InpColorInfo;
+      panelWidth = 2;
+   }
+   else
+   {
+      panelColor = C'45,58,74';
+      panelWidth = 1;
+   }
+   ObjectSetInteger(0,p,OBJPROP_COLOR, panelColor);
+   ObjectSetInteger(0,p,OBJPROP_WIDTH, panelWidth);
 }
 void ERect(string nm, int x, int y, int w, int h, color bg, color bd, int cr=CORNER_LEFT_UPPER)
 {
@@ -337,7 +349,12 @@ void MarkSymbolForMonitor(string symbol, int markDir)
       marked++;
    }
    if(marked > 0)
-      Print("[标记监控] ",symbol," 已标记 ",marked," 笔订单, 方向:",(markDir==1?"多盈利解锁":"空盈利解锁"));
+   {
+      string dirTxt;
+      if(markDir == 1) dirTxt = "多盈利解锁";
+      else dirTxt = "空盈利解锁";
+      Print("[标记监控] ",symbol," 已标记 ",marked," 笔订单, 方向:",dirTxt);
+   }
 }
 
 //+------------------------------------------------------------------+
@@ -460,7 +477,10 @@ void CloseAllPositionsAccount(ENUM_POSITION_TYPE posType)
       symList += symbols[j];
    }
 
-   Print("[账户全平] ", (posType==POSITION_TYPE_BUY?"多单":"空单"), " 共平 ", count, " 笔, ",
+   string posTypeName;
+   if(posType==POSITION_TYPE_BUY) posTypeName = "多单";
+   else posTypeName = "空单";
+   Print("[账户全平] ", posTypeName, " 共平 ", count, " 笔, ",
          DoubleToString(totalLots,2), "手, 涉及品种: ", symList);
 }
 
@@ -556,9 +576,7 @@ void GetSymbolStats(string symbol, SymbolStats &stats)
       if(marked)
       {
          stats.isMarked = true;
-         string comment = PositionGetString(POSITION_COMMENT);
-         if(StringFind(comment, "MARK_多") >= 0) stats.markDirection = 1;
-         else if(StringFind(comment, "MARK_空") >= 0) stats.markDirection = -1;
+         stats.markDirection = GetMarkDirection(symbol);
       }
    }
 
@@ -768,8 +786,11 @@ bool ProgressiveCloseLossOrders(string symbol, int markDirection)
    // 计算盈利方向的盈利额作为预算
    double directionProfit = GetDirectionProfit(symbol, markDirection);
    double budget = directionProfit - g_minHedgeProfit;
+   string dirName;
+   if(markDirection==1) dirName = "多";
+   else dirName = "空";
 
-   Print("[渐进平仓] ",symbol," 盈利方向(",markDirection==1?"多":"空")盈利=$",DoubleToString(directionProfit,2),
+   Print("[渐进平仓] ",symbol," ",dirName,"方向盈利=$",DoubleToString(directionProfit,2),
          " 最低保留=$",DoubleToString(g_minHedgeProfit,2),
          " 可平仓预算=$",DoubleToString(budget,2));
 
@@ -813,7 +834,10 @@ bool ProgressiveCloseLossOrders(string symbol, int markDirection)
 
    if(count==0)
    {
-      Print("[渐进平仓] ",symbol," 无",(markDirection==1?"空":"多"),"单亏损 → 解锁");
+      string closeDirName;
+      if(markDirection==1) closeDirName = "空";
+      else closeDirName = "多";
+      Print("[渐进平仓] ",symbol," 无",closeDirName,"单亏损 → 解锁");
       return true;
    }
 
@@ -871,8 +895,11 @@ bool ProgressiveCloseLossOrders(string symbol, int markDirection)
          closedCnt++;
          totalReleased += lossForClose;
          budget -= lossForClose;
+         string posName;
+         if(entries[k].posType==POSITION_TYPE_BUY) posName = "多";
+         else posName = "空";
          Print("[渐进平仓] 平单#",closedCnt," ",symbol," ",
-               (entries[k].posType==POSITION_TYPE_BUY?"多":"空"),
+               posName,
                " 平:",DoubleToString(closeLot,2),"手 释放亏损:$",DoubleToString(lossForClose,2));
       }
    }
@@ -1302,10 +1329,18 @@ void DrawPanel()
    if(g_monitoring && totalMarkedSymbols > 0)
    {
       double targetP = g_monitorOrigThresh * g_unlockRatio;
-      int bestDir = (totalBuyProfit >= totalSellProfit) ? 1 : -1;
-      double bestProfit = (bestDir==1) ? totalBuyProfit : totalSellProfit;
-      progTxt = (bestDir==1?"多":"空")+"盈利:$"+DoubleToString(bestProfit,2)+" 50%:$"+DoubleToString(targetP,0);
-      progClr = (bestProfit>=targetP)?InpColorNormal:InpColorWarning;
+      int bestDir;
+      if(totalBuyProfit >= totalSellProfit) bestDir = 1;
+      else bestDir = -1;
+      double bestProfit;
+      if(bestDir == 1) bestProfit = totalBuyProfit;
+      else bestProfit = totalSellProfit;
+      string bestDirName;
+      if(bestDir == 1) bestDirName = "多";
+      else bestDirName = "空";
+      progTxt = bestDirName+"盈利:$"+DoubleToString(bestProfit,2)+" 50%:$"+DoubleToString(targetP,0);
+      if(bestProfit >= targetP) progClr = InpColorNormal;
+      else progClr = InpColorWarning;
    }
    ELbl(g_prefix+"r6_lbl","解锁进度", labelStartX, ry+4, F(10), cMute);
    ELbl(g_prefix+"r6_val", progTxt, valueStartX, ry+4, F(10), progClr);
@@ -1361,10 +1396,15 @@ void DrawPanel()
    by += LH;
 
    // 净头寸
-   color netClr = (MathAbs(curStats.netLots) <= g_balanceTolerance) ? InpColorWarning :
-                   (curStats.netLots>0?InpColorInfo:InpColorDanger);
+   color netClr;
+   if(MathAbs(curStats.netLots) <= g_balanceTolerance) netClr = InpColorWarning;
+   else if(curStats.netLots > 0) netClr = InpColorInfo;
+   else netClr = InpColorDanger;
+   string balTxt;
+   if(curStats.isBalanced) balTxt = "平衡";
+   else balTxt = "不平衡";
    string netTxt = "净头寸:"+DoubleToString(curStats.netLots,4)+
-                   " ["+(curStats.isBalanced?"平衡":"不平衡")+"]";
+                   " ["+balTxt+"]";
    ELbl(g_prefix+"act_net", netTxt, rx+CD_PD, by+4, F(10), netClr);
    by += LH;
 
@@ -1374,7 +1414,10 @@ void DrawPanel()
       int markDir = GetMarkDirection(symbol);
       double buyP = GetDirectionProfit(symbol, 1);
       double sellP = GetDirectionProfit(symbol, -1);
-      string hTxt = "已标记-"+(markDir==1?"多盈利":"空盈利")+"解锁";
+      string markDirName;
+      if(markDir==1) markDirName = "多盈利";
+      else markDirName = "空盈利";
+      string hTxt = "已标记-"+markDirName+"解锁";
       color hClr = InpColorWarning;
       ELbl(g_prefix+"act_hedge", hTxt, rx+CD_PD, by+4, F(10), hClr);
       by += LH;
@@ -1492,7 +1535,10 @@ void DrawPanel()
       // 盈亏
       double pnl = allStats[idx].totalPnl;
       color pnlClr = (pnl>=0) ? InpColorNormal : InpColorDanger;
-      string pnlTxt = (pnl>=0 ? "+" : "") + DoubleToString(pnl,2);
+      string pnlTxt;
+      if(pnl >= 0) pnlTxt = "+";
+      else pnlTxt = "";
+      pnlTxt += DoubleToString(pnl,2);
       ELbl(g_prefix+"mon_p"+IntegerToString(r), pnlTxt, c2, rowY+4, F(9), pnlClr);
 
       // 多单
@@ -1506,7 +1552,16 @@ void DrawPanel()
       ELbl(g_prefix+"mon_sell"+IntegerToString(r), sellTxt, c4, rowY+4, F(9), sellClr);
 
       // 标记
-      string hgTxt = allStats[idx].isMarked ? (allStats[idx].markDirection==1?"多":"空") : "-";
+      string hgTxt;
+      if(allStats[idx].isMarked)
+      {
+         if(allStats[idx].markDirection == 1) hgTxt = "多";
+         else hgTxt = "空";
+      }
+      else
+      {
+         hgTxt = "-";
+      }
       color hgClr = allStats[idx].isMarked ? InpColorWarning : cMute;
       ELbl(g_prefix+"mon_hg"+IntegerToString(r), hgTxt, c5, rowY+4, F(9), hgClr);
 
