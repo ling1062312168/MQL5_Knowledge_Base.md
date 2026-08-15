@@ -1,0 +1,24 @@
+# 忽略 MetaTrader 编译文件
+*.ex4
+*.ex5
+*.ex6
+
+# 忽略缓存文件
+*.cache
+mqlcache.dat
+
+# 忽略临时文件
+*.tmp
+*.bak
+~*
+
+# 忽略系统文件
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+
+# PowerShell
+*.psm1.bak
