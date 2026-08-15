@@ -268,14 +268,45 @@ double AlignVolumeToStep(string symbol, double volume) { double s = GetVolumeSte
 double GetMinLot(string symbol) { return SymbolInfoDouble(symbol, SYMBOL_VOLUME_MIN); }
 
 //+------------------------------------------------------------------+
+//| 字符串编码解码 (用GlobalVariable存储字符串, MQL5不支持SetString)   |
+//+------------------------------------------------------------------+
+void EncodeStringToGV(string key, string value)
+{
+   GlobalVariableSet(key + "_L", (double)StringLen(value));
+   for(int i=0; i<StringLen(value); i++)
+   {
+      GlobalVariableSet(key + "_C" + IntegerToString(i), (double)StringGetCharacter(value, i));
+   }
+}
+string DecodeStringFromGV(string key)
+{
+   if(!GlobalVariableCheck(key + "_L")) return "";
+   int len = (int)GlobalVariableGet(key + "_L");
+   string result = "";
+   for(int i=0; i<len; i++)
+   {
+      string ck = key + "_C" + IntegerToString(i);
+      if(GlobalVariableCheck(ck))
+         result += CharToString((ushort)GlobalVariableGet(ck));
+   }
+   return result;
+}
+void DeleteStringGV(string key)
+{
+   if(!GlobalVariableCheck(key + "_L")) return;
+   int len = (int)GlobalVariableGet(key + "_L");
+   for(int i=0; i<len; i++)
+      GlobalVariableDel(key + "_C" + IntegerToString(i));
+   GlobalVariableDel(key + "_L");
+}
+
+//+------------------------------------------------------------------+
 //| 标记持久化: 保存标记信息到 GlobalVariable                          |
 //+------------------------------------------------------------------+
 void SaveMarkedTicketsToGV()
 {
-   // 保存标记品种数
    GlobalVariableSet(PERSIST_PREFIX+"sym_count", (double)ArraySize(g_markedSymbols));
 
-   // 保存每个品种的标记信息
    for(int i=0; i<ArraySize(g_markedSymbols); i++)
    {
       string symKey = PERSIST_PREFIX+"sym_"+IntegerToString(i)+"_name";
@@ -283,13 +314,12 @@ void SaveMarkedTicketsToGV()
       string lossKey = PERSIST_PREFIX+"sym_"+IntegerToString(i)+"_loss";
       string ticketKey = PERSIST_PREFIX+"sym_"+IntegerToString(i)+"_tickets";
 
-      GlobalVariableSetString(symKey, g_markedSymbols[i]);
+      EncodeStringToGV(symKey, g_markedSymbols[i]);
       if(i < ArraySize(g_markDirections))
          GlobalVariableSet(dirKey, (double)g_markDirections[i]);
       if(i < ArraySize(g_markInitialLosses))
          GlobalVariableSet(lossKey, g_markInitialLosses[i]);
 
-      // 收集该品种的所有标记ticket
       string ticketStr = "";
       for(int j=0; j<ArraySize(g_markedTickets); j++)
       {
@@ -307,10 +337,9 @@ void SaveMarkedTicketsToGV()
             }
          }
       }
-      GlobalVariableSetString(ticketKey, ticketStr);
+      EncodeStringToGV(ticketKey, ticketStr);
    }
 
-   // 保存监控状态
    GlobalVariableSet(PERSIST_PREFIX+"monitoring", g_monitoring ? 1.0 : 0.0);
    GlobalVariableSet(PERSIST_PREFIX+"progressive", g_progressiveClose ? 1.0 : 0.0);
 }
@@ -325,9 +354,6 @@ void LoadMarkedTicketsFromGV()
    int symCount = (int)GlobalVariableGet(PERSIST_PREFIX+"sym_count");
    if(symCount <= 0) return;
 
-   g_markedSymbols = new string[0];
-   g_markDirections = new int[0];
-   g_markInitialLosses = new double[0];
    ArrayResize(g_markedSymbols, symCount);
    ArrayResize(g_markDirections, symCount);
    ArrayResize(g_markInitialLosses, symCount);
@@ -341,22 +367,20 @@ void LoadMarkedTicketsFromGV()
       string lossKey = PERSIST_PREFIX+"sym_"+IntegerToString(i)+"_loss";
       string ticketKey = PERSIST_PREFIX+"sym_"+IntegerToString(i)+"_tickets";
 
-      if(GlobalVariableCheck(symKey))
-         g_markedSymbols[i] = GlobalVariableGetString(symKey);
+      g_markedSymbols[i] = DecodeStringFromGV(symKey);
       if(GlobalVariableCheck(dirKey))
          g_markDirections[i] = (int)GlobalVariableGet(dirKey);
       if(GlobalVariableCheck(lossKey))
          g_markInitialLosses[i] = GlobalVariableGet(lossKey);
 
-      // 恢复ticket (验证是否仍存在)
-      if(GlobalVariableCheck(ticketKey))
+      string ticketStr = DecodeStringFromGV(ticketKey);
+      if(ticketStr != "")
       {
-         string ticketStr = GlobalVariableGetString(ticketKey);
          int commaPos = 0;
          while(commaPos >= 0)
          {
-            string ticketStr2 = "";
             int nextComma = StringFind(ticketStr, ",", commaPos);
+            string ticketStr2;
             if(nextComma < 0) ticketStr2 = StringSubstr(ticketStr, commaPos);
             else ticketStr2 = StringSubstr(ticketStr, commaPos, nextComma - commaPos);
 
@@ -382,25 +406,13 @@ void LoadMarkedTicketsFromGV()
       }
    }
 
-   // 恢复监控状态
    if(GlobalVariableCheck(PERSIST_PREFIX+"monitoring"))
-   {
       g_monitoring = (GlobalVariableGet(PERSIST_PREFIX+"monitoring") > 0.5);
-   }
    if(GlobalVariableCheck(PERSIST_PREFIX+"progressive"))
-   {
       g_progressiveClose = (GlobalVariableGet(PERSIST_PREFIX+"progressive") > 0.5);
-   }
 
    if(totalTickets > 0)
       Print("[标记持久化] 恢复 ",ArraySize(g_markedSymbols)," 个品种, ",totalTickets," 个标记订单");
-
-   // 清理过时的持久化数据
-   for(int i=symCount; i<100; i++)
-   {
-      string symKey = PERSIST_PREFIX+"sym_"+IntegerToString(i)+"_name";
-      if(GlobalVariableCheck(symKey)) GlobalVariableDel(symKey);
-   }
 }
 
 //+------------------------------------------------------------------+
@@ -414,10 +426,10 @@ void ClearMarkedTicketsGV()
 
    for(int i=0; i<symCount; i++)
    {
-      GlobalVariableDel(PERSIST_PREFIX+"sym_"+IntegerToString(i)+"_name");
+      DeleteStringGV(PERSIST_PREFIX+"sym_"+IntegerToString(i)+"_name");
       GlobalVariableDel(PERSIST_PREFIX+"sym_"+IntegerToString(i)+"_dir");
       GlobalVariableDel(PERSIST_PREFIX+"sym_"+IntegerToString(i)+"_loss");
-      GlobalVariableDel(PERSIST_PREFIX+"sym_"+IntegerToString(i)+"_tickets");
+      DeleteStringGV(PERSIST_PREFIX+"sym_"+IntegerToString(i)+"_tickets");
    }
    GlobalVariableDel(PERSIST_PREFIX+"sym_count");
    GlobalVariableDel(PERSIST_PREFIX+"monitoring");
@@ -1518,7 +1530,9 @@ void DrawPanel()
    int btnY = g_py + (HDR_H - BH) / 2;
    EBtn(g_prefix+"btn_collapse", "▼", btnX, btnY, 26, BH, C'56,132,216', C'235,240,250');
 
-   color accPnlClr = (totalAccountPnl>=0) ? InpColorNormal : InpColorDanger;
+   color accPnlClr;
+   if(totalAccountPnl>=0) accPnlClr = InpColorNormal;
+   else accPnlClr = InpColorDanger;
    string accInfo = "账户盈亏:$" + DoubleToString(totalAccountPnl,2) +
                     " | 品种:" + IntegerToString(totalSymbols) +
                     " | 容差:" + DoubleToString(g_balanceTolerance,2) +
@@ -1540,17 +1554,23 @@ void DrawPanel()
    ry = cy + CD_PD + 22;
 
    ELbl(g_prefix+"r1_lbl","账户盈亏", labelStartX, ry+4, F(10), cMute);
-   color accClr = (totalAccountPnl>=0) ? InpColorNormal : InpColorDanger;
+   color accClr;
+   if(totalAccountPnl>=0) accClr = InpColorNormal;
+   else accClr = InpColorDanger;
    ELbl(g_prefix+"r1_val", "$"+DoubleToString(totalAccountPnl,2), valueStartX, ry+4, F(10), accClr);
    ry += LH;
 
    ELbl(g_prefix+"r2_lbl","多单盈亏", labelStartX, ry+4, F(10), cMute);
-   color buyProfitClr = (totalBuyProfit>=0) ? InpColorNormal : InpColorDanger;
+   color buyProfitClr;
+   if(totalBuyProfit>=0) buyProfitClr = InpColorNormal;
+   else buyProfitClr = InpColorDanger;
    ELbl(g_prefix+"r2_val", "$"+DoubleToString(totalBuyProfit,2), valueStartX, ry+4, F(10), buyProfitClr);
    ry += LH;
 
    ELbl(g_prefix+"r3_lbl","空单盈亏", labelStartX, ry+4, F(10), cMute);
-   color sellProfitClr = (totalSellProfit>=0) ? InpColorNormal : InpColorDanger;
+   color sellProfitClr;
+   if(totalSellProfit>=0) sellProfitClr = InpColorNormal;
+   else sellProfitClr = InpColorDanger;
    ELbl(g_prefix+"r3_val", "$"+DoubleToString(totalSellProfit,2), valueStartX, ry+4, F(10), sellProfitClr);
    ry += LH;
 
@@ -1564,7 +1584,9 @@ void DrawPanel()
 
    ELbl(g_prefix+"r5_lbl","平衡品种", labelStartX, ry+4, F(10), cMute);
    string balTxt = IntegerToString(totalBalanced)+"/"+IntegerToString(totalSymbols)+" 品种";
-   color balClr = (totalBalanced > 0) ? InpColorWarning : cMute;
+   color balClr;
+   if(totalBalanced > 0) balClr = InpColorWarning;
+   else balClr = cMute;
    ELbl(g_prefix+"r5_val", balTxt, valueStartX, ry+4, F(10), balClr);
    ry += LH;
 
@@ -1722,7 +1744,9 @@ void DrawPanel()
       if(allStats[i].totalPnl < 0) warningCnt++;
    }
    string monTitle = "共 "+IntegerToString(totalSymbols)+" 品种 | 平衡:"+IntegerToString(balancedCnt2)+" 不平衡:"+IntegerToString(unbalancedCnt2);
-   color monTitleClr = (warningCnt > 0) ? InpColorWarning : InpColorNormal;
+   color monTitleClr;
+   if(warningCnt > 0) monTitleClr = InpColorWarning;
+   else monTitleClr = InpColorNormal;
    ELbl(g_prefix+"c_mon_sub", monTitle, X+PW-PD-CD_PD-200, monY+CD_PD, F(10), monTitleClr);
 
    int hdrY = monY + CD_PD + 22;
@@ -1765,7 +1789,9 @@ void DrawPanel()
       ELbl(g_prefix+"mon_s"+IntegerToString(r), symName, c1, rowY+4, F(9), C'200,210,230');
 
       double pnl = allStats[idx].totalPnl;
-      color pnlClr = (pnl>=0) ? InpColorNormal : InpColorDanger;
+      color pnlClr;
+      if(pnl>=0) pnlClr = InpColorNormal;
+      else pnlClr = InpColorDanger;
       string pnlTxt;
       if(pnl >= 0) pnlTxt = "+";
       else pnlTxt = "";
@@ -1773,11 +1799,15 @@ void DrawPanel()
       ELbl(g_prefix+"mon_p"+IntegerToString(r), pnlTxt, c2, rowY+4, F(9), pnlClr);
 
       string buyTxt = IntegerToString(allStats[idx].buyCnt)+"/"+DoubleToString(allStats[idx].buyLots,2);
-      color buyClr = (allStats[idx].buyLots > 0) ? InpColorInfo : cMute;
+      color buyClr;
+      if(allStats[idx].buyLots > 0) buyClr = InpColorInfo;
+      else buyClr = cMute;
       ELbl(g_prefix+"mon_b"+IntegerToString(r), buyTxt, c3, rowY+4, F(9), buyClr);
 
       string sellTxt = IntegerToString(allStats[idx].sellCnt)+"/"+DoubleToString(allStats[idx].sellLots,2);
-      color sellClr = (allStats[idx].sellLots > 0) ? InpColorDanger : cMute;
+      color sellClr;
+      if(allStats[idx].sellLots > 0) sellClr = InpColorDanger;
+      else sellClr = cMute;
       ELbl(g_prefix+"mon_sell"+IntegerToString(r), sellTxt, c4, rowY+4, F(9), sellClr);
 
       string hgTxt;
@@ -1790,7 +1820,9 @@ void DrawPanel()
       {
          hgTxt = "-";
       }
-      color hgClr = allStats[idx].isMarked ? InpColorWarning : cMute;
+      color hgClr;
+      if(allStats[idx].isMarked) hgClr = InpColorWarning;
+      else hgClr = cMute;
       ELbl(g_prefix+"mon_hg"+IntegerToString(r), hgTxt, c5, rowY+4, F(9), hgClr);
 
       string statusTxt; color statusClr;
