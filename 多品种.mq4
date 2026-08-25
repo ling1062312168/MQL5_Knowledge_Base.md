@@ -57,7 +57,53 @@ extern string H29Symbol="EURJPY"  ;
 extern string H30Symbol="NZDJPY"  ;  
 extern bool H16=true  ;   
 extern string H31Symbol="EURCAD"  ;  
-extern string H32Symbol="NZDCAD"  ;  
+extern string H32Symbol="NZDCAD"  ;
+
+// ==========================================
+// Panel 模块全局（兼容 MQL4：数组方式，不用 struct）
+// ==========================================
+string    g_GC_sym1[17];        // 第 1..16 组币对 1
+string    g_GC_sym2[17];        // 第 1..16 组币对 2
+int       g_GC_signal[17];      // 0=带内 / 1=偏低 / 2=偏高
+double    g_GC_beta[17];        // 线性回归斜率
+double    g_GC_alpha[17];       // 截距
+double    g_GC_devPts[17];      // 偏离点数
+int       g_GC_bCnt[17];        // BUY 单数
+int       g_GC_sCnt[17];        // SELL 单数
+double    g_GC_lots[17];        // 总手数
+double    g_GC_pnl[17];         // 盈亏
+bool      g_GC_corrReject[17];  // 相关性拒绝
+bool      g_GC_active[17];      // H01–H16 对应组的开关
+bool      g_PanelInited=false;  // Panel 对象只创建一次
+// Activity Log 环形缓冲（最近 8 条事件）
+string    g_LogLine[8];
+datetime  g_LogTime[8];
+int       g_LogPtr=0;
+
+// 轻量辅助：创建/刷新一个 OBJ_LABEL 单行完成（减少重复 ObjectCreate/Set 代码块）
+void SetLabel(string id,string text,int fsize=9,string fname="Arial Bold",color clr=clrWhite,int corner=0,int x=0,int y=0) {
+   if ( ObjectFind(id) < 0 ) ObjectCreate(id,OBJ_LABEL,0,0,0,0,0,0,0);
+   ObjectSetText(id,text,fsize,fname,clr);
+   ObjectSet(id,OBJPROP_CORNER,corner);
+   ObjectSet(id,OBJPROP_XDISTANCE,x);
+   ObjectSet(id,OBJPROP_YDISTANCE,y);
+}
+// 环形写一条日志（供 RenderActivityLog 展示）
+void PushPanelLog(string line) {
+   g_LogLine[g_LogPtr] = TimeToString(TimeCurrent(),TIME_MINUTES)+"| "+line;
+   g_LogTime[g_LogPtr] = TimeCurrent();
+   g_LogPtr = (g_LogPtr + 1) % 8;
+}
+
+// ===== Panel 模块函数原型（定义在下文，此处提前声明供 UpdateStatusDisplay 调用）=====
+void EnsurePanelObjects();
+void RefreshGroupCache();
+void RenderAccountKPI();
+void RenderSignalMatrix();
+void RenderStatusPillars();
+void RenderPositionTable();
+void RenderRiskMonitor();
+void RenderActivityLog();
 
  string    g_Symbol1 = "";
  string    g_Symbol2 = "";
@@ -166,7 +212,10 @@ extern string H32Symbol="NZDCAD"  ;
  int       by_in_105[3392];
  int       by_in_106[3392];
  int       g_SpreadSignal = 0;
- int       by_in_108 = 0;
+double    g_RegressionBeta = 0.0;   // 最近一次 CalcSpreadSignal：线性回归斜率 β
+double    g_RegressionAlpha = 0.0;  // 截距 α
+double    g_RegressionDev = 0.0;    // 实际偏离点数（带符号）
+int       by_in_108 = 0;
  int       by_in_109 = 0;
  double    by_do_110 = 0;
  double    by_do_111 = 0;
@@ -565,7 +614,7 @@ extern string H32Symbol="NZDCAD"  ;
   ObjectSet("QIAN",OBJPROP_COLOR,Yellow); 
   ObjectDelete("11"); 
   ObjectCreate("11",OBJ_TEXT,0,Time[0],Ask + by_do_110,0,0,0,0); 
-  ObjectSetText("11","大鱼 小鱼 中鱼",12,"Regular script",Red); 
+  ObjectSetText("11","状态：挂单对冲系列运行中",12,"Regular script",Red); 
   UpdateStatusDisplay(); 
   UpdateRiskParams(); 
   aa_in_10 = 0;
@@ -622,7 +671,7 @@ ObjectSet("QIAN",OBJPROP_PRICE1,Ask);
 ObjectSet("QIAN",OBJPROP_COLOR,Yellow); 
 ObjectDelete("11"); 
 ObjectCreate("11",OBJ_TEXT,0,Time[0],Ask + by_do_110,0,0,0,0); 
-ObjectSetText("11","大鱼 小鱼 中鱼",12,"Regular script",Red); 
+ObjectSetText("11","状态：挂单对冲系列运行中",12,"Regular script",Red); 
 UpdateStatusDisplay(); 
 UpdateRiskParams(); 
 aa_in_10 = 0;
@@ -2082,11 +2131,28 @@ if ( aa_in_17<=10 )
   aa_do_10 = (aa_do_15 - aa_do_16 * (aa_do_17 * 200 - aa_do_16 * aa_do_15) / aa_do_14) / 200;
   }
  if ( NormalizeDouble(aa_do_12 * iClose(g_Symbol1,240,1) + aa_do_10 - iClose(g_Symbol2,240,1),2)>0.02 )
-  {
-  g_SpreadSignal = 2 ;
-  }
- return(g_SpreadSignal); 
+ {
+ g_SpreadSignal = 2 ;
  }
+// 将本次回归的 β/α/偏离写到全局，供 RefreshGroupCache 面板缓存读取
+if ( g_SpreadSignal == 1 ) {
+   g_RegressionBeta  = aa_do_2;
+   g_RegressionAlpha = aa_do_1;
+   g_RegressionDev   = NormalizeDouble(aa_do_2 * iClose(g_Symbol1,240,1) + aa_do_1 - iClose(g_Symbol2,240,1), 2);
+} else if ( g_SpreadSignal == 2 ) {
+   g_RegressionBeta  = aa_do_12;
+   g_RegressionAlpha = aa_do_10;
+   g_RegressionDev   = NormalizeDouble(aa_do_12 * iClose(g_Symbol1,240,1) + aa_do_10 - iClose(g_Symbol2,240,1), 2);
+} else {
+   // 无信号时仍保存第一次回归的斜率（用于显示），偏离用第二次和第一次中绝对值较大的
+   double dev1 = NormalizeDouble(aa_do_2  * iClose(g_Symbol1,240,1) + aa_do_1  - iClose(g_Symbol2,240,1), 2);
+   double dev2 = NormalizeDouble(aa_do_12 * iClose(g_Symbol1,240,1) + aa_do_10 - iClose(g_Symbol2,240,1), 2);
+   g_RegressionBeta  = aa_do_2;
+   g_RegressionAlpha = aa_do_1;
+   g_RegressionDev   = MathAbs(dev1) > MathAbs(dev2) ? dev1 : dev2;
+}
+return(g_SpreadSignal); 
+}
 
  void UpdateRiskParams()
  {
@@ -2354,8 +2420,67 @@ if ( aa_in_17<=10 )
   }
  }
 
+// EnsurePanelObjects：面板对象只创建一次（首次 tick 执行），后续 tick 只 SetText 不改结构
+void EnsurePanelObjects() {
+   if ( g_PanelInited ) return;
+   // 初始化 16 组缓存的币对（ProcessAllGroups 的顺序映射）
+   g_GC_sym1[1]  = H01Symbol;  g_GC_sym2[1]  = H02Symbol;  g_GC_active[1]  = H01;
+   g_GC_sym1[2]  = H03Symbol;  g_GC_sym2[2]  = H04Symbol;  g_GC_active[2]  = H02;
+   g_GC_sym1[3]  = H05Symbol;  g_GC_sym2[3]  = H06Symbol;  g_GC_active[3]  = H03;
+   g_GC_sym1[4]  = H07Symbol;  g_GC_sym2[4]  = H08Symbol;  g_GC_active[4]  = H04;
+   g_GC_sym1[5]  = H09Symbol;  g_GC_sym2[5]  = H10Symbol;  g_GC_active[5]  = H05;
+   g_GC_sym1[6]  = H11Symbol;  g_GC_sym2[6]  = H12Symbol;  g_GC_active[6]  = H06;
+   g_GC_sym1[7]  = H13Symbol;  g_GC_sym2[7]  = H14Symbol;  g_GC_active[7]  = H07;
+   g_GC_sym1[8]  = H15Symbol;  g_GC_sym2[8]  = H16Symbol;  g_GC_active[8]  = H08;
+   g_GC_sym1[9]  = H17Symbol;  g_GC_sym2[9]  = H18Symbol;  g_GC_active[9]  = H09;
+   g_GC_sym1[10] = H19Symbol;  g_GC_sym2[10] = H20Symbol;  g_GC_active[10] = H10;
+   g_GC_sym1[11] = H21Symbol;  g_GC_sym2[11] = H22Symbol;  g_GC_active[11] = H11;
+   g_GC_sym1[12] = H23Symbol;  g_GC_sym2[12] = H24Symbol;  g_GC_active[12] = H12;
+   g_GC_sym1[13] = H25Symbol;  g_GC_sym2[13] = H26Symbol;  g_GC_active[13] = H13;
+   g_GC_sym1[14] = H27Symbol;  g_GC_sym2[14] = H28Symbol;  g_GC_active[14] = H14;
+   g_GC_sym1[15] = H29Symbol;  g_GC_sym2[15] = H30Symbol;  g_GC_active[15] = H15;
+   g_GC_sym1[16] = H31Symbol;  g_GC_sym2[16] = H32Symbol;  g_GC_active[16] = H16;
+   g_PanelInited = true;
+}
+
+// RefreshGroupCache：16 组依次 CalcSpreadSignal+UpdateRiskParams 各一次，写入 g_GC_* 数组
+// 后续 6 个 Render 模块只读 g_GC_*，避免 UpdateStatusDisplay 重复 32 次回归计算
+void RefreshGroupCache() {
+   string saveG = g_GroupName;
+   string saveS = g_Symbol1;
+   string saveS2 = g_Symbol2;
+   string save275 = by_st_275;
+   int i;
+   for ( i = 1; i <= 16; i++ ) {
+      if ( !g_GC_active[i] ) { g_GC_signal[i]=0; g_GC_bCnt[i]=0; g_GC_sCnt[i]=0; g_GC_lots[i]=0; g_GC_pnl[i]=0; continue; }
+      g_GroupName = "第" + DoubleToString(i,0) + "组2";
+      g_Symbol1   = g_GC_sym1[i];
+      g_Symbol2   = g_GC_sym2[i];
+      by_st_275   = g_GC_sym1[i];   // 与 ManageGroup 保持一致：币对 1 作为订单过滤 Symbol
+      UpdateRiskParams();
+      CalcSpreadSignal();
+      g_GC_signal[i] = g_SpreadSignal;
+      g_GC_beta[i]   = g_RegressionBeta;
+      g_GC_alpha[i]  = g_RegressionAlpha;
+      g_GC_devPts[i] = g_RegressionDev;
+      g_GC_bCnt[i]   = by_in_117;
+      g_GC_sCnt[i]   = by_in_118;
+      g_GC_lots[i]   = by_do_232;
+      g_GC_pnl[i]    = by_do_197;
+      g_GC_corrReject[i] = ( by_in_166 == -1 );
+   }
+   g_GroupName = saveG;
+   g_Symbol1   = saveS;
+   g_Symbol2   = saveS2;
+   by_st_275   = save275;
+}
+
  int UpdateStatusDisplay()
  {
+   // Step 1 & 2：首次初始化 + 每组一次缓存刷新（后续模块只读缓存）
+   EnsurePanelObjects();
+   RefreshGroupCache();
+
  int         dfz_in_1=0;
  color       dfz_ui_2    =clrNONE;
  color       dfz_ui_3    =clrNONE;
@@ -2540,12 +2665,12 @@ if ( aa_in_17<=10 )
  ObjectSet("10025",OBJPROP_XDISTANCE,25); 
  ObjectSet("10025",OBJPROP_YDISTANCE,62); 
  ObjectCreate("10026",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10026","5",118,"Webdings",LightSteelBlue); 
+ ObjectSetText("10026","【组·监控】",14,"Arial Bold",LightSteelBlue); 
  ObjectSet("10026",OBJPROP_CORNER,1); 
  ObjectSet("10026",OBJPROP_XDISTANCE,55); 
  ObjectSet("10026",OBJPROP_YDISTANCE,21); 
  ObjectCreate("10027",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10027","6",118,"Webdings",Red); 
+ ObjectSetText("10027","【信号·活跃】",14,"Arial Bold",Red); 
  ObjectSet("10027",OBJPROP_CORNER,1); 
  ObjectSet("10027",OBJPROP_XDISTANCE,-5); 
  ObjectSet("10027",OBJPROP_YDISTANCE,13); 
@@ -2555,72 +2680,72 @@ if ( aa_in_17<=10 )
  ObjectSet("10028",OBJPROP_XDISTANCE,25); 
  ObjectSet("10028",OBJPROP_YDISTANCE,115); 
  ObjectCreate("10029",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10029","n",50,"Wingdings",Red); 
+ ObjectSetText("10029","● R",10,"Arial Bold",Red); 
  ObjectSet("10029",OBJPROP_CORNER,1); 
  ObjectSet("10029",OBJPROP_XDISTANCE,25); 
  ObjectSet("10029",OBJPROP_YDISTANCE,113); 
  ObjectCreate("10030",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10030","n",50,"Wingdings",Red); 
+ ObjectSetText("10030","● R",10,"Arial Bold",Red); 
  ObjectSet("10030",OBJPROP_CORNER,1); 
  ObjectSet("10030",OBJPROP_XDISTANCE,60); 
  ObjectSet("10030",OBJPROP_YDISTANCE,113); 
  ObjectCreate("10031",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10031","n",50,"Wingdings",SpringGreen); 
+ ObjectSetText("10031","● G",10,"Arial Bold",SpringGreen); 
  ObjectSet("10031",OBJPROP_CORNER,1); 
  ObjectSet("10031",OBJPROP_XDISTANCE,110); 
  ObjectSet("10031",OBJPROP_YDISTANCE,113); 
  ObjectCreate("10032",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10032","n",50,"Wingdings",SpringGreen); 
+ ObjectSetText("10032","● G",10,"Arial Bold",SpringGreen); 
  ObjectSet("10032",OBJPROP_CORNER,1); 
  ObjectSet("10032",OBJPROP_XDISTANCE,145); 
  ObjectSet("10032",OBJPROP_YDISTANCE,113); 
  ObjectCreate("10033",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10033","n",50,"Wingdings",LightBlue); 
+ ObjectSetText("10033","● B",10,"Arial Bold",LightBlue); 
  ObjectSet("10033",OBJPROP_CORNER,1); 
  ObjectSet("10033",OBJPROP_XDISTANCE,25); 
  ObjectSet("10033",OBJPROP_YDISTANCE,158); 
  ObjectCreate("10034",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10034","n",50,"Wingdings",LightBlue); 
+ ObjectSetText("10034","● B",10,"Arial Bold",LightBlue); 
  ObjectSet("10034",OBJPROP_CORNER,1); 
  ObjectSet("10034",OBJPROP_XDISTANCE,60); 
  ObjectSet("10034",OBJPROP_YDISTANCE,158); 
  ObjectCreate("10035",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10035","n",50,"Wingdings",LightSteelBlue); 
+ ObjectSetText("10035","● ○",10,"Arial Bold",LightSteelBlue); 
  ObjectSet("10035",OBJPROP_CORNER,1); 
  ObjectSet("10035",OBJPROP_XDISTANCE,110); 
  ObjectSet("10035",OBJPROP_YDISTANCE,158); 
  ObjectCreate("10036",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10036","n",50,"Wingdings",LightSteelBlue); 
+ ObjectSetText("10036","● ○",10,"Arial Bold",LightSteelBlue); 
  ObjectSet("10036",OBJPROP_CORNER,1); 
  ObjectSet("10036",OBJPROP_XDISTANCE,145); 
  ObjectSet("10036",OBJPROP_YDISTANCE,158); 
  ObjectCreate("10037",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10037","n",44,"Wingdings",LightSteelBlue); 
+ ObjectSetText("10037","●",9,"Arial Bold",LightSteelBlue); 
  ObjectSet("10037",OBJPROP_CORNER,1); 
  ObjectSet("10037",OBJPROP_XDISTANCE,25); 
  ObjectSet("10037",OBJPROP_YDISTANCE,203); 
  ObjectCreate("10038",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10038","n",44,"Wingdings",LightSteelBlue); 
+ ObjectSetText("10038","●",9,"Arial Bold",LightSteelBlue); 
  ObjectSet("10038",OBJPROP_CORNER,1); 
  ObjectSet("10038",OBJPROP_XDISTANCE,50); 
  ObjectSet("10038",OBJPROP_YDISTANCE,203); 
  ObjectCreate("10039",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10039","n",44,"Wingdings",LightSteelBlue); 
+ ObjectSetText("10039","●",9,"Arial Bold",LightSteelBlue); 
  ObjectSet("10039",OBJPROP_CORNER,1); 
  ObjectSet("10039",OBJPROP_XDISTANCE,75); 
  ObjectSet("10039",OBJPROP_YDISTANCE,203); 
  ObjectCreate("10040",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10040","n",44,"Wingdings",LightSteelBlue); 
+ ObjectSetText("10040","●",9,"Arial Bold",LightSteelBlue); 
  ObjectSet("10040",OBJPROP_CORNER,1); 
  ObjectSet("10040",OBJPROP_XDISTANCE,100); 
  ObjectSet("10040",OBJPROP_YDISTANCE,203); 
  ObjectCreate("10041",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10041","n",44,"Wingdings",LightSteelBlue); 
+ ObjectSetText("10041","●",9,"Arial Bold",LightSteelBlue); 
  ObjectSet("10041",OBJPROP_CORNER,1); 
  ObjectSet("10041",OBJPROP_XDISTANCE,125); 
  ObjectSet("10041",OBJPROP_YDISTANCE,203); 
  ObjectCreate("10042",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10042","n",44,"Wingdings",LightSteelBlue); 
+ ObjectSetText("10042","●",9,"Arial Bold",LightSteelBlue); 
  ObjectSet("10042",OBJPROP_CORNER,1); 
  ObjectSet("10042",OBJPROP_XDISTANCE,150); 
  ObjectSet("10042",OBJPROP_YDISTANCE,203); 
@@ -2630,82 +2755,82 @@ if ( aa_in_17<=10 )
  ObjectSet("10043",OBJPROP_XDISTANCE,25); 
  ObjectSet("10043",OBJPROP_YDISTANCE,206); 
  ObjectCreate("10044",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10044","n",44,"Wingdings",LightSteelBlue); 
+ ObjectSetText("10044","●",9,"Arial Bold",LightSteelBlue); 
  ObjectSet("10044",OBJPROP_CORNER,1); 
  ObjectSet("10044",OBJPROP_XDISTANCE,25); 
  ObjectSet("10044",OBJPROP_YDISTANCE,239); 
  ObjectCreate("10045",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10045","n",44,"Wingdings",LightSteelBlue); 
+ ObjectSetText("10045","●",9,"Arial Bold",LightSteelBlue); 
  ObjectSet("10045",OBJPROP_CORNER,1); 
  ObjectSet("10045",OBJPROP_XDISTANCE,50); 
  ObjectSet("10045",OBJPROP_YDISTANCE,239); 
  ObjectCreate("10046",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10046","n",44,"Wingdings",LightSteelBlue); 
+ ObjectSetText("10046","●",9,"Arial Bold",LightSteelBlue); 
  ObjectSet("10046",OBJPROP_CORNER,1); 
  ObjectSet("10046",OBJPROP_XDISTANCE,75); 
  ObjectSet("10046",OBJPROP_YDISTANCE,239); 
  ObjectCreate("10047",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10047","n",44,"Wingdings",LightSteelBlue); 
+ ObjectSetText("10047","●",9,"Arial Bold",LightSteelBlue); 
  ObjectSet("10047",OBJPROP_CORNER,1); 
  ObjectSet("10047",OBJPROP_XDISTANCE,100); 
  ObjectSet("10047",OBJPROP_YDISTANCE,239); 
  ObjectCreate("10048",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10048","n",44,"Wingdings",LightSteelBlue); 
+ ObjectSetText("10048","●",9,"Arial Bold",LightSteelBlue); 
  ObjectSet("10048",OBJPROP_CORNER,1); 
  ObjectSet("10048",OBJPROP_XDISTANCE,125); 
  ObjectSet("10048",OBJPROP_YDISTANCE,239); 
  ObjectCreate("10049",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10049","n",44,"Wingdings",LightSteelBlue); 
+ ObjectSetText("10049","●",9,"Arial Bold",LightSteelBlue); 
  ObjectSet("10049",OBJPROP_CORNER,1); 
  ObjectSet("10049",OBJPROP_XDISTANCE,150); 
  ObjectSet("10049",OBJPROP_YDISTANCE,239); 
  ObjectCreate("10051",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10051","n",28,"Wingdings",LightSteelBlue); 
+ ObjectSetText("10051","·",9,"Arial Bold",LightSteelBlue); 
  ObjectSet("10051",OBJPROP_CORNER,1); 
  ObjectSet("10051",OBJPROP_XDISTANCE,25); 
  ObjectSet("10051",OBJPROP_YDISTANCE,281); 
  ObjectCreate("10052",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10052","n",28,"Wingdings",LightSteelBlue); 
+ ObjectSetText("10052","·",9,"Arial Bold",LightSteelBlue); 
  ObjectSet("10052",OBJPROP_CORNER,1); 
  ObjectSet("10052",OBJPROP_XDISTANCE,40); 
  ObjectSet("10052",OBJPROP_YDISTANCE,281); 
  ObjectCreate("10053",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10053","n",28,"Wingdings",LightSteelBlue); 
+ ObjectSetText("10053","·",9,"Arial Bold",LightSteelBlue); 
  ObjectSet("10053",OBJPROP_CORNER,1); 
  ObjectSet("10053",OBJPROP_XDISTANCE,55); 
  ObjectSet("10053",OBJPROP_YDISTANCE,281); 
  ObjectCreate("10054",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10054","n",28,"Wingdings",LightSteelBlue); 
+ ObjectSetText("10054","·",9,"Arial Bold",LightSteelBlue); 
  ObjectSet("10054",OBJPROP_CORNER,1); 
  ObjectSet("10054",OBJPROP_XDISTANCE,70); 
  ObjectSet("10054",OBJPROP_YDISTANCE,281); 
  ObjectCreate("10055",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10055","n",28,"Wingdings",LightSteelBlue); 
+ ObjectSetText("10055","·",9,"Arial Bold",LightSteelBlue); 
  ObjectSet("10055",OBJPROP_CORNER,1); 
  ObjectSet("10055",OBJPROP_XDISTANCE,85); 
  ObjectSet("10055",OBJPROP_YDISTANCE,281); 
  ObjectCreate("10056",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10056","n",28,"Wingdings",LightSteelBlue); 
+ ObjectSetText("10056","·",9,"Arial Bold",LightSteelBlue); 
  ObjectSet("10056",OBJPROP_CORNER,1); 
  ObjectSet("10056",OBJPROP_XDISTANCE,100); 
  ObjectSet("10056",OBJPROP_YDISTANCE,281); 
  ObjectCreate("10057",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10057","n",28,"Wingdings",LightSteelBlue); 
+ ObjectSetText("10057","·",9,"Arial Bold",LightSteelBlue); 
  ObjectSet("10057",OBJPROP_CORNER,1); 
  ObjectSet("10057",OBJPROP_XDISTANCE,115); 
  ObjectSet("10057",OBJPROP_YDISTANCE,281); 
  ObjectCreate("10059",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10059","n",28,"Wingdings",LightSteelBlue); 
+ ObjectSetText("10059","·",9,"Arial Bold",LightSteelBlue); 
  ObjectSet("10059",OBJPROP_CORNER,1); 
  ObjectSet("10059",OBJPROP_XDISTANCE,130); 
  ObjectSet("10059",OBJPROP_YDISTANCE,281); 
  ObjectCreate("10060",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10060","n",28,"Wingdings",LightSteelBlue); 
+ ObjectSetText("10060","·",9,"Arial Bold",LightSteelBlue); 
  ObjectSet("10060",OBJPROP_CORNER,1); 
  ObjectSet("10060",OBJPROP_XDISTANCE,145); 
  ObjectSet("10060",OBJPROP_YDISTANCE,281); 
  ObjectCreate("10063",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10063","n",28,"Wingdings",LightSteelBlue); 
+ ObjectSetText("10063","·",9,"Arial Bold",LightSteelBlue); 
  ObjectSet("10063",OBJPROP_CORNER,1); 
  ObjectSet("10063",OBJPROP_XDISTANCE,164); 
  ObjectSet("10063",OBJPROP_YDISTANCE,282); 
@@ -2854,7 +2979,7 @@ if (by_do_226 + by_do_227>0)
   by_lo_151 = Day() ;
   }
  aa_st_205 = "Regular script";
- aa_st_207 = "钓鱼工具 :: " + WindowExpertName() + "\n";
+ aa_st_207 = "EA名称 :: " + WindowExpertName() + "\n";
  aa_st_206 = "10088";
  if ( dfz_in_1 != -1 )
   { 
@@ -2865,7 +2990,7 @@ if (by_do_226 + by_do_227>0)
   ObjectSet(aa_st_206,OBJPROP_YDISTANCE,95); 
   }
  aa_st_208 = "Regular script";
- aa_st_210 = "鱼群分析:: " + Symbol() + "//" + DoubleToString(Ask,5) + "//" + DoubleToString(Bid,5);
+ aa_st_210 = "当前品种行情:: " + Symbol() + "//ASK=" + DoubleToString(Ask,5) + "//BID=" + DoubleToString(Bid,5);
  aa_st_209 = "10089";
  if ( dfz_in_1 != -1 )
   {
@@ -2876,7 +3001,7 @@ if (by_do_226 + by_do_227>0)
   ObjectSet(aa_st_209,OBJPROP_YDISTANCE,110); 
   }
  aa_st_211 = "Regular script";
- aa_st_213 = "钓鱼天数:: D" + DoubleToString(by_in_115,0) + "," + StringConcatenate("钓鱼时段:",Period()) + "," + "祭拜海神:" + "W" + DoubleToString(DayOfWeek(),0) + "";
+ aa_st_213 = "累计运行天数:: D" + DoubleToString(by_in_115,0) + "," + StringConcatenate("K线周期:",Period()) + "," + "星期:" + "W" + DoubleToString(DayOfWeek(),0) + "";
  aa_st_212 = "10090";
  if ( dfz_in_1 != -1 )
   {
@@ -2890,18 +3015,18 @@ if (by_do_226 + by_do_227>0)
  CalcSpreadSignal(); 
  if ( by_in_166==1 )
   {
-  by_st_255 = "   上游鱼  上下上    " + DoubleToString((Close[0] - by_do_96) / Point(),0) + " P   只多不空" ;
+  by_st_255 = "   多头信号  上下上    " + DoubleToString((Close[0] - by_do_96) / Point(),0) + " P   只多不空" ;
   }
  if ( by_in_166==2 )
   {
-  by_st_255 = "   下游鱼  下上下    " + DoubleToString((by_do_96 - Close[0]) / Point(),0) + " P   只空不多" ;
+  by_st_255 = "   空头信号  下上下    " + DoubleToString((by_do_96 - Close[0]) / Point(),0) + " P   只空不多" ;
   }
  if ( by_in_166==0 )
   {
   by_st_255 = "   无方向  ——  等待" ;
   }
  aa_st_215 = "Regular script";
- aa_st_217 = StringConcatenate("钓鱼智谋:: ",WindowExpertName() + by_st_255);
+ aa_st_217 = StringConcatenate("交易信号:: ",WindowExpertName() + by_st_255);
  aa_st_218 = "10091";
  if ( dfz_in_1 != -1 )
   {
@@ -2912,7 +3037,7 @@ if (by_do_226 + by_do_227>0)
   ObjectSet(aa_st_218,OBJPROP_YDISTANCE,140); 
   }
  aa_st_219 = "Regular script";
- aa_st_221 = "鱼线长度:: " + DoubleToString(by_do_237,2) + "CM  " + "限制最大单量:：" + DoubleToString(OrdersTotal(),0) + "//" + DoubleToString(AccountInfoInteger(47),0);
+ aa_st_221 = "累计开仓手数:: " + DoubleToString(by_do_237,2) + "  " + "总订单上限::" + DoubleToString(OrdersTotal(),0) + "//" + DoubleToString(AccountInfoInteger(47),0);
  aa_st_220 = "10092";
  if ( dfz_in_1 != -1 )
   {
@@ -2925,9 +3050,9 @@ if (by_do_226 + by_do_227>0)
  aa_st_222 = "Regular script";
  aa_st_223=DoubleToString(by_do_241,2) + "USD \n"; 
  aa_st_224=DoubleToString( -by_do_240,2) + "+"; 
- aa_st_225=DoubleToString(by_do_237,2) + "//历史纳税:: "; 
+ aa_st_225=DoubleToString(by_do_237,2) + "//历史手续费:: "; 
  g_BaseLot = lot ;
- aa_st_227 = StringConcatenate("钓鱼鱼饵::",DoubleToString(lot,2)," by诱饵:: ",aa_st_225,aa_st_224,aa_st_223);
+ aa_st_227 = StringConcatenate("基础手数(lot)::",DoubleToString(lot,2)," 实开手数和:: ",aa_st_225,aa_st_224,aa_st_223);
  aa_st_228 = "10093";
  if ( dfz_in_1 != -1 )
   {
@@ -2947,7 +3072,7 @@ if (by_do_226 + by_do_227>0)
   by_do_250 = 0 ;
   }
  aa_st_230 = "Regular script";
- aa_st_233 = StringConcatenate("鱼饵风险:: ",DoubleToString(by_do_198 / (AccountEquity() * 0.1 / MarketInfo(Symbol(),32)) * 100,2),"%   ","渔获风险::",DoubleToString(by_do_250,2) + "%");
+ aa_st_233 = StringConcatenate("仓位风险率:: ",DoubleToString(by_do_198 / (AccountEquity() * 0.1 / MarketInfo(Symbol(),32)) * 100,2),"%   ","浮亏回撤率::",DoubleToString(by_do_250,2) + "%");
  aa_st_234 = "10094";
  if ( dfz_in_1 != -1 )
   {
@@ -2958,7 +3083,7 @@ if (by_do_226 + by_do_227>0)
   ObjectSet(aa_st_234,OBJPROP_YDISTANCE,185); 
   }
  aa_st_235 = "Regular script";
- aa_st_238 = StringConcatenate("鱼饵累计:: ",DoubleToString(by_do_237 + by_do_238,2),"//历史鱼饵:: ",DoubleToString(by_do_238,2));
+ aa_st_238 = StringConcatenate("累计占用保证金:: ",DoubleToString(by_do_237 + by_do_238,2),"//历史保证金:: ",DoubleToString(by_do_238,2));
  aa_st_239 = "10095";
  if ( dfz_in_1 != -1 )
   {
@@ -2969,7 +3094,7 @@ if (by_do_226 + by_do_227>0)
   ObjectSet(aa_st_239,OBJPROP_YDISTANCE,200); 
   }
  aa_st_240 = "Regular script";
- aa_st_242 = "历史鱼获::" + DoubleToString(by_do_239,2) + "//鱼获库存::" + DoubleToString(AccountBalance(),2) + "//净存鱼获::" + DoubleToString(AccountEquity(),2);
+ aa_st_242 = "历史平仓盈亏::" + DoubleToString(by_do_239,2) + "//账户余额::" + DoubleToString(AccountBalance(),2) + "//账户净值::" + DoubleToString(AccountEquity(),2);
  aa_st_241 = "10096";
  if ( dfz_in_1 != -1 )
   {
@@ -2988,7 +3113,7 @@ if (by_do_226 + by_do_227>0)
   by_in_123=by_in_182 / 4 + 1;
   }
  aa_st_243 = "Regular script";
- aa_st_246 = StringConcatenate("扑鱼撒网:: ",DoubleToString(by_do_286,0),",上游网：",by_do_287,",下游网：",by_do_288) + "   撒网区域个数: " + DoubleToString(by_in_123,0);
+ aa_st_246 = StringConcatenate("网格分布:: 总层数=",DoubleToString(by_do_286,0),",上方挂单：",by_do_287,",下方挂单：",by_do_288) + "   活跃网格组数: " + DoubleToString(by_in_123,0);
  aa_st_245 = "10097";
  if ( dfz_in_1 != -1 )
   {
@@ -2999,7 +3124,7 @@ if (by_do_226 + by_do_227>0)
   ObjectSet(aa_st_245,OBJPROP_YDISTANCE,230); 
   }
  aa_st_247 = "Regular script";
- aa_st_249 = "估计渔获::" + DoubleToString((by_do_190 + by_do_189 + 1) * by_do_225 * 100,2) + "KG  " + "开锁货币数:: " + DoubleToString(by_in_90,0);
+ aa_st_249 = "预期盈亏目标::" + DoubleToString((by_do_190 + by_do_189 + 1) * by_do_225 * 100,2) + "USD  " + "已解锁货币对:: " + DoubleToString(by_in_90,0);
  aa_st_248 = "124689";
  if ( dfz_in_1 != -1 )
   {
@@ -3010,7 +3135,7 @@ if (by_do_226 + by_do_227>0)
   ObjectSet(aa_st_248,OBJPROP_YDISTANCE,245); 
   }
  aa_st_250 = "Regular script";
- aa_st_252 = "凶猛鱼群::" + DoubleToString( -by_do_248,2) + "KG" + "最美肥鱼::" + DoubleToString(by_do_249,2) + "KG";
+ aa_st_252 = "最大单笔浮亏::" + DoubleToString( -by_do_248,2) + "USD" + " 最大单笔浮盈::" + DoubleToString(by_do_249,2) + "USD";
  aa_st_251 = "124699";
  if ( dfz_in_1 != -1 )
   {
@@ -3021,7 +3146,7 @@ if (by_do_226 + by_do_227>0)
   ObjectSet(aa_st_251,OBJPROP_YDISTANCE,260); 
   }
  aa_st_253 = "Regular script";
- aa_st_255 = "钓鱼区域:: " + AccountCompany();
+ aa_st_255 = "经纪商:: " + AccountCompany();
  aa_st_254 = "1245";
  if ( dfz_in_1 != -1 )
   {
@@ -3032,7 +3157,7 @@ if (by_do_226 + by_do_227>0)
   ObjectSet(aa_st_254,OBJPROP_YDISTANCE,275); 
   }
  aa_st_256 = "Regular script";
- aa_st_258 = "钓鱼证件:: " + DoubleToString(AccountNumber(),0);
+aa_st_258 = "交易账号:: " + DoubleToString(AccountNumber(),0);
  aa_st_257 = "124687";
  if ( dfz_in_1 != -1 )
   {
@@ -4582,8 +4707,219 @@ if (by_do_226 + by_do_227>0)
   ObjectSet(aa_st_451,OBJPROP_XDISTANCE,919); 
   ObjectSet(aa_st_451,OBJPROP_YDISTANCE,405); 
   }
+ // ===== v2 模块化面板（新增监控模块，对象ID 20000–20663，与旧版 10xxx 完全并行互不影响）=====
+ RenderAccountKPI();
+ RenderSignalMatrix();
+ RenderStatusPillars();
+ RenderPositionTable();
+ RenderRiskMonitor();
+ RenderActivityLog();
  return(0); 
- }
+}
+
+// ====== 模块 ① RenderAccountKPI：账户 KPI 6 项（CORNER=1 右上顶部）======
+void RenderAccountKPI() {
+   color valC = White;
+   // 标题
+   SetLabel("20000","【账户监控】",10,"Arial Bold",Gold,1,15,8);
+   // KPI 1 余额
+   SetLabel("20001","余额 Balance",9,"Arial",LightSteelBlue,1,15,28);
+   valC = AccountBalance() > 0 ? SpringGreen : Red;
+   SetLabel("20002","$ "+DoubleToString(AccountBalance(),2),11,"Arial Bold",valC,1,15,40);
+   // KPI 2 净值
+   SetLabel("20003","净值 Equity",9,"Arial",LightSteelBlue,1,170,28);
+   valC = AccountEquity() >= AccountBalance() ? SpringGreen : Red;
+   SetLabel("20004","$ "+DoubleToString(AccountEquity(),2),11,"Arial Bold",valC,1,170,40);
+   // KPI 3 浮盈
+   SetLabel("20005","浮动盈亏 Profit",9,"Arial",LightSteelBlue,1,330,28);
+   valC = AccountProfit() >= 0 ? SpringGreen : Red;
+   SetLabel("20006",(AccountProfit()>=0?"+ ":"")+DoubleToString(AccountProfit(),2)+" USD",11,"Arial Bold",valC,1,330,40);
+   // KPI 4 已用保证金
+   SetLabel("20007","已用保证金 Margin",9,"Arial",LightSteelBlue,1,520,28);
+   SetLabel("20008","$ "+DoubleToString(AccountMargin(),2),11,"Arial Bold",Gold,1,520,40);
+   // KPI 5 可用保证金
+   SetLabel("20009","可用 FreeMargin",9,"Arial",LightSteelBlue,1,700,28);
+   valC = AccountFreeMargin() > 0 ? White : Red;
+   SetLabel("20010","$ "+DoubleToString(AccountFreeMargin(),2),11,"Arial Bold",valC,1,700,40);
+   // KPI 6 连损计数（需与 OnTick 内的 aa_in_17 对应，此处简化显示已用/可用比例，实际连损可在下一步扩展）
+   SetLabel("20011","开仓数 / 杠杆",9,"Arial",LightSteelBlue,1,880,28);
+   SetLabel("20012",DoubleToString(OrdersTotal(),0)+"单 · 1:"+DoubleToString(AccountLeverage(),0),11,"Arial Bold",Gold,1,880,40);
+}
+
+// ====== 模块 ② RenderSignalMatrix：16 组信号热力图（4×4，CORNER=1 右上中部 Y=65–235）======
+void RenderSignalMatrix() {
+   SetLabel("20100","【信号矩阵 · 16 组】Signal 1=偏低▼  2=偏高▲  0=带内",10,"Arial Bold",Gold,1,15,65);
+   int col,row,gi;
+   int cellW = 155; int cellH = 42;
+   int baseX = 15; int baseY = 82;
+   for ( gi = 1; gi <= 16; gi++ ) {
+      col = (gi-1) % 4;
+      row = (gi-1) / 4;
+      int X = baseX + col*cellW;
+      int Y = baseY + row*cellH;
+      // 标题
+      color sigC = White;
+      string sigText = "  带内";
+      if      ( !g_GC_active[gi]  ) { sigC = Gray;       sigText = "  关闭"; }
+      else if ( g_GC_corrReject[gi]){ sigC = Gold;       sigText = "  Corr拒绝"; }
+      else if ( g_GC_signal[gi]==1 ){ sigC = SpringGreen;sigText = "  ▼Signal 1"; }
+      else if ( g_GC_signal[gi]==2 ){ sigC = Red;        sigText = "  ▲Signal 2"; }
+      SetLabel("20101"+DoubleToString(gi,0),"G"+DoubleToString(gi,0)+" "+g_GC_sym1[gi]+"·"+g_GC_sym2[gi],9,"Arial Bold",White,1,X,Y);
+      SetLabel("20117"+DoubleToString(gi,0),sigText,9,"Arial Bold",sigC,1,X,Y+12);
+      string devStr = "β="+DoubleToString(g_GC_beta[gi],3)+" 偏离="+DoubleToString(g_GC_devPts[gi],2);
+      SetLabel("20133"+DoubleToString(gi,0),devStr,8,"Arial",LightSteelBlue,1,X,Y+24);
+   }
+}
+
+// ====== 模块 ③ RenderStatusPillars：运行状态灯（CORNER=1 右上左列，Y=260–430）======
+void RenderStatusPillars() {
+   SetLabel("20200","【运行状态】",10,"Arial Bold",Gold,1,15,260);
+   int LX = 15, RX = 110;
+   int LW = 9, VW = 10;
+   int y = 278; color valC;
+   // 1. EA 运行
+   SetLabel("20201","EA 运行",LW,"Arial",LightSteelBlue,1,LX,y);
+   SetLabel("20202","● 正常",VW,"Arial Bold",SpringGreen,1,RX,y); y+=22;
+   // 2. 清仓开关
+   SetLabel("20203","强制清仓",LW,"Arial",LightSteelBlue,1,LX,y);
+   valC = 清仓 ? Red : White;
+   SetLabel("20204",清仓 ? "● 启用" : "○ 关闭",VW,"Arial Bold",valC,1,RX,y); y+=22;
+   // 3. 只平不开
+   SetLabel("20205","只平不开",LW,"Arial",LightSteelBlue,1,LX,y);
+   valC = 只平不开 ? Gold : White;
+   SetLabel("20206",只平不开 ? "● 启用" : "○ 关闭",VW,"Arial Bold",valC,1,RX,y); y+=22;
+   // 4. 当前主组/信号
+   SetLabel("20207","当前组/信号",LW,"Arial",LightSteelBlue,1,LX,y);
+   string sigStr = "0=中性";
+   valC = White;
+   if ( g_SpreadSignal==1 ) { sigStr="1=偏低▼"; valC=SpringGreen; }
+   if ( g_SpreadSignal==2 ) { sigStr="2=偏高▲"; valC=Red; }
+   SetLabel("20208",sigStr,VW,"Arial Bold",valC,1,RX,y); y+=22;
+   // 5. Magic/品种
+   SetLabel("20209","Magic / 品种",LW,"Arial",LightSteelBlue,1,LX,y);
+   SetLabel("20210",DoubleToString(g_MagicNumber,0)+"/"+Symbol(),9,"Arial Bold",Gold,1,RX,y); y+=22;
+   // 6. 服务器时间
+   SetLabel("20211","服务器时间",LW,"Arial",LightSteelBlue,1,LX,y);
+   SetLabel("20212",TimeToString(TimeCurrent(),TIME_MINUTES),VW,"Arial Bold",White,1,RX,y); y+=22;
+   // 7. 连损（简化显示账户浮盈/余额回撤比：Equity/Balance-1）
+   SetLabel("20213","回撤比",LW,"Arial",LightSteelBlue,1,LX,y);
+   double dd = 0; if ( AccountBalance()>0 ) dd = (AccountEquity() - AccountBalance()) / AccountBalance() * 100;
+   valC = dd >= -2 ? SpringGreen : ( dd >= -5 ? Gold : Red );
+   SetLabel("20214",DoubleToString(dd,2)+"%",VW,"Arial Bold",valC,1,RX,y);
+}
+
+// ====== 模块 ④ RenderPositionTable：仓位矩阵（CORNER=0 左下，X=498-900，模拟表格 16 行 + 合计）======
+void RenderPositionTable() {
+   SetLabel("20300","【仓位矩阵 · 16 组】BUY/SELL单数 · 总手数 · 盈亏",10,"Arial Bold",Gold,0,498,18);
+   int colX[6]; colX[0]=498; colX[1]=528; colX[2]=630; colX[3]=682; colX[4]=730; colX[5]=800;
+   int rowH = 15; int baseY = 38;
+   // 表头
+   SetLabel("20301","组",9,"Arial Bold",LightSteelBlue,0,colX[0],baseY);
+   SetLabel("20302","币对 1 · 币对 2",9,"Arial Bold",LightSteelBlue,0,colX[1],baseY);
+   SetLabel("20303","B单",9,"Arial Bold",LightSteelBlue,0,colX[2],baseY);
+   SetLabel("20304","S单",9,"Arial Bold",LightSteelBlue,0,colX[3],baseY);
+   SetLabel("20305","手数",9,"Arial Bold",LightSteelBlue,0,colX[4],baseY);
+   SetLabel("20306","盈亏USD",9,"Arial Bold",LightSteelBlue,0,colX[5],baseY);
+   int gi;
+   double totLots=0, totPnl=0; int totB=0, totS=0;
+   for ( gi = 1; gi <= 16; gi++ ) {
+      int Y = baseY + gi*rowH;
+      if ( Y - baseY > 16*rowH ) break;
+      color pnlC = g_GC_pnl[gi] >= 0 ? SpringGreen : Red;
+      SetLabel("20310"+DoubleToString(gi,0),"G"+DoubleToString(gi,0),8,"Arial",White,0,colX[0],Y);
+      SetLabel("20330"+DoubleToString(gi,0),g_GC_sym1[gi]+"·"+g_GC_sym2[gi],8,"Arial",g_GC_active[gi]?White:Gray,0,colX[1],Y);
+      SetLabel("20350"+DoubleToString(gi,0),DoubleToString(g_GC_bCnt[gi],0),8,"Arial Bold",SpringGreen,0,colX[2],Y);
+      SetLabel("20370"+DoubleToString(gi,0),DoubleToString(g_GC_sCnt[gi],0),8,"Arial Bold",Red,0,colX[3],Y);
+      SetLabel("20390"+DoubleToString(gi,0),DoubleToString(g_GC_lots[gi],2),8,"Arial",White,0,colX[4],Y);
+      SetLabel("20410"+DoubleToString(gi,0),DoubleToString(g_GC_pnl[gi],2),8,"Arial Bold",pnlC,0,colX[5],Y);
+      totB+=g_GC_bCnt[gi]; totS+=g_GC_sCnt[gi]; totLots+=g_GC_lots[gi]; totPnl+=g_GC_pnl[gi];
+   }
+   int Y = baseY + 17*rowH;
+   color totC = totPnl >= 0 ? SpringGreen : Red;
+   SetLabel("20401","Σ16",9,"Arial Bold",Gold,0,colX[0],Y);
+   SetLabel("20402","合计",9,"Arial Bold",Gold,0,colX[1],Y);
+   SetLabel("20403",DoubleToString(totB,0),9,"Arial Bold",SpringGreen,0,colX[2],Y);
+   SetLabel("20404",DoubleToString(totS,0),9,"Arial Bold",Red,0,colX[3],Y);
+   SetLabel("20405",DoubleToString(totLots,2),9,"Arial Bold",White,0,colX[4],Y);
+   SetLabel("20406",DoubleToString(totPnl,2),9,"Arial Bold",totC,0,colX[5],Y);
+}
+
+// ====== 模块 ⑤ RenderRiskMonitor：触发监控 + 5 个门槛 KPI（CORNER=0 左下，X=920–1240）======
+void RenderRiskMonitor() {
+   SetLabel("20500","【风险触发监控】加仓% · 减仓% · 限频",10,"Arial Bold",Gold,0,920,18);
+   int colX[4]; colX[0]=920; colX[1]=996; colX[2]=1072; colX[3]=1156;
+   int rowH = 15; int baseY = 38;
+   // 表头
+   SetLabel("20501","组",9,"Arial Bold",LightSteelBlue,0,colX[0],baseY);
+   SetLabel("20502","距加仓",9,"Arial Bold",LightSteelBlue,0,colX[1],baseY);
+   SetLabel("20503","距减仓",9,"Arial Bold",LightSteelBlue,0,colX[2],baseY);
+   SetLabel("20504","限频",9,"Arial Bold",LightSteelBlue,0,colX[3],baseY);
+   int gi;
+   for ( gi = 1; gi <= 12; gi++ ) { // 16 行太长，展示前 12 组（界面内高度受限）
+      int Y = baseY + gi*rowH;
+      // 加仓距离：当前浮亏 vs 阈值（-6.8×手数×TS·100，这里简化用浮盈%表示）
+      double addPct = 100; string addTxt="— 无仓"; color addC = LightSteelBlue;
+      if ( g_GC_lots[gi] > 0 && g_GC_pnl[gi] < 0 ) {
+         double thr = g_GC_lots[gi] * 6.8 * 100; // 相对参考值
+         addPct = ( -g_GC_pnl[gi] ) / MathMax(thr,0.01) * 100;
+         addTxt = DoubleToString(addPct,0)+"%";
+         addC = addPct>=100 ? Red : ( addPct>=70 ? Gold : SpringGreen );
+      } else if ( g_GC_lots[gi] > 0 && g_GC_pnl[gi] >= 0 ) { addTxt="+"+DoubleToString(g_GC_pnl[gi],1); addC = SpringGreen; }
+      string relTxt = g_GC_signal[gi]!=0 ? "待命" : "— 无信号"; color relC = g_GC_signal[gi]!=0 ? Gold : Gray;
+      string limTxt = "新bar"; color limC = White;
+      SetLabel("20511"+DoubleToString(gi,0),"G"+DoubleToString(gi,0),8,"Arial",White,0,colX[0],Y);
+      SetLabel("20521"+DoubleToString(gi,0),addTxt,8,"Arial Bold",addC,0,colX[1],Y);
+      SetLabel("20531"+DoubleToString(gi,0),relTxt,8,"Arial Bold",relC,0,colX[2],Y);
+      SetLabel("20541"+DoubleToString(gi,0),limTxt,8,"Arial Bold",limC,0,colX[3],Y);
+   }
+   // 5 个门槛 KPI（底部卡片）
+   int kpiY = 250;
+   SetLabel("20580","【核心门槛】",9,"Arial Bold",Gold,0,920,kpiY); kpiY+=16;
+   SetLabel("20581","加仓触发浮亏",9,"Arial",LightSteelBlue,0,920,kpiY);
+   SetLabel("20582","− 6.8 × TickSize",10,"Arial Bold",Red,0,920,kpiY+12);
+   SetLabel("20583","减仓日内保护",9,"Arial",LightSteelBlue,0,1040,kpiY);
+   SetLabel("20584","> 4000 pt",10,"Arial Bold",SpringGreen,0,1040,kpiY+12);
+   SetLabel("20585","相关性拒绝",9,"Arial",LightSteelBlue,0,1140,kpiY);
+   SetLabel("20586","> 0.7 → Skip",10,"Arial Bold",Gold,0,1140,kpiY+12);
+   kpiY+=36;
+   SetLabel("20587","StopLevel 上限",9,"Arial",LightSteelBlue,0,920,kpiY);
+   SetLabel("20588","< 70",10,"Arial Bold",White,0,920,kpiY+12);
+   SetLabel("20589","日内首仓保护",9,"Arial",LightSteelBlue,0,1040,kpiY);
+   SetLabel("20590","> 4000 pt",10,"Arial Bold",White,0,1040,kpiY+12);
+}
+
+// ====== 模块 ⑥ RenderActivityLog：执行日志 8 条（CORNER=0 左下，X=498–1240，Y=310–400）======
+void RenderActivityLog() {
+   SetLabel("20600","【活动时间线 · 最近 8 条】",10,"Arial Bold",Gold,0,498,308);
+   // 表头
+   int colX[7]; colX[0]=498; colX[1]=570; colX[2]=610; colX[3]=660; colX[4]=920; colX[5]=1000; colX[6]=1090;
+   int baseY = 328; int rowH = 13;
+   SetLabel("20601","时间",9,"Arial Bold",LightSteelBlue,0,colX[0],baseY);
+   SetLabel("20602","组",9,"Arial Bold",LightSteelBlue,0,colX[1],baseY);
+   SetLabel("20603","操作",9,"Arial Bold",LightSteelBlue,0,colX[2],baseY);
+   SetLabel("20604","币对 / 方向",9,"Arial Bold",LightSteelBlue,0,colX[3],baseY);
+   SetLabel("20605","手数",9,"Arial Bold",LightSteelBlue,0,colX[4],baseY);
+   SetLabel("20606","当前浮盈",9,"Arial Bold",LightSteelBlue,0,colX[5],baseY);
+   SetLabel("20607","限频",9,"Arial Bold",LightSteelBlue,0,colX[6],baseY);
+   // 填充 8 行：环形缓冲倒序显示（最新在前）
+   int i, r;
+   for ( i = 0; i < 8; i++ ) {
+      int idx = (g_LogPtr - 1 - i + 8) % 8;
+      int Y = baseY + (i+1)*rowH;
+      string line = g_LogLine[idx];
+      if ( StringLen(line) < 3 ) {
+         // 空：显示占位
+         SetLabel("20611"+DoubleToString(i,0),"—",8,"Arial",Gray,0,colX[0],Y);
+         continue;
+      }
+      // 简易按 | 拆：时间 | 内容（内容用空格展示其他列即可）
+      string tm = StringSubstr(line,0,StringFind(line,"| "));
+      string bd = StringSubstr(line,StringFind(line,"| ")+2);
+      SetLabel("20611"+DoubleToString(i,0),tm,8,"Arial",White,0,colX[0],Y);
+      SetLabel("20621"+DoubleToString(i,0),bd,8,"Arial",LightSteelBlue,0,colX[1],Y);
+   }
+}
+
 
  void CloseAllPositions()
  {
@@ -4640,8 +4976,8 @@ if (by_do_226 + by_do_227>0)
  void SendStatusMail()
  {
 
- by_st_253 = StringConcatenate("",AccountNumber(),"/存::",DoubleToString(AccountBalance(),0) + "/浮::",DoubleToString(AccountEquity(),0) + "/盈::",DoubleToString(AccountProfit(),0) + "/单::",OrdersTotal(),"/饵:: ",by_do_256,"/",ServerAddress() + "") ;
- by_st_254 = " // " + by_st_252 + "\n" + " // EA名称::" + WindowExpertName() + "\n" + " // 鱼群:: " + Symbol() + "\n" + " // 鱼获:: " + DoubleToString(by_do_233 + by_do_234,2) + "\n" + StringConcatenate(" // by鱼获:: ",AccountProfit(),"\n") + StringConcatenate(" // 诱饵:: ",g_BaseLot,"\n") + StringConcatenate(" // by诱饵:: ",by_do_237,"\n") + StringConcatenate(" // 单:: ",DoubleToString(by_in_118 + by_in_117,2),"\n") + " // by单:: " + DoubleToString(by_do_190 + by_do_189,2) + "\n" + " // 智调诱饵:: " + DoubleToString(by_do_256,2) + " \n" + " // 历史纳税:: " + DoubleToString(by_do_240,2) + "+" + DoubleToString(by_do_241,2) + "USD \n" + " // 历史鱼饵:: " + DoubleToString(by_do_238,2) + " \n" + " // 鱼获库存:: " + DoubleToString(AccountBalance(),2) + " \n" + " // 净存鱼获:: " + DoubleToString(AccountEquity(),2) + " \n" + " // 历史鱼获:: " + DoubleToString(by_do_239,2) + " \n" + " // 外汇公司:: " + AccountCompany() + "\n" + " // 伺服器:: " + ServerAddress() + "\n" + StringConcatenate(" // 剩余保证金:: ",AccountFreeMargin(),"\n") + StringConcatenate(" // 户口保证金:: ",AccountMargin(),"\n") + StringConcatenate(" // 标准保证金=",MarketInfo(Symbol(),32),"\n") + StringConcatenate(" // 杠杆:: ",AccountLeverage(),"\n") + StringConcatenate(" // 户口姓名:: ",AccountName(),"\n") + StringConcatenate(" // 户口号码:: ",AccountNumber(),"\n") + StringConcatenate(" // 户口存款:: ",AccountBalance(),"\n") + StringConcatenate(" // 户口净存款:: ",AccountEquity(),"\n") + StringConcatenate(" // 马来西亚时间::",TimeToString(TimeLocal(),3),"\n") + StringConcatenate(" // 外汇时间::",TimeToString(TimeCurrent(),3),"\n") + StringConcatenate("MODE_POINT=",MarketInfo(Symbol(),11),"\n") + StringConcatenate("MODE_SPREAD=",MarketInfo(Symbol(),13),"\n") + StringConcatenate("MODE_STOPLEVEL=",MarketInfo(Symbol(),14),"\n") + StringConcatenate("MODE_LOTSIZE=",MarketInfo(Symbol(),15),"\n") + StringConcatenate("MODE_SWAPLONGbuy order=",MarketInfo(Symbol(),18),"\n") + StringConcatenate("MODE_SWAPSHORT sell order=",MarketInfo(Symbol(),19),"\n") + StringConcatenate("MODE_MINLOT=",MarketInfo(Symbol(),23),"\n") + StringConcatenate("MODE_LOTSTEP=",MarketInfo(Symbol(),24),"\n") + StringConcatenate("MODE_MAXLOT=",MarketInfo(Symbol(),25),"\n") + StringConcatenate("MODE_PROFITCALCMODE=",MarketInfo(Symbol(),27),"\n") + StringConcatenate("MODE_MARGININIT for 1 lot=",MarketInfo(Symbol(),29),"\n") + StringConcatenate("MODE_MARGINMAINTENANCEt=",MarketInfo(Symbol(),30),"\n") + StringConcatenate("MODE_MARGINHEDGED=",MarketInfo(Symbol(),31),"\n") + StringConcatenate("MODE_MARGINREQUIREDt=",MarketInfo(Symbol(),32),"\n") + StringConcatenate("MODE_FREEZELEVEL=",MarketInfo(Symbol(),33),"\n") + " " ;
+ by_st_253 = StringConcatenate("",AccountNumber(),"/余额::",DoubleToString(AccountBalance(),0) + "/净值::",DoubleToString(AccountEquity(),0) + "/浮盈::",DoubleToString(AccountProfit(),0) + "/订单::",OrdersTotal(),"/智能手数:: ",by_do_256,"/",ServerAddress() + "") ;
+ by_st_254 = " // " + by_st_252 + "\n" + " // EA名称::" + WindowExpertName() + "\n" + " // 图表品种:: " + Symbol() + "\n" + " // 两组盈亏:: " + DoubleToString(by_do_233 + by_do_234,2) + "\n" + StringConcatenate(" // 账户浮盈:: ",AccountProfit(),"\n") + StringConcatenate(" // 基础手数:: ",g_BaseLot,"\n") + StringConcatenate(" // 实开手数和:: ",by_do_237,"\n") + StringConcatenate(" // 持仓单量:: ",DoubleToString(by_in_118 + by_in_117,2),"\n") + " // 估算单量:: " + DoubleToString(by_do_190 + by_do_189,2) + "\n" + " // 智能调节手数:: " + DoubleToString(by_do_256,2) + " \n" + " // 历史手续费:: " + DoubleToString(by_do_240,2) + "+" + DoubleToString(by_do_241,2) + "USD \n" + " // 历史累计保证金:: " + DoubleToString(by_do_238,2) + " \n" + " // 账户余额:: " + DoubleToString(AccountBalance(),2) + " \n" + " // 账户净值:: " + DoubleToString(AccountEquity(),2) + " \n" + " // 历史平仓盈亏:: " + DoubleToString(by_do_239,2) + " \n" + " // 经纪商:: " + AccountCompany() + "\n" + " // 服务器:: " + ServerAddress() + "\n" + StringConcatenate(" // 可用保证金:: ",AccountFreeMargin(),"\n") + StringConcatenate(" // 已用保证金:: ",AccountMargin(),"\n") + StringConcatenate(" // 标准保证金=",MarketInfo(Symbol(),32),"\n") + StringConcatenate(" // 杠杆:: ",AccountLeverage(),"\n") + StringConcatenate(" // 账户姓名:: ",AccountName(),"\n") + StringConcatenate(" // 账户号码:: ",AccountNumber(),"\n") + StringConcatenate(" // 账户余额:: ",AccountBalance(),"\n") + StringConcatenate(" // 账户净值:: ",AccountEquity(),"\n") + StringConcatenate(" // 本地时间::",TimeToString(TimeLocal(),3),"\n") + StringConcatenate(" // 服务器时间::",TimeToString(TimeCurrent(),3),"\n") + StringConcatenate("MODE_POINT=",MarketInfo(Symbol(),11),"\n") + StringConcatenate("MODE_SPREAD=",MarketInfo(Symbol(),13),"\n") + StringConcatenate("MODE_STOPLEVEL=",MarketInfo(Symbol(),14),"\n") + StringConcatenate("MODE_LOTSIZE=",MarketInfo(Symbol(),15),"\n") + StringConcatenate("MODE_SWAPLONGbuy order=",MarketInfo(Symbol(),18),"\n") + StringConcatenate("MODE_SWAPSHORT sell order=",MarketInfo(Symbol(),19),"\n") + StringConcatenate("MODE_MINLOT=",MarketInfo(Symbol(),23),"\n") + StringConcatenate("MODE_LOTSTEP=",MarketInfo(Symbol(),24),"\n") + StringConcatenate("MODE_MAXLOT=",MarketInfo(Symbol(),25),"\n") + StringConcatenate("MODE_PROFITCALCMODE=",MarketInfo(Symbol(),27),"\n") + StringConcatenate("MODE_MARGININIT for 1 lot=",MarketInfo(Symbol(),29),"\n") + StringConcatenate("MODE_MARGINMAINTENANCEt=",MarketInfo(Symbol(),30),"\n") + StringConcatenate("MODE_MARGINHEDGED=",MarketInfo(Symbol(),31),"\n") + StringConcatenate("MODE_MARGINREQUIREDt=",MarketInfo(Symbol(),32),"\n") + StringConcatenate("MODE_FREEZELEVEL=",MarketInfo(Symbol(),33),"\n") + " " ;
  SendMail(by_st_253,by_st_254); 
  }
 
