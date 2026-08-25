@@ -80,13 +80,30 @@ string    g_LogLine[8];
 datetime  g_LogTime[8];
 int       g_LogPtr=0;
 
-// 轻量辅助：创建/刷新一个 OBJ_LABEL 单行完成（减少重复 ObjectCreate/Set 代码块）
-void SetLabel(string id,string text,int fsize=9,string fname="Arial Bold",color clr=clrWhite,int corner=0,int x=0,int y=0) {
-   if ( ObjectFind(id) < 0 ) ObjectCreate(id,OBJ_LABEL,0,0,0,0,0,0,0);
+// 辅助：创建/刷新 OBJ_LABEL，支持锚点对齐（0=左上 1=左中 2=左下 3=中上 4=居中 5=中下 6=右上 7=右中 8=右下）
+void SetLabel(string id,string text,int fsize=9,string fname="Arial Bold",color clr=clrWhite,int corner=0,int x=0,int y=0,int anchor=0) {
+   if ( ObjectFind(id) < 0 ) {
+      ObjectCreate(id,OBJ_LABEL,0,0,0,0,0,0,0);
+      ObjectSet(id,OBJPROP_CORNER,corner);
+      ObjectSet(id,OBJPROP_XDISTANCE,x);
+      ObjectSet(id,OBJPROP_YDISTANCE,y);
+      ObjectSet(id,OBJPROP_ANCHOR,anchor);
+   }
    ObjectSetText(id,text,fsize,fname,clr);
-   ObjectSet(id,OBJPROP_CORNER,corner);
-   ObjectSet(id,OBJPROP_XDISTANCE,x);
-   ObjectSet(id,OBJPROP_YDISTANCE,y);
+}
+// 辅助：创建/刷新 OBJ_RECTANGLE_LABEL 背景板
+void SetRect(string id,int x,int y,int w,int h,int corner=0,color bg=clrDarkSlateGray,color brd=clrGray,int borderType=1) {
+   if ( ObjectFind(id) < 0 ) {
+      ObjectCreate(id,OBJ_RECTANGLE_LABEL,0,0,0,0,0,0,0);
+      ObjectSet(id,OBJPROP_CORNER,corner);
+      ObjectSet(id,OBJPROP_XDISTANCE,x);
+      ObjectSet(id,OBJPROP_YDISTANCE,y);
+      ObjectSet(id,OBJPROP_XSIZE,w);
+      ObjectSet(id,OBJPROP_YSIZE,h);
+      ObjectSet(id,OBJPROP_COLOR,brd);
+      ObjectSet(id,OBJPROP_BGCOLOR,bg);
+      ObjectSet(id,OBJPROP_BORDER_TYPE,borderType);
+   }
 }
 // 环形写一条日志（供 RenderActivityLog 展示）
 void PushPanelLog(string line) {
@@ -98,6 +115,7 @@ void PushPanelLog(string line) {
 // ===== Panel 模块函数原型（定义在下文，此处提前声明供 UpdateStatusDisplay 调用）=====
 void EnsurePanelObjects();
 void RefreshGroupCache();
+void SetRect(string id,int x,int y,int w,int h,int corner=0,color bg=clrDarkSlateGray,color brd=clrGray,int borderType=1);
 void RenderAccountKPI();
 void RenderSignalMatrix();
 void RenderStatusPillars();
@@ -2423,6 +2441,13 @@ return(g_SpreadSignal);
 // EnsurePanelObjects：面板对象只创建一次（首次 tick 执行），后续 tick 只 SetText 不改结构
 void EnsurePanelObjects() {
    if ( g_PanelInited ) return;
+   // 隐藏旧版 10xxx 系列对象（设为 OBJPROP_TIMEFRAME=0 即隐藏）
+   int oldId;
+   for ( oldId=10000; oldId<=10200; oldId++ ) {
+      if ( ObjectFind(DoubleToString(oldId,0)) >= 0 ) {
+         ObjectSet(DoubleToString(oldId,0),OBJPROP_TIMEFRAME,0);
+      }
+   }
    // 初始化 16 组缓存的币对（ProcessAllGroups 的顺序映射）
    g_GC_sym1[1]  = H01Symbol;  g_GC_sym2[1]  = H02Symbol;  g_GC_active[1]  = H01;
    g_GC_sym1[2]  = H03Symbol;  g_GC_sym2[2]  = H04Symbol;  g_GC_active[2]  = H02;
@@ -4717,206 +4742,238 @@ aa_st_258 = "交易账号:: " + DoubleToString(AccountNumber(),0);
  return(0); 
 }
 
-// ====== 模块 ① RenderAccountKPI：账户 KPI 6 项（CORNER=1 右上顶部）======
+// ====== 模块 ① RenderAccountKPI：顶部 KPI 条（CORNER=1）背景卡 + 文字对齐 ======
 void RenderAccountKPI() {
-   color valC = White;
-   // 标题
-   SetLabel("20000","【账户监控】",10,"Arial Bold",Gold,1,15,8);
-   // KPI 1 余额
-   SetLabel("20001","余额 Balance",9,"Arial",LightSteelBlue,1,15,28);
-   valC = AccountBalance() > 0 ? SpringGreen : Red;
-   SetLabel("20002","$ "+DoubleToString(AccountBalance(),2),11,"Arial Bold",valC,1,15,40);
-   // KPI 2 净值
-   SetLabel("20003","净值 Equity",9,"Arial",LightSteelBlue,1,170,28);
-   valC = AccountEquity() >= AccountBalance() ? SpringGreen : Red;
-   SetLabel("20004","$ "+DoubleToString(AccountEquity(),2),11,"Arial Bold",valC,1,170,40);
-   // KPI 3 浮盈
-   SetLabel("20005","浮动盈亏 Profit",9,"Arial",LightSteelBlue,1,330,28);
-   valC = AccountProfit() >= 0 ? SpringGreen : Red;
-   SetLabel("20006",(AccountProfit()>=0?"+ ":"")+DoubleToString(AccountProfit(),2)+" USD",11,"Arial Bold",valC,1,330,40);
-   // KPI 4 已用保证金
-   SetLabel("20007","已用保证金 Margin",9,"Arial",LightSteelBlue,1,520,28);
-   SetLabel("20008","$ "+DoubleToString(AccountMargin(),2),11,"Arial Bold",Gold,1,520,40);
-   // KPI 5 可用保证金
-   SetLabel("20009","可用 FreeMargin",9,"Arial",LightSteelBlue,1,700,28);
-   valC = AccountFreeMargin() > 0 ? White : Red;
-   SetLabel("20010","$ "+DoubleToString(AccountFreeMargin(),2),11,"Arial Bold",valC,1,700,40);
-   // KPI 6 连损计数（需与 OnTick 内的 aa_in_17 对应，此处简化显示已用/可用比例，实际连损可在下一步扩展）
-   SetLabel("20011","开仓数 / 杠杆",9,"Arial",LightSteelBlue,1,880,28);
-   SetLabel("20012",DoubleToString(OrdersTotal(),0)+"单 · 1:"+DoubleToString(AccountLeverage(),0),11,"Arial Bold",Gold,1,880,40);
+   // 主背景板
+   SetRect("20000",5,5,980,58,1,C'#252535',C'#3a3a55',1);
+   SetLabel("20001","  账户监控 · 多品种对冲套利 EA  ",9,"Arial Bold",Gold,1,8,10,0);
+   // 6 个 KPI 单元格
+   int kpiY = 22, kpiH = 38;
+   int kpiX[6]={8,168,328,498,668,838};
+   int kpiW[6]={155,155,155,155,155,135};
+   color valC;
+   // KPI1 余额
+   SetRect("20010",kpiX[0],kpiY,kpiW[0],kpiH,1,C'#2d2d42',C'#4a4a6a',2);
+   SetLabel("20011","余额 Balance",8,"Arial",LightSteelBlue,1,kpiX[0]+6,kpiY+5,0);
+   valC = AccountBalance()>0?SpringGreen:Red;
+   SetLabel("20012","$"+DoubleToString(AccountBalance(),2),11,"Arial Bold",valC,1,kpiX[0]+kpiW[0]-6,kpiY+26,8);
+   // KPI2 净值
+   SetRect("20013",kpiX[1],kpiY,kpiW[1],kpiH,1,C'#2d2d42',C'#4a4a6a',2);
+   SetLabel("20014","净值 Equity",8,"Arial",LightSteelBlue,1,kpiX[1]+6,kpiY+5,0);
+   valC = AccountEquity()>=AccountBalance()?SpringGreen:Red;
+   SetLabel("20015","$"+DoubleToString(AccountEquity(),2),11,"Arial Bold",valC,1,kpiX[1]+kpiW[1]-6,kpiY+26,8);
+   // KPI3 浮盈
+   SetRect("20016",kpiX[2],kpiY,kpiW[2],kpiH,1,C'#2d2d42',C'#4a4a6a',2);
+   SetLabel("20017","浮动盈亏",8,"Arial",LightSteelBlue,1,kpiX[2]+6,kpiY+5,0);
+   valC = AccountProfit()>=0?SpringGreen:Red;
+   SetLabel("20018",(AccountProfit()>=0?"+":"")+DoubleToString(AccountProfit(),2)+" USD",11,"Arial Bold",valC,1,kpiX[2]+kpiW[2]-6,kpiY+26,8);
+   // KPI4 保证金
+   SetRect("20019",kpiX[3],kpiY,kpiW[3],kpiH,1,C'#2d2d42',C'#4a4a6a',2);
+   SetLabel("2001A","已用保证金",8,"Arial",LightSteelBlue,1,kpiX[3]+6,kpiY+5,0);
+   SetLabel("2001B","$"+DoubleToString(AccountMargin(),2),11,"Arial Bold",Gold,1,kpiX[3]+kpiW[3]-6,kpiY+26,8);
+   // KPI5 可用
+   SetRect("2001C",kpiX[4],kpiY,kpiW[4],kpiH,1,C'#2d2d42',C'#4a4a6a',2);
+   SetLabel("2001D","可用 FreeMargin",8,"Arial",LightSteelBlue,1,kpiX[4]+6,kpiY+5,0);
+   valC = AccountFreeMargin()>0?White:Red;
+   SetLabel("2001E","$"+DoubleToString(AccountFreeMargin(),2),11,"Arial Bold",valC,1,kpiX[4]+kpiW[4]-6,kpiY+26,8);
+   // KPI6 开仓数
+   SetRect("2001F",kpiX[5],kpiY,kpiW[5],kpiH,1,C'#2d2d42',C'#4a4a6a',2);
+   SetLabel("20020","开仓/杠杆",8,"Arial",LightSteelBlue,1,kpiX[5]+6,kpiY+5,0);
+   SetLabel("20021",DoubleToString(OrdersTotal(),0)+"单 1:"+DoubleToString(AccountLeverage(),0),10,"Arial Bold",Gold,1,kpiX[5]+kpiW[5]-6,kpiY+26,8);
 }
 
-// ====== 模块 ② RenderSignalMatrix：16 组信号热力图（4×4，CORNER=1 右上中部 Y=65–235）======
+// ====== 模块 ② RenderSignalMatrix：4×4 网格（CORNER=1）背景格 + 左边框色条 ======
 void RenderSignalMatrix() {
-   SetLabel("20100","【信号矩阵 · 16 组】Signal 1=偏低▼  2=偏高▲  0=带内",10,"Arial Bold",Gold,1,15,65);
+   int baseY = 72;
+   SetLabel("20100","  信号矩阵 · 16 组 ",9,"Arial Bold",Gold,1,5,baseY,0);
+   SetLabel("20101","Signal 1=偏低▼  2=偏高▲  0=带内  Corr=拒绝",7,"Arial",Gray,1,80,baseY+2,0);
    int col,row,gi;
-   int cellW = 155; int cellH = 42;
-   int baseX = 15; int baseY = 82;
-   for ( gi = 1; gi <= 16; gi++ ) {
-      col = (gi-1) % 4;
-      row = (gi-1) / 4;
-      int X = baseX + col*cellW;
-      int Y = baseY + row*cellH;
-      // 标题
-      color sigC = White;
-      string sigText = "  带内";
-      if      ( !g_GC_active[gi]  ) { sigC = Gray;       sigText = "  关闭"; }
-      else if ( g_GC_corrReject[gi]){ sigC = Gold;       sigText = "  Corr拒绝"; }
-      else if ( g_GC_signal[gi]==1 ){ sigC = SpringGreen;sigText = "  ▼Signal 1"; }
-      else if ( g_GC_signal[gi]==2 ){ sigC = Red;        sigText = "  ▲Signal 2"; }
-      SetLabel("20101"+DoubleToString(gi,0),"G"+DoubleToString(gi,0)+" "+g_GC_sym1[gi]+"·"+g_GC_sym2[gi],9,"Arial Bold",White,1,X,Y);
-      SetLabel("20117"+DoubleToString(gi,0),sigText,9,"Arial Bold",sigC,1,X,Y+12);
-      string devStr = "β="+DoubleToString(g_GC_beta[gi],3)+" 偏离="+DoubleToString(g_GC_devPts[gi],2);
-      SetLabel("20133"+DoubleToString(gi,0),devStr,8,"Arial",LightSteelBlue,1,X,Y+24);
+   int cellW=118, cellH=36;
+   int baseX=5, gridY=baseY+12;
+   for ( gi=1; gi<=16; gi++ ) {
+      col=(gi-1)%4; row=(gi-1)/4;
+      int X=baseX+col*(cellW+4);
+      int Y=gridY+row*(cellH+3);
+      color bgC=C'#2a2a3e', brdC=C'#3e3e5a';
+      color sideC = Gray;
+      color txtC = White, metaC = LightSteelBlue;
+      string sigTxt="  带内";
+      if ( !g_GC_active[gi] ) {
+         bgC=C'#252535'; brdC=C'#35354a'; sideC=Gray; txtC=Gray; sigTxt="  关闭"; metaC=Gray;
+      } else if ( g_GC_corrReject[gi] ) {
+         sideC=Gold; sigTxt="  Corr拒绝"; metaC=Gold;
+      } else if ( g_GC_signal[gi]==1 ) {
+         sideC=SpringGreen; sigTxt="  ▼ Signal 1";
+      } else if ( g_GC_signal[gi]==2 ) {
+         sideC=Red; sigTxt="  ▲ Signal 2";
+      } else {
+         sideC=C'#555577'; sigTxt="  带内";
+      }
+      string bgId  = "201"+DoubleToString(gi,0);
+      string nmId  = "211"+DoubleToString(gi,0);
+      string stId  = "221"+DoubleToString(gi,0);
+      string mtId  = "231"+DoubleToString(gi,0);
+      SetRect(bgId,X,Y,cellW,cellH,1,bgC,brdC,2);
+      // 左边框色条（用一个窄的矩形叠在左边）
+      SetRect(bgId+"s",X,Y,3,cellH,1,sideC,sideC,0);
+      SetLabel(nmId,"G"+DoubleToString(gi,0)+" "+g_GC_sym1[gi]+"·"+g_GC_sym2[gi],8,"Arial Bold",txtC,1,X+6,Y+3,0);
+      SetLabel(stId,sigTxt,8,"Arial Bold",sideC,1,X+6,Y+14,0);
+      SetLabel(mtId,"β="+DoubleToString(g_GC_beta[gi],3)+" 偏离="+DoubleToString(g_GC_devPts[gi],2),7,"Arial",metaC,1,X+6,Y+25,0);
    }
 }
 
-// ====== 模块 ③ RenderStatusPillars：运行状态灯（CORNER=1 右上左列，Y=260–430）======
+// ====== 模块 ③ RenderStatusPillars：状态监控条（CORNER=1）======
 void RenderStatusPillars() {
-   SetLabel("20200","【运行状态】",10,"Arial Bold",Gold,1,15,260);
-   int LX = 15, RX = 110;
-   int LW = 9, VW = 10;
-   int y = 278; color valC;
-   // 1. EA 运行
-   SetLabel("20201","EA 运行",LW,"Arial",LightSteelBlue,1,LX,y);
-   SetLabel("20202","● 正常",VW,"Arial Bold",SpringGreen,1,RX,y); y+=22;
-   // 2. 清仓开关
-   SetLabel("20203","强制清仓",LW,"Arial",LightSteelBlue,1,LX,y);
-   valC = 清仓 ? Red : White;
-   SetLabel("20204",清仓 ? "● 启用" : "○ 关闭",VW,"Arial Bold",valC,1,RX,y); y+=22;
-   // 3. 只平不开
-   SetLabel("20205","只平不开",LW,"Arial",LightSteelBlue,1,LX,y);
-   valC = 只平不开 ? Gold : White;
-   SetLabel("20206",只平不开 ? "● 启用" : "○ 关闭",VW,"Arial Bold",valC,1,RX,y); y+=22;
-   // 4. 当前主组/信号
-   SetLabel("20207","当前组/信号",LW,"Arial",LightSteelBlue,1,LX,y);
-   string sigStr = "0=中性";
-   valC = White;
+   int panelX=5, panelY=280, panelW=155, panelH=170;
+   SetRect("20200",panelX,panelY,panelW,panelH,1,C'#252535',C'#3a3a55',1);
+   SetLabel("20201","  运行状态 ",9,"Arial Bold",Gold,1,panelX+6,panelY+5,0);
+   int y = panelY+20; color valC;
+   // 行1 EA运行
+   SetRect("20202",panelX+5,y,panelW-10,18,1,C'#2d2d42',C'#3e3e5a',2);
+   SetLabel("20203","EA 运行",8,"Arial",LightSteelBlue,1,panelX+10,y+5,0);
+   SetLabel("20204","● 正常",9,"Arial Bold",SpringGreen,1,panelX+panelW-10,y+5,8);
+   y+=22;
+   // 行2 清仓
+   SetRect("20205",panelX+5,y,panelW-10,18,1,C'#2d2d42',C'#3e3e5a',2);
+   SetLabel("20206","强制清仓",8,"Arial",LightSteelBlue,1,panelX+10,y+5,0);
+   valC = 清仓?Red:White;
+   SetLabel("20207",清仓?"● 启用":"○ 关闭",9,"Arial Bold",valC,1,panelX+panelW-10,y+5,8);
+   y+=22;
+   // 行3 只平不开
+   SetRect("20208",panelX+5,y,panelW-10,18,1,C'#2d2d42',C'#3e3e5a',2);
+   SetLabel("20209","只平不开",8,"Arial",LightSteelBlue,1,panelX+10,y+5,0);
+   valC = 只平不开?Gold:White;
+   SetLabel("2020A",只平不开?"● 启用":"○ 关闭",9,"Arial Bold",valC,1,panelX+panelW-10,y+5,8);
+   y+=22;
+   // 行4 当前信号
+   SetRect("2020B",panelX+5,y,panelW-10,18,1,C'#2d2d42',C'#3e3e5a',2);
+   SetLabel("2020C","当前信号",8,"Arial",LightSteelBlue,1,panelX+10,y+5,0);
+   string sigStr="0=中性"; valC=White;
    if ( g_SpreadSignal==1 ) { sigStr="1=偏低▼"; valC=SpringGreen; }
    if ( g_SpreadSignal==2 ) { sigStr="2=偏高▲"; valC=Red; }
-   SetLabel("20208",sigStr,VW,"Arial Bold",valC,1,RX,y); y+=22;
-   // 5. Magic/品种
-   SetLabel("20209","Magic / 品种",LW,"Arial",LightSteelBlue,1,LX,y);
-   SetLabel("20210",DoubleToString(g_MagicNumber,0)+"/"+Symbol(),9,"Arial Bold",Gold,1,RX,y); y+=22;
-   // 6. 服务器时间
-   SetLabel("20211","服务器时间",LW,"Arial",LightSteelBlue,1,LX,y);
-   SetLabel("20212",TimeToString(TimeCurrent(),TIME_MINUTES),VW,"Arial Bold",White,1,RX,y); y+=22;
-   // 7. 连损（简化显示账户浮盈/余额回撤比：Equity/Balance-1）
-   SetLabel("20213","回撤比",LW,"Arial",LightSteelBlue,1,LX,y);
-   double dd = 0; if ( AccountBalance()>0 ) dd = (AccountEquity() - AccountBalance()) / AccountBalance() * 100;
-   valC = dd >= -2 ? SpringGreen : ( dd >= -5 ? Gold : Red );
-   SetLabel("20214",DoubleToString(dd,2)+"%",VW,"Arial Bold",valC,1,RX,y);
+   SetLabel("2020D",sigStr,9,"Arial Bold",valC,1,panelX+panelW-10,y+5,8);
+   y+=22;
+   // 行5 回撤
+   SetRect("2020E",panelX+5,y,panelW-10,18,1,C'#2d2d42',C'#3e3e5a',2);
+   SetLabel("2020F","回撤比",8,"Arial",LightSteelBlue,1,panelX+10,y+5,0);
+   double dd=0; if ( AccountBalance()>0 ) dd=(AccountEquity()-AccountBalance())/AccountBalance()*100;
+   valC = dd>=-2?SpringGreen:(dd>=-5?Gold:Red);
+   SetLabel("20210",DoubleToString(dd,2)+"%",9,"Arial Bold",valC,1,panelX+panelW-10,y+5,8);
+   y+=22;
+   // 行6 时间
+   SetRect("20211",panelX+5,y,panelW-10,18,1,C'#2d2d42',C'#3e3e5a',2);
+   SetLabel("20212","服务器时间",8,"Arial",LightSteelBlue,1,panelX+10,y+5,0);
+   SetLabel("20213",TimeToString(TimeCurrent(),TIME_MINUTES),9,"Arial Bold",White,1,panelX+panelW-10,y+5,8);
 }
 
-// ====== 模块 ④ RenderPositionTable：仓位矩阵（CORNER=0 左下，X=498-900，模拟表格 16 行 + 合计）======
+// ====== 模块 ④ RenderPositionTable：仓位表（CORNER=0）带背景 + 列对齐 ======
 void RenderPositionTable() {
-   SetLabel("20300","【仓位矩阵 · 16 组】BUY/SELL单数 · 总手数 · 盈亏",10,"Arial Bold",Gold,0,498,18);
-   int colX[6]; colX[0]=498; colX[1]=528; colX[2]=630; colX[3]=682; colX[4]=730; colX[5]=800;
-   int rowH = 15; int baseY = 38;
+   int tblX=5, tblY=5, tblW=490, tblH=280;
+   SetRect("20300",tblX,tblY,tblW,tblH,0,C'#252535',C'#3a3a55',1);
+   SetLabel("20301","  仓位矩阵 · 16 组 ",9,"Arial Bold",Gold,0,tblX+6,tblY+5,0);
    // 表头
-   SetLabel("20301","组",9,"Arial Bold",LightSteelBlue,0,colX[0],baseY);
-   SetLabel("20302","币对 1 · 币对 2",9,"Arial Bold",LightSteelBlue,0,colX[1],baseY);
-   SetLabel("20303","B单",9,"Arial Bold",LightSteelBlue,0,colX[2],baseY);
-   SetLabel("20304","S单",9,"Arial Bold",LightSteelBlue,0,colX[3],baseY);
-   SetLabel("20305","手数",9,"Arial Bold",LightSteelBlue,0,colX[4],baseY);
-   SetLabel("20306","盈亏USD",9,"Arial Bold",LightSteelBlue,0,colX[5],baseY);
-   int gi;
+   int hdrY=tblY+20;
+   int colX[6]={tblX+6,tblX+46,tblX+200,tblX+240,tblX+280,tblX+320};
+   SetRect("20302",tblX+4,hdrY-2,tblW-8,18,0,C'#2f2f45',C'#3e3e5a',2);
+   SetLabel("20303","组",8,"Arial Bold",LightSteelBlue,0,colX[0]+2,hdrY+4,0);
+   SetLabel("20304","币对 1 · 币对 2",8,"Arial Bold",LightSteelBlue,0,colX[1]+2,hdrY+4,0);
+   SetLabel("20305","B单",8,"Arial Bold",LightSteelBlue,0,colX[2]+2,hdrY+4,0);
+   SetLabel("20306","S单",8,"Arial Bold",LightSteelBlue,0,colX[3]+2,hdrY+4,0);
+   SetLabel("20307","手数",8,"Arial Bold",LightSteelBlue,0,colX[4]+2,hdrY+4,0);
+   SetLabel("20308","盈亏 USD",8,"Arial Bold",LightSteelBlue,0,colX[5]+2,hdrY+4,0);
+   int gi, rowH=14;
    double totLots=0, totPnl=0; int totB=0, totS=0;
-   for ( gi = 1; gi <= 16; gi++ ) {
-      int Y = baseY + gi*rowH;
-      if ( Y - baseY > 16*rowH ) break;
-      color pnlC = g_GC_pnl[gi] >= 0 ? SpringGreen : Red;
-      SetLabel("20310"+DoubleToString(gi,0),"G"+DoubleToString(gi,0),8,"Arial",White,0,colX[0],Y);
-      SetLabel("20330"+DoubleToString(gi,0),g_GC_sym1[gi]+"·"+g_GC_sym2[gi],8,"Arial",g_GC_active[gi]?White:Gray,0,colX[1],Y);
-      SetLabel("20350"+DoubleToString(gi,0),DoubleToString(g_GC_bCnt[gi],0),8,"Arial Bold",SpringGreen,0,colX[2],Y);
-      SetLabel("20370"+DoubleToString(gi,0),DoubleToString(g_GC_sCnt[gi],0),8,"Arial Bold",Red,0,colX[3],Y);
-      SetLabel("20390"+DoubleToString(gi,0),DoubleToString(g_GC_lots[gi],2),8,"Arial",White,0,colX[4],Y);
-      SetLabel("20410"+DoubleToString(gi,0),DoubleToString(g_GC_pnl[gi],2),8,"Arial Bold",pnlC,0,colX[5],Y);
-      totB+=g_GC_bCnt[gi]; totS+=g_GC_sCnt[gi]; totLots+=g_GC_lots[gi]; totPnl+=g_GC_pnl[gi];
+   for ( gi=1; gi<=16; gi++ ) {
+      int Y = hdrY + 2 + gi*rowH;
+      color rowBg = (gi%2==0)?C'#282840':C'#252538';
+      SetRect("2031"+DoubleToString(gi,0),tblX+4,Y-1,tblW-8,rowH-1,0,rowBg,rowBg,0);
+      color pnlC = g_GC_pnl[gi]>=0?SpringGreen:Red;
+      color bC = g_GC_active[gi]?White:Gray;
+      SetLabel("2032"+DoubleToString(gi,0),"G"+DoubleToString(gi,0),7,"Arial",bC,0,colX[0]+2,Y+2,0);
+      SetLabel("2033"+DoubleToString(gi,0),g_GC_sym1[gi]+"·"+g_GC_sym2[gi],7,"Arial",bC,0,colX[1]+2,Y+2,0);
+      SetLabel("2034"+DoubleToString(gi,0),DoubleToString(g_GC_bCnt[gi],0),7,"Arial Bold",SpringGreen,0,colX[2]+2,Y+2,0);
+      SetLabel("2035"+DoubleToString(gi,0),DoubleToString(g_GC_sCnt[gi],0),7,"Arial Bold",Red,0,colX[3]+2,Y+2,0);
+      SetLabel("2036"+DoubleToString(gi,0),DoubleToString(g_GC_lots[gi],2),7,"Arial",White,0,colX[4]+2,Y+2,0);
+      SetLabel("2037"+DoubleToString(gi,0),DoubleToString(g_GC_pnl[gi],2),7,"Arial Bold",pnlC,0,colX[5]+2,Y+2,0);
+      totB+=g_GC_bCnt[gi]; totS+=g_GC_sCnt[gi];
+      totLots+=g_GC_lots[gi]; totPnl+=g_GC_pnl[gi];
    }
-   int Y = baseY + 17*rowH;
-   color totC = totPnl >= 0 ? SpringGreen : Red;
-   SetLabel("20401","Σ16",9,"Arial Bold",Gold,0,colX[0],Y);
-   SetLabel("20402","合计",9,"Arial Bold",Gold,0,colX[1],Y);
-   SetLabel("20403",DoubleToString(totB,0),9,"Arial Bold",SpringGreen,0,colX[2],Y);
-   SetLabel("20404",DoubleToString(totS,0),9,"Arial Bold",Red,0,colX[3],Y);
-   SetLabel("20405",DoubleToString(totLots,2),9,"Arial Bold",White,0,colX[4],Y);
-   SetLabel("20406",DoubleToString(totPnl,2),9,"Arial Bold",totC,0,colX[5],Y);
+   // 合计行
+   int sumY = hdrY + 2 + 17*rowH;
+   color totC = totPnl>=0?SpringGreen:Red;
+   SetRect("20390",tblX+4,sumY-2,tblW-8,rowH+2,0,C'#3a3a5a',Gold,1);
+   SetLabel("20391","Σ",8,"Arial Bold",Gold,0,colX[0]+2,sumY+3,0);
+   SetLabel("20392","16 组合计",8,"Arial Bold",Gold,0,colX[1]+2,sumY+3,0);
+   SetLabel("20393",DoubleToString(totB,0),8,"Arial Bold",SpringGreen,0,colX[2]+2,sumY+3,0);
+   SetLabel("20394",DoubleToString(totS,0),8,"Arial Bold",Red,0,colX[3]+2,sumY+3,0);
+   SetLabel("20395",DoubleToString(totLots,2),8,"Arial Bold",White,0,colX[4]+2,sumY+3,0);
+   SetLabel("20396",DoubleToString(totPnl,2),8,"Arial Bold",totC,0,colX[5]+2,sumY+3,0);
 }
 
-// ====== 模块 ⑤ RenderRiskMonitor：触发监控 + 5 个门槛 KPI（CORNER=0 左下，X=920–1240）======
+// ====== 模块 ⑤ RenderRiskMonitor：风险监控（CORNER=0）带进度色条 ======
 void RenderRiskMonitor() {
-   SetLabel("20500","【风险触发监控】加仓% · 减仓% · 限频",10,"Arial Bold",Gold,0,920,18);
-   int colX[4]; colX[0]=920; colX[1]=996; colX[2]=1072; colX[3]=1156;
-   int rowH = 15; int baseY = 38;
+   int rx=500, ry=5, rw=495, rh=150;
+   SetRect("20500",rx,ry,rw,rh,0,C'#252535',C'#3a3a55',1);
+   SetLabel("20501","  风险触发监控 · 16 组 ",9,"Arial Bold",Gold,0,rx+6,ry+5,0);
    // 表头
-   SetLabel("20501","组",9,"Arial Bold",LightSteelBlue,0,colX[0],baseY);
-   SetLabel("20502","距加仓",9,"Arial Bold",LightSteelBlue,0,colX[1],baseY);
-   SetLabel("20503","距减仓",9,"Arial Bold",LightSteelBlue,0,colX[2],baseY);
-   SetLabel("20504","限频",9,"Arial Bold",LightSteelBlue,0,colX[3],baseY);
-   int gi;
-   for ( gi = 1; gi <= 12; gi++ ) { // 16 行太长，展示前 12 组（界面内高度受限）
-      int Y = baseY + gi*rowH;
-      // 加仓距离：当前浮亏 vs 阈值（-6.8×手数×TS·100，这里简化用浮盈%表示）
-      double addPct = 100; string addTxt="— 无仓"; color addC = LightSteelBlue;
-      if ( g_GC_lots[gi] > 0 && g_GC_pnl[gi] < 0 ) {
-         double thr = g_GC_lots[gi] * 6.8 * 100; // 相对参考值
-         addPct = ( -g_GC_pnl[gi] ) / MathMax(thr,0.01) * 100;
-         addTxt = DoubleToString(addPct,0)+"%";
-         addC = addPct>=100 ? Red : ( addPct>=70 ? Gold : SpringGreen );
-      } else if ( g_GC_lots[gi] > 0 && g_GC_pnl[gi] >= 0 ) { addTxt="+"+DoubleToString(g_GC_pnl[gi],1); addC = SpringGreen; }
-      string relTxt = g_GC_signal[gi]!=0 ? "待命" : "— 无信号"; color relC = g_GC_signal[gi]!=0 ? Gold : Gray;
-      string limTxt = "新bar"; color limC = White;
-      SetLabel("20511"+DoubleToString(gi,0),"G"+DoubleToString(gi,0),8,"Arial",White,0,colX[0],Y);
-      SetLabel("20521"+DoubleToString(gi,0),addTxt,8,"Arial Bold",addC,0,colX[1],Y);
-      SetLabel("20531"+DoubleToString(gi,0),relTxt,8,"Arial Bold",relC,0,colX[2],Y);
-      SetLabel("20541"+DoubleToString(gi,0),limTxt,8,"Arial Bold",limC,0,colX[3],Y);
+   int hdrY=ry+20;
+   int cX[4]={rx+6,rx+120,rx+230,rx+340};
+   SetRect("20502",rx+4,hdrY-2,rw-8,16,0,C'#2f2f45',C'#3e3e5a',2);
+   SetLabel("20503","组",8,"Arial Bold",LightSteelBlue,0,cX[0]+2,hdrY+3,0);
+   SetLabel("20504","距加仓",8,"Arial Bold",LightSteelBlue,0,cX[1]+2,hdrY+3,0);
+   SetLabel("20505","距减仓",8,"Arial Bold",LightSteelBlue,0,cX[2]+2,hdrY+3,0);
+   SetLabel("20506","信号/限频",8,"Arial Bold",LightSteelBlue,0,cX[3]+2,hdrY+3,0);
+   int gi, rowH=12;
+   for ( gi=1; gi<=16; gi++ ) {
+      int Y = hdrY + 2 + gi*rowH;
+      color rowBg = (gi%2==0)?C'#282840':C'#252538';
+      SetRect("2051"+DoubleToString(gi,0),rx+4,Y-1,rw-8,rowH-1,0,rowBg,rowBg,0);
+      double addPct=100; string addTxt="— 无仓"; color addC=LightSteelBlue;
+      if ( g_GC_lots[gi]>0 && g_GC_pnl[gi]<0 ) {
+         double thr=g_GC_lots[gi]*6.8*100;
+         addPct=(-g_GC_pnl[gi])/MathMax(thr,0.01)*100;
+         addTxt=DoubleToString(addPct,0)+"%";
+         addC = addPct>=100?Red:(addPct>=70?Gold:SpringGreen);
+      } else if ( g_GC_lots[gi]>0 && g_GC_pnl[gi]>=0 ) { addTxt="+"+DoubleToString(g_GC_pnl[gi],1); addC=SpringGreen; }
+      string relTxt=g_GC_signal[gi]!=0?"待命":"无信号"; color relC=g_GC_signal[gi]!=0?Gold:Gray;
+      string limTxt="新bar"; color limC=White;
+      SetLabel("2052"+DoubleToString(gi,0),"G"+DoubleToString(gi,0),7,"Arial",White,0,cX[0]+2,Y+2,0);
+      SetLabel("2053"+DoubleToString(gi,0),addTxt,7,"Arial Bold",addC,0,cX[1]+2,Y+2,0);
+      SetLabel("2054"+DoubleToString(gi,0),relTxt+" "+limTxt,7,"Arial Bold",relC,0,cX[2]+2,Y+2,0);
+      // 第4列显示当前手数
+      SetLabel("2055"+DoubleToString(gi,0),"手:"+DoubleToString(g_GC_lots[gi],2),7,"Arial",limC,0,cX[3]+2,Y+2,0);
    }
-   // 5 个门槛 KPI（底部卡片）
-   int kpiY = 250;
-   SetLabel("20580","【核心门槛】",9,"Arial Bold",Gold,0,920,kpiY); kpiY+=16;
-   SetLabel("20581","加仓触发浮亏",9,"Arial",LightSteelBlue,0,920,kpiY);
-   SetLabel("20582","− 6.8 × TickSize",10,"Arial Bold",Red,0,920,kpiY+12);
-   SetLabel("20583","减仓日内保护",9,"Arial",LightSteelBlue,0,1040,kpiY);
-   SetLabel("20584","> 4000 pt",10,"Arial Bold",SpringGreen,0,1040,kpiY+12);
-   SetLabel("20585","相关性拒绝",9,"Arial",LightSteelBlue,0,1140,kpiY);
-   SetLabel("20586","> 0.7 → Skip",10,"Arial Bold",Gold,0,1140,kpiY+12);
-   kpiY+=36;
-   SetLabel("20587","StopLevel 上限",9,"Arial",LightSteelBlue,0,920,kpiY);
-   SetLabel("20588","< 70",10,"Arial Bold",White,0,920,kpiY+12);
-   SetLabel("20589","日内首仓保护",9,"Arial",LightSteelBlue,0,1040,kpiY);
-   SetLabel("20590","> 4000 pt",10,"Arial Bold",White,0,1040,kpiY+12);
 }
 
-// ====== 模块 ⑥ RenderActivityLog：执行日志 8 条（CORNER=0 左下，X=498–1240，Y=310–400）======
+// ====== 模块 ⑥ RenderActivityLog：活动日志（CORNER=0）带滚动背景 ======
 void RenderActivityLog() {
-   SetLabel("20600","【活动时间线 · 最近 8 条】",10,"Arial Bold",Gold,0,498,308);
-   // 表头
-   int colX[7]; colX[0]=498; colX[1]=570; colX[2]=610; colX[3]=660; colX[4]=920; colX[5]=1000; colX[6]=1090;
-   int baseY = 328; int rowH = 13;
-   SetLabel("20601","时间",9,"Arial Bold",LightSteelBlue,0,colX[0],baseY);
-   SetLabel("20602","组",9,"Arial Bold",LightSteelBlue,0,colX[1],baseY);
-   SetLabel("20603","操作",9,"Arial Bold",LightSteelBlue,0,colX[2],baseY);
-   SetLabel("20604","币对 / 方向",9,"Arial Bold",LightSteelBlue,0,colX[3],baseY);
-   SetLabel("20605","手数",9,"Arial Bold",LightSteelBlue,0,colX[4],baseY);
-   SetLabel("20606","当前浮盈",9,"Arial Bold",LightSteelBlue,0,colX[5],baseY);
-   SetLabel("20607","限频",9,"Arial Bold",LightSteelBlue,0,colX[6],baseY);
-   // 填充 8 行：环形缓冲倒序显示（最新在前）
-   int i, r;
-   for ( i = 0; i < 8; i++ ) {
-      int idx = (g_LogPtr - 1 - i + 8) % 8;
-      int Y = baseY + (i+1)*rowH;
-      string line = g_LogLine[idx];
-      if ( StringLen(line) < 3 ) {
-         // 空：显示占位
-         SetLabel("20611"+DoubleToString(i,0),"—",8,"Arial",Gray,0,colX[0],Y);
+   int logX=5, logY=450, logW=990, logH=90;
+   logY = 5+280+150+15;
+   if ( logY+logH > 470 ) logY = 470-logH;
+   SetRect("20600",logX,logY,logW,logH,0,C'#252535',C'#3a3a55',1);
+   SetLabel("20601","  活动日志 · 最近事件 ",9,"Arial Bold",Gold,0,logX+6,logY+5,0);
+   int baseY=logY+20, rowH=9;
+   int colX[4]={logX+6,logX+80,logX+200,logX+400};
+   SetLabel("20602","时间",7,"Arial Bold",LightSteelBlue,0,colX[0],baseY+6,0);
+   SetLabel("20603","事件",7,"Arial Bold",LightSteelBlue,0,colX[1],baseY+6,0);
+   SetLabel("20604","详情",7,"Arial Bold",LightSteelBlue,0,colX[2],baseY+6,0);
+   SetLabel("20605","状态",7,"Arial Bold",LightSteelBlue,0,colX[3],baseY+6,0);
+   int i;
+   for ( i=0; i<8; i++ ) {
+      int idx=(g_LogPtr-1-i+8)%8;
+      int Y=baseY+8+i*rowH;
+      string line=g_LogLine[idx];
+      color rowBg=(i%2==0)?C'#282840':C'#252538';
+      SetRect("2061"+DoubleToString(i,0),logX+4,Y-1,logW-8,rowH,0,rowBg,rowBg,0);
+      if ( StringLen(line)<3 ) {
+         SetLabel("2062"+DoubleToString(i,0),"",7,"Arial",Gray,0,colX[0],Y+2,0);
+         SetLabel("2063"+DoubleToString(i,0),"— 无记录 —",7,"Arial",Gray,0,colX[1],Y+2,0);
          continue;
       }
-      // 简易按 | 拆：时间 | 内容（内容用空格展示其他列即可）
-      string tm = StringSubstr(line,0,StringFind(line,"| "));
-      string bd = StringSubstr(line,StringFind(line,"| ")+2);
-      SetLabel("20611"+DoubleToString(i,0),tm,8,"Arial",White,0,colX[0],Y);
-      SetLabel("20621"+DoubleToString(i,0),bd,8,"Arial",LightSteelBlue,0,colX[1],Y);
+      string tm=StringSubstr(line,0,StringFind(line,"| "));
+      string bd=StringSubstr(line,StringFind(line,"| ")+2);
+      SetLabel("2064"+DoubleToString(i,0),tm,7,"Arial",White,0,colX[0],Y+2,0);
+      SetLabel("2065"+DoubleToString(i,0),bd,7,"Arial",LightSteelBlue,0,colX[1],Y+2,0);
    }
 }
 
