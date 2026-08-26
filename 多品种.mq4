@@ -2554,2237 +2554,1229 @@ void RefreshGroupCache() {
 
  int UpdateStatusDisplay()
  {
-   // Step 1 & 2：首次初始化 + 每组一次缓存刷新（后续模块只读缓存）
+   // Step 1 & 2：首次初始化 + 每组一次缓存刷新
    EnsurePanelObjects();
    RefreshGroupCache();
 
- int         dfz_in_1=0;
- color       dfz_ui_2    =clrNONE;
- color       dfz_ui_3    =clrNONE;
- string      dfz_st_4;
- string      dfz_st_5;
- string      dfz_st_6;
- string      dfz_st_7;
+   // ===== 清理旧版残留对象（防止新旧共存导致重叠）=====
+   int __oldId;
+   string __oldName;
+   for(__oldId=10000; __oldId<=19999; __oldId++) {
+      __oldName = DoubleToString(__oldId, 0);
+      if(ObjectFind(__oldName) >= 0) {
+         ObjectDelete(__oldName);
+      }
+   }
+   if(ObjectFind("QIAN") >= 0) ObjectDelete("QIAN");
+   if(ObjectFind("11") >= 0) ObjectDelete("11");
 
- double     aa_do_169;
- string     aa_st_205;
+   // ===== v2 模块化面板（6 个 Render 函数）=====
+   RenderAccountKPI();
+   RenderSignalMatrix();
+   RenderStatusPillars();
+   RenderPositionTable();
+   RenderRiskMonitor();
+   RenderActivityLog();
+   return(0);
+}
+
+
+// ====== 模块 ① RenderAccountKPI：顶部 KPI 条（CORNER=1）背景卡 + 文字对齐 ======
+
+ void CloseAllPositions()
+ {
+ bool        dfz_bo_1;
+ int         dfz_in_2=0;
+
+ int        aa_in_7;
+
+ dfz_bo_1 = false ;
+ for (dfz_in_2 = OrdersTotal() ; dfz_in_2>=0 ; dfz_in_2 = dfz_in_2 - 1)
+  {
+  if ( OrderSelect(dfz_in_2,SELECT_BY_POS,MODE_TRADES)!=false && OrderMagicNumber()==g_MagicNumber )
+   {
+   if ( OrderType()==0 )
+    {
+    if(dfz_bo_1 = OrderClose(OrderTicket(),OrderLots(),MarketInfo(OrderSymbol(),9),0,Red)) { }
+    by_st_252 = StringConcatenate("关闭全部::",OrdersTotal(),"账单未结::",AccountBalance(),"") ;
+    SendStatusMail(); 
+    }
+   if ( OrderType()==1 )
+    {
+    if(dfz_bo_1 = OrderClose(OrderTicket(),OrderLots(),MarketInfo(OrderSymbol(),10),0,Red)) { }
+    by_st_252 = StringConcatenate("关闭全部::",OrdersTotal(),"账单未结::",AccountBalance(),"") ;
+    SendStatusMail(); 
+    }
+   if ( ( OrderType()==4 || OrderType()==2 || OrderType()==5 || OrderType()==3 ) )
+    {
+    if(dfz_bo_1 = OrderDelete(OrderTicket(),0xFFFFFFFF)) { }
+   }}
+  }
+ if (dfz_bo_1)  return;
+ for (aa_in_7 = OrdersTotal() ; aa_in_7>=0 ; aa_in_7=aa_in_7 - 1)
+  {
+  if ( OrderSelect(aa_in_7,SELECT_BY_POS,MODE_TRADES)!=false && OrderMagicNumber()==g_MagicNumber )
+   {
+   if ( OrderType()==0 )
+    {
+    if(OrderClose(OrderTicket(),OrderLots(),MarketInfo(OrderSymbol(),9),0,Red)) { }
+    }
+   if ( OrderType()==1 )
+    {
+    if(OrderClose(OrderTicket(),OrderLots(),MarketInfo(OrderSymbol(),10),0,Red)) { }
+    }
+   if ( ( OrderType()==4 || OrderType()==2 || OrderType()==5 || OrderType()==3 ) )
+    {
+    if(OrderDelete(OrderTicket(),0xFFFFFFFF)) { }
+   }}
+  }
+ Alert("Order failed to Close.Balance :: ",OrdersTotal(),""); 
+ by_st_252 = StringConcatenate("关闭失败::",OrdersTotal(),"账单未结::",AccountBalance(),"") ;
+ SendStatusMail(); 
+ }
+
+ void SendStatusMail()
+ {
+
+ by_st_253 = StringConcatenate("",AccountNumber(),"/余额::",DoubleToString(AccountBalance(),0) + "/净值::",DoubleToString(AccountEquity(),0) + "/浮盈::",DoubleToString(AccountProfit(),0) + "/订单::",OrdersTotal(),"/智能手数:: ",by_do_256,"/",ServerAddress() + "") ;
+ by_st_254 = " // " + by_st_252 + "\n" + " // EA名称::" + WindowExpertName() + "\n" + " // 图表品种:: " + Symbol() + "\n" + " // 两组盈亏:: " + DoubleToString(by_do_233 + by_do_234,2) + "\n" + StringConcatenate(" // 账户浮盈:: ",AccountProfit(),"\n") + StringConcatenate(" // 基础手数:: ",g_BaseLot,"\n") + StringConcatenate(" // 实开手数和:: ",by_do_237,"\n") + StringConcatenate(" // 持仓单量:: ",DoubleToString(by_in_118 + by_in_117,2),"\n") + " // 估算单量:: " + DoubleToString(by_do_190 + by_do_189,2) + "\n" + " // 智能调节手数:: " + DoubleToString(by_do_256,2) + " \n" + " // 历史手续费:: " + DoubleToString(by_do_240,2) + "+" + DoubleToString(by_do_241,2) + "USD \n" + " // 历史累计保证金:: " + DoubleToString(by_do_238,2) + " \n" + " // 账户余额:: " + DoubleToString(AccountBalance(),2) + " \n" + " // 账户净值:: " + DoubleToString(AccountEquity(),2) + " \n" + " // 历史平仓盈亏:: " + DoubleToString(by_do_239,2) + " \n" + " // 经纪商:: " + AccountCompany() + "\n" + " // 服务器:: " + ServerAddress() + "\n" + StringConcatenate(" // 可用保证金:: ",AccountFreeMargin(),"\n") + StringConcatenate(" // 已用保证金:: ",AccountMargin(),"\n") + StringConcatenate(" // 标准保证金=",MarketInfo(Symbol(),32),"\n") + StringConcatenate(" // 杠杆:: ",AccountLeverage(),"\n") + StringConcatenate(" // 账户姓名:: ",AccountName(),"\n") + StringConcatenate(" // 账户号码:: ",AccountNumber(),"\n") + StringConcatenate(" // 账户余额:: ",AccountBalance(),"\n") + StringConcatenate(" // 账户净值:: ",AccountEquity(),"\n") + StringConcatenate(" // 本地时间::",TimeToString(TimeLocal(),3),"\n") + StringConcatenate(" // 服务器时间::",TimeToString(TimeCurrent(),3),"\n") + StringConcatenate("MODE_POINT=",MarketInfo(Symbol(),11),"\n") + StringConcatenate("MODE_SPREAD=",MarketInfo(Symbol(),13),"\n") + StringConcatenate("MODE_STOPLEVEL=",MarketInfo(Symbol(),14),"\n") + StringConcatenate("MODE_LOTSIZE=",MarketInfo(Symbol(),15),"\n") + StringConcatenate("MODE_SWAPLONGbuy order=",MarketInfo(Symbol(),18),"\n") + StringConcatenate("MODE_SWAPSHORT sell order=",MarketInfo(Symbol(),19),"\n") + StringConcatenate("MODE_MINLOT=",MarketInfo(Symbol(),23),"\n") + StringConcatenate("MODE_LOTSTEP=",MarketInfo(Symbol(),24),"\n") + StringConcatenate("MODE_MAXLOT=",MarketInfo(Symbol(),25),"\n") + StringConcatenate("MODE_PROFITCALCMODE=",MarketInfo(Symbol(),27),"\n") + StringConcatenate("MODE_MARGININIT for 1 lot=",MarketInfo(Symbol(),29),"\n") + StringConcatenate("MODE_MARGINMAINTENANCEt=",MarketInfo(Symbol(),30),"\n") + StringConcatenate("MODE_MARGINHEDGED=",MarketInfo(Symbol(),31),"\n") + StringConcatenate("MODE_MARGINREQUIREDt=",MarketInfo(Symbol(),32),"\n") + StringConcatenate("MODE_FREEZELEVEL=",MarketInfo(Symbol(),33),"\n") + " " ;
+ SendMail(by_st_253,by_st_254); 
+ }
+
+ double GetCurrencyStrength (string bsw_0,int bsw_1)
+ {
+ int         dfz_in_1=0;
+ int         dfz_in_2=0;
+ int         dfz_in_3=0;
+ int         dfz_in_4=0;
+ double      dfz_do_5=0.0;
+ double      dfz_do_6=0.0;
+ double      dfz_do_7=0.0;
+ double      dfz_do_8=0.0;
+ double      dfz_do_9=0.0;
+ double      dfz_do_10=0.0;
+ double      dfz_do_11=0.0;
+ double      dfz_do_12=0.0;
+ double      dfz_do_13=0.0;
+ double      dfz_do_14=0.0;
+ double      dfz_do_15=0.0;
+ double      dfz_do_16=0.0;
+ double      dfz_do_17=0.0;
+ double      dfz_do_18=0.0;
+ int         dfz_in_19=0;
+ double      dfz_do_20=0.0;
+
+ dfz_in_1 = 3 ;
+ dfz_in_2 = 6 ;
+ dfz_in_3 = 2 ;
+ dfz_in_4 = 5 ;
+ dfz_in_19 = -1 ;
+ dfz_do_5 = GetMultiTimeframeMA("EURUSD",2,3,6,bsw_1) ;
+ dfz_do_6 = GetMultiTimeframeMA("EURUSD",5,3,6,bsw_1) ;
+ if ( ( dfz_do_5<=0 || dfz_do_6<=0 ) )
+  {
+  return(dfz_in_19); 
+  }
+ dfz_do_7 = GetMultiTimeframeMA("GBPUSD",dfz_in_3,dfz_in_1,dfz_in_2,bsw_1) ;
+ dfz_do_8 = GetMultiTimeframeMA("GBPUSD",dfz_in_4,dfz_in_1,dfz_in_2,bsw_1) ;
+ if ( ( dfz_do_7<=0 || dfz_do_8<=0 ) )
+  {
+  return(dfz_in_19); 
+  }
+ dfz_do_9 = GetMultiTimeframeMA("AUDUSD",dfz_in_3,dfz_in_1,dfz_in_2,bsw_1) ;
+ dfz_do_10 = GetMultiTimeframeMA("AUDUSD",dfz_in_4,dfz_in_1,dfz_in_2,bsw_1) ;
+ if ( ( dfz_do_9<=0 || dfz_do_10<=0 ) )
+  {
+  return(dfz_in_19); 
+  }
+ dfz_do_11 = GetMultiTimeframeMA("NZDUSD",dfz_in_3,dfz_in_1,dfz_in_2,bsw_1) ;
+ dfz_do_12 = GetMultiTimeframeMA("NZDUSD",dfz_in_4,dfz_in_1,dfz_in_2,bsw_1) ;
+ if ( ( dfz_do_11<=0 || dfz_do_12<=0 ) )
+  {
+  return(dfz_in_19); 
+  }
+ dfz_do_13 = GetMultiTimeframeMA("USDCAD",dfz_in_3,dfz_in_1,dfz_in_2,bsw_1) ;
+ dfz_do_14 = GetMultiTimeframeMA("USDCAD",dfz_in_4,dfz_in_1,dfz_in_2,bsw_1) ;
+ if ( ( dfz_do_13<=0 || dfz_do_14<=0 ) )
+  {
+  return(dfz_in_19); 
+  }
+ dfz_do_15 = GetMultiTimeframeMA("USDCHF",dfz_in_3,dfz_in_1,dfz_in_2,bsw_1) ;
+ dfz_do_16 = GetMultiTimeframeMA("USDCHF",dfz_in_4,dfz_in_1,dfz_in_2,bsw_1) ;
+ if ( ( dfz_do_15<=0 || dfz_do_16<=0 ) )
+  {
+  return(dfz_in_19); 
+  }
+ dfz_do_17 = GetMultiTimeframeMA("USDJPY",dfz_in_3,dfz_in_1,dfz_in_2,bsw_1) ;
+ dfz_do_18 = GetMultiTimeframeMA("USDJPY",dfz_in_4,dfz_in_1,dfz_in_2,bsw_1) ;
+ if ( ( dfz_do_17<=0 || dfz_do_18<=0 ) )
+  {
+  return(dfz_in_19); 
+  }
+ if ( bsw_0=="USD" )
+  {
+  dfz_do_20 = dfz_do_6 / dfz_do_5 - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_8 / dfz_do_7 - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_10 / dfz_do_9 - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_12 / dfz_do_11 - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_15 / dfz_do_16 - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_13 / dfz_do_14 - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_17 / dfz_do_18 - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_20 * 1000 ;
+  }
+ if ( bsw_0=="GBP" )
+  {
+  dfz_do_20 = dfz_do_7 / dfz_do_8 - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_6 / dfz_do_8 / (dfz_do_5 / dfz_do_7) - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_7 / dfz_do_9 / (dfz_do_8 / dfz_do_10) - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_7 / dfz_do_11 / (dfz_do_8 / dfz_do_12) - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_7 * dfz_do_15 / (dfz_do_8 * dfz_do_16) - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_7 * dfz_do_13 / (dfz_do_8 * dfz_do_14) - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_7 * dfz_do_17 / (dfz_do_8 * dfz_do_18) - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_20 * 1000 ;
+  }
+ if ( bsw_0=="EUR" )
+  {
+  dfz_do_20 = dfz_do_5 / dfz_do_6 - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_5 / dfz_do_7 / (dfz_do_6 / dfz_do_8) - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_5 / dfz_do_9 / (dfz_do_6 / dfz_do_10) - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_5 / dfz_do_11 / (dfz_do_6 / dfz_do_12) - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_5 * dfz_do_15 / (dfz_do_6 * dfz_do_16) - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_5 * dfz_do_13 / (dfz_do_6 * dfz_do_14) - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_5 * dfz_do_17 / (dfz_do_6 * dfz_do_18) - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_20 * 1000 ;
+  }
+ if ( bsw_0=="AUD" )
+  {
+  dfz_do_20 = dfz_do_9 / dfz_do_10 - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_6 / dfz_do_10 / (dfz_do_5 / dfz_do_9) - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_8 / dfz_do_10 / (dfz_do_7 / dfz_do_9) - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_9 / dfz_do_11 / (dfz_do_10 / dfz_do_12) - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_9 * dfz_do_15 / (dfz_do_10 * dfz_do_16) - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_9 * dfz_do_13 / (dfz_do_10 * dfz_do_14) - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_9 * dfz_do_17 / (dfz_do_10 * dfz_do_18) - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_20 * 1000 ;
+  }
+ if ( bsw_0=="CAD" )
+  {
+  dfz_do_20 = dfz_do_14 / dfz_do_13 - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_6 * dfz_do_14 / (dfz_do_5 * dfz_do_13) - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_8 * dfz_do_14 / (dfz_do_7 * dfz_do_13) - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_10 * dfz_do_14 / (dfz_do_9 * dfz_do_13) - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_12 * dfz_do_14 / (dfz_do_11 * dfz_do_13) - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_15 / dfz_do_13 / (dfz_do_16 / dfz_do_14) - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_17 / dfz_do_13 / (dfz_do_18 / dfz_do_14) - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_20 * 1000 ;
+  }
+ if ( bsw_0=="JPY" )
+  {
+  dfz_do_20 = dfz_do_18 / dfz_do_17 - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_6 * dfz_do_18 / (dfz_do_5 * dfz_do_17) - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_8 * dfz_do_18 / (dfz_do_7 * dfz_do_17) - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_10 * dfz_do_18 / (dfz_do_10 * dfz_do_17) - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_12 * dfz_do_18 / (dfz_do_11 * dfz_do_17) - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_18 / dfz_do_14 / (dfz_do_17 / dfz_do_14) - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_18 / dfz_do_16 / (dfz_do_18 / dfz_do_15) - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_20 * 1000 ;
+  }
+ if ( bsw_0=="CHF" )
+  {
+  dfz_do_20 = dfz_do_16 / dfz_do_15 - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_6 * dfz_do_16 / (dfz_do_5 * dfz_do_15) - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_8 * dfz_do_16 / (dfz_do_7 * dfz_do_15) - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_10 * dfz_do_16 / (dfz_do_9 * dfz_do_15) - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_12 * dfz_do_16 / (dfz_do_11 * dfz_do_15) - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_16 / dfz_do_14 / (dfz_do_15 / dfz_do_13) - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_17 / dfz_do_15 / (dfz_do_18 / dfz_do_16) - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_20 * 1000 ;
+  }
+ if ( bsw_0=="NZD" )
+  {
+  dfz_do_20 = dfz_do_11 / dfz_do_12 - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_6 / dfz_do_12 / (dfz_do_5 / dfz_do_11) - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_8 / dfz_do_12 / (dfz_do_7 / dfz_do_11) - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_10 / dfz_do_12 / (dfz_do_9 / dfz_do_11) - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_11 * dfz_do_15 / (dfz_do_12 * dfz_do_16) - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_11 * dfz_do_13 / (dfz_do_12 * dfz_do_14) - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_11 * dfz_do_17 / (dfz_do_12 * dfz_do_18) - 1 + dfz_do_20 ;
+  dfz_do_20 = dfz_do_20 * 1000 ;
+  }
+ return(NormalizeDouble(dfz_do_20,4)); 
+
+ }
+
+ double GetMultiTimeframeMA (string bsw_0,int bsw_1,int bsw_2,int bsw_3,int bsw_4)
+ {
+ double      dfz_do_1=0.0;
+ int         dfz_in_2=0;
+ int         dfz_in_3=0;
+ int         dfz_in_4=0;
+
+ dfz_in_2 = 4 ;
+ switch(Period())
+ {
+ case 1 :
+  dfz_do_1 = dfz_do_1 + iMA(bsw_0,dfz_in_4,bsw_1 * dfz_in_2,dfz_in_3,bsw_2,bsw_3,bsw_4) ;
+  dfz_in_2 = dfz_in_2 + 5;
+  case 5 :
+   dfz_do_1 = dfz_do_1 + iMA(bsw_0,dfz_in_4,bsw_1 * dfz_in_2,dfz_in_3,bsw_2,bsw_3,bsw_4) ;
+   dfz_in_2 = dfz_in_2 + 3;
+   case 15 :
+    dfz_do_1 = dfz_do_1 + iMA(bsw_0,dfz_in_4,bsw_1 * dfz_in_2,dfz_in_3,bsw_2,bsw_3,bsw_4) ;
+    dfz_in_2 = dfz_in_2 + 2;
+    case 30 :
+     dfz_do_1 = dfz_do_1 + iMA(bsw_0,dfz_in_4,bsw_1 * dfz_in_2,dfz_in_3,bsw_2,bsw_3,bsw_4) ;
+     dfz_in_2 = dfz_in_2 + 2;
+     case 60 :
+      dfz_do_1 = dfz_do_1 + iMA(bsw_0,dfz_in_4,bsw_1 * dfz_in_2,dfz_in_3,bsw_2,bsw_3,bsw_4) ;
+      dfz_in_2 = dfz_in_2 + 4;
+      case 240 :
+       dfz_do_1 = dfz_do_1 + iMA(bsw_0,dfz_in_4,bsw_1 * dfz_in_2,dfz_in_3,bsw_2,bsw_3,bsw_4) ;
+       dfz_in_2 = dfz_in_2 + 6;
+       case 1440 :
+        dfz_do_1 = dfz_do_1 + iMA(bsw_0,dfz_in_4,bsw_1 * dfz_in_2,dfz_in_3,bsw_2,bsw_3,bsw_4) ;
+        dfz_in_2 = dfz_in_2 + 5;
+        case 10080 :
+         dfz_do_1 = dfz_do_1 + iMA(bsw_0,dfz_in_4,bsw_1 * dfz_in_2,dfz_in_3,bsw_2,bsw_3,bsw_4) ;
+         dfz_in_2 = dfz_in_2 + 4;
+         case 43200 :
+          dfz_do_1 = dfz_do_1 + iMA(bsw_0,dfz_in_4,bsw_1 * dfz_in_2,dfz_in_3,bsw_2,bsw_3,bsw_4) ;
+          }
+         return(dfz_do_1); 
+         }
+
+         int ManageGroup (string bsw_0)
+         {
+ int         dfz_in_1=0;
+ int         dfz_in_2=0;
+ color       dfz_ui_3    =clrNONE;
+ color       dfz_ui_4    =clrNONE;
+ color       dfz_ui_5    =clrNONE;
+ double      dfz_do_6=0.0;
+ double      dfz_do_7=0.0;
+ double      dfz_do_8=0.0;
+ double      dfz_do_9=0.0;
+ double      dfz_do_10=0.0;
+ double      dfz_do_11=0.0;
+ double      dfz_do_12=0.0;
+ double      dfz_do_13=0.0;
+ double      dfz_do_14=0.0;
+ double      dfz_do_15=0.0;
+
+ string     aa_st_3;
+ string     aa_st_4;
+
+ string     aa_st_22;
+ string     aa_st_23;
+ string     aa_st_38;
+ string     aa_st_39;
+ int        aa_in_53;
+ int        aa_in_54;
+ int        aa_in_55;
+ bool       aa_bo_59;
+ bool       aa_bo_62;
+ double     aa_do_63;
+ int        aa_in_64;
+ int        aa_in_65;
+ double     aa_do_66;
+ double     aa_do_67;
+ int        aa_in_69;
+ double     aa_do_70;
+ double     aa_do_71;
+ string     aa_st_74;
+ int        aa_in_68;
+ int        aa_in_75;
+ int        aa_in_76;
+ string     aa_st_79;
+ int        aa_in_77;
+ int        aa_in_80;
+ int        aa_in_81;
+ int        aa_in_82;
+ int        aa_in_84;
+ int        aa_in_85;
+ string     aa_st_87;
+ double     aa_do_88;
+ int        aa_in_89;
+ double     aa_do_90;
+ int        aa_in_91;
+ int        aa_in_92;
+ int        aa_in_93;
+ double     aa_do_96;
+ int        aa_in_97;
+ bool       aa_bo_99;
+ bool       aa_bo_104;
+ string     aa_st_105;
+ int        aa_in_106;
+ int        aa_in_107;
+ string     aa_st_109;
+ int        aa_in_108;
+ int        aa_in_110;
+ string     aa_st_112;
+ int        aa_in_111;
+ int        aa_in_113;
+ string     aa_st_115;
+ int        aa_in_114;
+ int        aa_in_116;
+ string     aa_st_118;
+ int        aa_in_117;
+ int        aa_in_119;
+ int        aa_in_120;
+ string     aa_st_122;
+ double     aa_do_123;
+ int        aa_in_124;
+ double     aa_do_126;
+ string     aa_st_127;
+ int        aa_in_128;
+ int        aa_in_129;
+ string     aa_st_132;
+ int        aa_in_125;
+ int        aa_in_130;
+ int        aa_in_133;
+ string     aa_st_135;
+ double     aa_do_136;
+ int        aa_in_137;
+ double     aa_do_139;
+ string     aa_st_140;
+ int        aa_in_141;
+ int        aa_in_142;
+ bool       aa_bo_146;
+ string     aa_st_147;
+ string     aa_st_148;
+ double     aa_do_149;
+ int        aa_in_150;
+ string     aa_st_153;
+ double     aa_do_151;
+ int        aa_in_154;
+ double     aa_do_155;
+ string     aa_st_156;
+ double     aa_do_157;
+ int        aa_in_158;
+ double     aa_do_160;
+ string     aa_st_161;
+ double     aa_do_162;
+ int        aa_in_163;
+ double     aa_do_164;
+ string     aa_st_165;
+ double     aa_do_166;
+ int        aa_in_167;
+ bool       aa_bo_159;
+ string     aa_st_171;
+ string     aa_st_172;
+ double     aa_do_168;
+ int        aa_in_173;
+ string     aa_st_176;
+ double     aa_do_174;
+ int        aa_in_177;
+ double     aa_do_178;
+ string     aa_st_179;
+ double     aa_do_180;
+ int        aa_in_181;
+ double     aa_do_183;
+ string     aa_st_184;
+ double     aa_do_185;
+ int        aa_in_186;
+ double     aa_do_187;
+ string     aa_st_188;
+ double     aa_do_189;
+ int        aa_in_190;
+ bool       aa_bo_182;
+ string     aa_st_194;
+ string     aa_st_195;
+ double     aa_do_191;
+ int        aa_in_196;
+ string     aa_st_199;
+ double     aa_do_197;
+ int        aa_in_200;
+ double     aa_do_201;
+ string     aa_st_202;
+ double     aa_do_203;
+ int        aa_in_204;
+ double     aa_do_206;
  string     aa_st_207;
- string     aa_st_206;
- string     aa_st_208;
- string     aa_st_210;
- string     aa_st_209;
+ double     aa_do_208;
+ int        aa_in_209;
+ double     aa_do_210;
  string     aa_st_211;
- string     aa_st_213;
- string     aa_st_212;
- string     aa_st_215;
+ double     aa_do_212;
+ int        aa_in_213;
+ bool       aa_bo_205;
  string     aa_st_217;
  string     aa_st_218;
- string     aa_st_219;
- string     aa_st_221;
- string     aa_st_220;
+ double     aa_do_214;
+ int        aa_in_219;
  string     aa_st_222;
- string     aa_st_223;
- string     aa_st_224;
+ double     aa_do_220;
+ int        aa_in_223;
+ double     aa_do_224;
  string     aa_st_225;
- string     aa_st_227;
- string     aa_st_228;
+ double     aa_do_226;
+ int        aa_in_227;
+ double     aa_do_229;
  string     aa_st_230;
- string     aa_st_233;
+ double     aa_do_231;
+ int        aa_in_232;
+ double     aa_do_233;
  string     aa_st_234;
- string     aa_st_235;
- string     aa_st_238;
- string     aa_st_239;
- string     aa_st_240;
- string     aa_st_242;
- string     aa_st_241;
- string     aa_st_243;
- string     aa_st_246;
- string     aa_st_245;
- string     aa_st_247;
- string     aa_st_249;
- string     aa_st_248;
- string     aa_st_250;
- string     aa_st_252;
- string     aa_st_251;
- string     aa_st_253;
- string     aa_st_255;
- string     aa_st_254;
- string     aa_st_256;
- string     aa_st_258;
- string     aa_st_257;
- string     aa_st_263;
- string     aa_st_264;
- string     aa_st_265;
- string     aa_st_269;
- string     aa_st_270;
- string     aa_st_271;
- string     aa_st_275;
- string     aa_st_276;
- string     aa_st_277;
- string     aa_st_281;
- string     aa_st_282;
- string     aa_st_283;
- string     aa_st_287;
- string     aa_st_288;
- string     aa_st_289;
- string     aa_st_293;
- string     aa_st_294;
- string     aa_st_295;
- string     aa_st_299;
- string     aa_st_300;
- string     aa_st_301;
- string     aa_st_305;
- string     aa_st_306;
- string     aa_st_307;
- string     aa_st_311;
- string     aa_st_312;
- string     aa_st_313;
- string     aa_st_317;
- string     aa_st_318;
- string     aa_st_319;
- string     aa_st_323;
- string     aa_st_324;
- string     aa_st_325;
- string     aa_st_329;
- string     aa_st_330;
- string     aa_st_331;
- string     aa_st_335;
- string     aa_st_336;
- string     aa_st_337;
- string     aa_st_341;
- string     aa_st_342;
- string     aa_st_343;
- string     aa_st_347;
- string     aa_st_348;
- string     aa_st_349;
- string     aa_st_353;
- string     aa_st_354;
- string     aa_st_355;
- string     aa_st_359;
- string     aa_st_360;
- string     aa_st_361;
- string     aa_st_365;
- string     aa_st_366;
- string     aa_st_367;
- string     aa_st_371;
- string     aa_st_372;
- string     aa_st_373;
- string     aa_st_377;
- string     aa_st_378;
- string     aa_st_379;
- string     aa_st_383;
- string     aa_st_384;
- string     aa_st_385;
- string     aa_st_389;
- string     aa_st_390;
- string     aa_st_391;
- string     aa_st_395;
- string     aa_st_396;
- string     aa_st_397;
- string     aa_st_401;
- string     aa_st_402;
- string     aa_st_403;
- string     aa_st_407;
- string     aa_st_408;
- string     aa_st_409;
- string     aa_st_413;
- string     aa_st_414;
- string     aa_st_415;
- string     aa_st_419;
- string     aa_st_420;
- string     aa_st_421;
- string     aa_st_425;
- string     aa_st_426;
- string     aa_st_427;
- string     aa_st_431;
- string     aa_st_432;
- string     aa_st_433;
- string     aa_st_437;
- string     aa_st_438;
- string     aa_st_439;
- string     aa_st_443;
- string     aa_st_444;
- string     aa_st_445;
- string     aa_st_449;
- string     aa_st_450;
- string     aa_st_451;
+ double     aa_do_235;
+ int        aa_in_236;
 
- UpdateRiskParams(); 
+ g_GroupName = bsw_0 ;
  CalcSpreadSignal(); 
- ObjectCreate("10021",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10021",Symbol(),16,"Arial Bold",Red); 
- ObjectSet("10021",OBJPROP_CORNER,1); 
- ObjectSet("10021",OBJPROP_XDISTANCE,80); 
- ObjectSet("10021",OBJPROP_YDISTANCE,15); 
- ObjectCreate("10022",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10022","------------------------------------------",9,"Arial Bold",White); 
- ObjectSet("10022",OBJPROP_CORNER,1); 
- ObjectSet("10022",OBJPROP_XDISTANCE,25); 
- ObjectSet("10022",OBJPROP_YDISTANCE,29); 
- ObjectCreate("10050",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10050","挂单对冲系列",8,"Arial Bold",Gold); 
- ObjectSet("10050",OBJPROP_CORNER,1); 
- ObjectSet("10050",OBJPROP_XDISTANCE,50); 
- ObjectSet("10050",OBJPROP_YDISTANCE,39); 
- ObjectCreate("10023",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10023","------------------------------------------",9,"Arial Bold",White); 
- ObjectSet("10023",OBJPROP_CORNER,1); 
- ObjectSet("10023",OBJPROP_XDISTANCE,25); 
- ObjectSet("10023",OBJPROP_YDISTANCE,45); 
- ObjectCreate("10024",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10024",StringConcatenate(Year(),"年",Month(),"月",Day(),"日",TimeToString(TimeCurrent(),TIME_MINUTES)),13,"Arial Bold",Red); 
- ObjectSet("10024",OBJPROP_CORNER,1); 
- ObjectSet("10024",OBJPROP_XDISTANCE,36); 
- ObjectSet("10024",OBJPROP_YDISTANCE,55); 
- ObjectCreate("10025",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10025","------------------------------------------",9,"Arial Bold",White); 
- ObjectSet("10025",OBJPROP_CORNER,1); 
- ObjectSet("10025",OBJPROP_XDISTANCE,25); 
- ObjectSet("10025",OBJPROP_YDISTANCE,62); 
- ObjectCreate("10026",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10026","【组·监控】",14,"Arial Bold",LightSteelBlue); 
- ObjectSet("10026",OBJPROP_CORNER,1); 
- ObjectSet("10026",OBJPROP_XDISTANCE,55); 
- ObjectSet("10026",OBJPROP_YDISTANCE,21); 
- ObjectCreate("10027",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10027","【信号·活跃】",14,"Arial Bold",Red); 
- ObjectSet("10027",OBJPROP_CORNER,1); 
- ObjectSet("10027",OBJPROP_XDISTANCE,-5); 
- ObjectSet("10027",OBJPROP_YDISTANCE,13); 
- ObjectCreate("10028",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10028","------------------------------------------",9,"Arial Bold",White); 
- ObjectSet("10028",OBJPROP_CORNER,1); 
- ObjectSet("10028",OBJPROP_XDISTANCE,25); 
- ObjectSet("10028",OBJPROP_YDISTANCE,115); 
- ObjectCreate("10029",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10029","● R",10,"Arial Bold",Red); 
- ObjectSet("10029",OBJPROP_CORNER,1); 
- ObjectSet("10029",OBJPROP_XDISTANCE,25); 
- ObjectSet("10029",OBJPROP_YDISTANCE,113); 
- ObjectCreate("10030",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10030","● R",10,"Arial Bold",Red); 
- ObjectSet("10030",OBJPROP_CORNER,1); 
- ObjectSet("10030",OBJPROP_XDISTANCE,60); 
- ObjectSet("10030",OBJPROP_YDISTANCE,113); 
- ObjectCreate("10031",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10031","● G",10,"Arial Bold",SpringGreen); 
- ObjectSet("10031",OBJPROP_CORNER,1); 
- ObjectSet("10031",OBJPROP_XDISTANCE,110); 
- ObjectSet("10031",OBJPROP_YDISTANCE,113); 
- ObjectCreate("10032",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10032","● G",10,"Arial Bold",SpringGreen); 
- ObjectSet("10032",OBJPROP_CORNER,1); 
- ObjectSet("10032",OBJPROP_XDISTANCE,145); 
- ObjectSet("10032",OBJPROP_YDISTANCE,113); 
- ObjectCreate("10033",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10033","● B",10,"Arial Bold",LightBlue); 
- ObjectSet("10033",OBJPROP_CORNER,1); 
- ObjectSet("10033",OBJPROP_XDISTANCE,25); 
- ObjectSet("10033",OBJPROP_YDISTANCE,158); 
- ObjectCreate("10034",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10034","● B",10,"Arial Bold",LightBlue); 
- ObjectSet("10034",OBJPROP_CORNER,1); 
- ObjectSet("10034",OBJPROP_XDISTANCE,60); 
- ObjectSet("10034",OBJPROP_YDISTANCE,158); 
- ObjectCreate("10035",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10035","● ○",10,"Arial Bold",LightSteelBlue); 
- ObjectSet("10035",OBJPROP_CORNER,1); 
- ObjectSet("10035",OBJPROP_XDISTANCE,110); 
- ObjectSet("10035",OBJPROP_YDISTANCE,158); 
- ObjectCreate("10036",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10036","● ○",10,"Arial Bold",LightSteelBlue); 
- ObjectSet("10036",OBJPROP_CORNER,1); 
- ObjectSet("10036",OBJPROP_XDISTANCE,145); 
- ObjectSet("10036",OBJPROP_YDISTANCE,158); 
- ObjectCreate("10037",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10037","●",9,"Arial Bold",LightSteelBlue); 
- ObjectSet("10037",OBJPROP_CORNER,1); 
- ObjectSet("10037",OBJPROP_XDISTANCE,25); 
- ObjectSet("10037",OBJPROP_YDISTANCE,203); 
- ObjectCreate("10038",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10038","●",9,"Arial Bold",LightSteelBlue); 
- ObjectSet("10038",OBJPROP_CORNER,1); 
- ObjectSet("10038",OBJPROP_XDISTANCE,50); 
- ObjectSet("10038",OBJPROP_YDISTANCE,203); 
- ObjectCreate("10039",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10039","●",9,"Arial Bold",LightSteelBlue); 
- ObjectSet("10039",OBJPROP_CORNER,1); 
- ObjectSet("10039",OBJPROP_XDISTANCE,75); 
- ObjectSet("10039",OBJPROP_YDISTANCE,203); 
- ObjectCreate("10040",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10040","●",9,"Arial Bold",LightSteelBlue); 
- ObjectSet("10040",OBJPROP_CORNER,1); 
- ObjectSet("10040",OBJPROP_XDISTANCE,100); 
- ObjectSet("10040",OBJPROP_YDISTANCE,203); 
- ObjectCreate("10041",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10041","●",9,"Arial Bold",LightSteelBlue); 
- ObjectSet("10041",OBJPROP_CORNER,1); 
- ObjectSet("10041",OBJPROP_XDISTANCE,125); 
- ObjectSet("10041",OBJPROP_YDISTANCE,203); 
- ObjectCreate("10042",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10042","●",9,"Arial Bold",LightSteelBlue); 
- ObjectSet("10042",OBJPROP_CORNER,1); 
- ObjectSet("10042",OBJPROP_XDISTANCE,150); 
- ObjectSet("10042",OBJPROP_YDISTANCE,203); 
- ObjectCreate("10043",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10043","-----------------------------------------",9,"Arial Bold",White); 
- ObjectSet("10043",OBJPROP_CORNER,1); 
- ObjectSet("10043",OBJPROP_XDISTANCE,25); 
- ObjectSet("10043",OBJPROP_YDISTANCE,206); 
- ObjectCreate("10044",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10044","●",9,"Arial Bold",LightSteelBlue); 
- ObjectSet("10044",OBJPROP_CORNER,1); 
- ObjectSet("10044",OBJPROP_XDISTANCE,25); 
- ObjectSet("10044",OBJPROP_YDISTANCE,239); 
- ObjectCreate("10045",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10045","●",9,"Arial Bold",LightSteelBlue); 
- ObjectSet("10045",OBJPROP_CORNER,1); 
- ObjectSet("10045",OBJPROP_XDISTANCE,50); 
- ObjectSet("10045",OBJPROP_YDISTANCE,239); 
- ObjectCreate("10046",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10046","●",9,"Arial Bold",LightSteelBlue); 
- ObjectSet("10046",OBJPROP_CORNER,1); 
- ObjectSet("10046",OBJPROP_XDISTANCE,75); 
- ObjectSet("10046",OBJPROP_YDISTANCE,239); 
- ObjectCreate("10047",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10047","●",9,"Arial Bold",LightSteelBlue); 
- ObjectSet("10047",OBJPROP_CORNER,1); 
- ObjectSet("10047",OBJPROP_XDISTANCE,100); 
- ObjectSet("10047",OBJPROP_YDISTANCE,239); 
- ObjectCreate("10048",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10048","●",9,"Arial Bold",LightSteelBlue); 
- ObjectSet("10048",OBJPROP_CORNER,1); 
- ObjectSet("10048",OBJPROP_XDISTANCE,125); 
- ObjectSet("10048",OBJPROP_YDISTANCE,239); 
- ObjectCreate("10049",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10049","●",9,"Arial Bold",LightSteelBlue); 
- ObjectSet("10049",OBJPROP_CORNER,1); 
- ObjectSet("10049",OBJPROP_XDISTANCE,150); 
- ObjectSet("10049",OBJPROP_YDISTANCE,239); 
- ObjectCreate("10051",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10051","·",9,"Arial Bold",LightSteelBlue); 
- ObjectSet("10051",OBJPROP_CORNER,1); 
- ObjectSet("10051",OBJPROP_XDISTANCE,25); 
- ObjectSet("10051",OBJPROP_YDISTANCE,281); 
- ObjectCreate("10052",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10052","·",9,"Arial Bold",LightSteelBlue); 
- ObjectSet("10052",OBJPROP_CORNER,1); 
- ObjectSet("10052",OBJPROP_XDISTANCE,40); 
- ObjectSet("10052",OBJPROP_YDISTANCE,281); 
- ObjectCreate("10053",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10053","·",9,"Arial Bold",LightSteelBlue); 
- ObjectSet("10053",OBJPROP_CORNER,1); 
- ObjectSet("10053",OBJPROP_XDISTANCE,55); 
- ObjectSet("10053",OBJPROP_YDISTANCE,281); 
- ObjectCreate("10054",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10054","·",9,"Arial Bold",LightSteelBlue); 
- ObjectSet("10054",OBJPROP_CORNER,1); 
- ObjectSet("10054",OBJPROP_XDISTANCE,70); 
- ObjectSet("10054",OBJPROP_YDISTANCE,281); 
- ObjectCreate("10055",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10055","·",9,"Arial Bold",LightSteelBlue); 
- ObjectSet("10055",OBJPROP_CORNER,1); 
- ObjectSet("10055",OBJPROP_XDISTANCE,85); 
- ObjectSet("10055",OBJPROP_YDISTANCE,281); 
- ObjectCreate("10056",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10056","·",9,"Arial Bold",LightSteelBlue); 
- ObjectSet("10056",OBJPROP_CORNER,1); 
- ObjectSet("10056",OBJPROP_XDISTANCE,100); 
- ObjectSet("10056",OBJPROP_YDISTANCE,281); 
- ObjectCreate("10057",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10057","·",9,"Arial Bold",LightSteelBlue); 
- ObjectSet("10057",OBJPROP_CORNER,1); 
- ObjectSet("10057",OBJPROP_XDISTANCE,115); 
- ObjectSet("10057",OBJPROP_YDISTANCE,281); 
- ObjectCreate("10059",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10059","·",9,"Arial Bold",LightSteelBlue); 
- ObjectSet("10059",OBJPROP_CORNER,1); 
- ObjectSet("10059",OBJPROP_XDISTANCE,130); 
- ObjectSet("10059",OBJPROP_YDISTANCE,281); 
- ObjectCreate("10060",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10060","·",9,"Arial Bold",LightSteelBlue); 
- ObjectSet("10060",OBJPROP_CORNER,1); 
- ObjectSet("10060",OBJPROP_XDISTANCE,145); 
- ObjectSet("10060",OBJPROP_YDISTANCE,281); 
- ObjectCreate("10063",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10063","·",9,"Arial Bold",LightSteelBlue); 
- ObjectSet("10063",OBJPROP_CORNER,1); 
- ObjectSet("10063",OBJPROP_XDISTANCE,164); 
- ObjectSet("10063",OBJPROP_YDISTANCE,282); 
- ObjectCreate("10064",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10064","------------------------------------------",10,"Arial Bold",White); 
- ObjectSet("10064",OBJPROP_CORNER,1); 
- ObjectSet("10064",OBJPROP_XDISTANCE,25); 
- ObjectSet("10064",OBJPROP_YDISTANCE,304); 
- ObjectCreate("10065",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10065","对冲(02)",18,"Arial Bold",Gold); 
- ObjectSet("10065",OBJPROP_CORNER,1); 
- ObjectSet("10065",OBJPROP_XDISTANCE,40); 
- ObjectSet("10065",OBJPROP_YDISTANCE,312); 
- ObjectCreate("10066",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10066","------------------------------------------",10,"Arial Bold",White); 
- ObjectSet("10066",OBJPROP_CORNER,1); 
- ObjectSet("10066",OBJPROP_XDISTANCE,25); 
- ObjectSet("10066",OBJPROP_YDISTANCE,330); 
- ObjectCreate("10067",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10067","HOLYGRAIL EA",10,"Arial Bold",LightSteelBlue); 
- ObjectSet("10067",OBJPROP_CORNER,1); 
- ObjectSet("10067",OBJPROP_XDISTANCE,75); 
- ObjectSet("10067",OBJPROP_YDISTANCE,340); 
- ObjectCreate("10068",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10068","------------------------------------------",10,"Arial Bold",White); 
- ObjectSet("10068",OBJPROP_CORNER,1); 
- ObjectSet("10068",OBJPROP_XDISTANCE,25); 
- ObjectSet("10068",OBJPROP_YDISTANCE,345); 
- ObjectCreate("10069",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10069","适合所有货币对",10,"Arial Bold",LightSteelBlue); 
- ObjectSet("10069",OBJPROP_CORNER,1); 
- ObjectSet("10069",OBJPROP_XDISTANCE,70); 
- ObjectSet("10069",OBJPROP_YDISTANCE,360); 
- ObjectCreate("10070",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10070","------------------------------------------",10,"Arial Bold",White); 
- ObjectSet("10070",OBJPROP_CORNER,1); 
- ObjectSet("10070",OBJPROP_XDISTANCE,25); 
- ObjectSet("10070",OBJPROP_YDISTANCE,365); 
- ObjectCreate("10071",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10071","同时下注32货币对",10,"Arial Bold",LightSteelBlue); 
- ObjectSet("10071",OBJPROP_CORNER,1); 
- ObjectSet("10071",OBJPROP_XDISTANCE,55); 
- ObjectSet("10071",OBJPROP_YDISTANCE,380); 
- ObjectCreate("10072",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10072","------------------------------------------",10,"Arial Bold",White); 
- ObjectSet("10072",OBJPROP_CORNER,1); 
- ObjectSet("10072",OBJPROP_XDISTANCE,25); 
- ObjectSet("10072",OBJPROP_YDISTANCE,385); 
- ObjectCreate("10073",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10073",StringConcatenate("G.SELL(",DoubleToString(by_do_246,2),")"),8,"Arial Bold",0); 
- ObjectSet("10073",OBJPROP_CORNER,1); 
- ObjectSet("10073",OBJPROP_XDISTANCE,45); 
- ObjectSet("10073",OBJPROP_YDISTANCE,76); 
- ObjectCreate("10074",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10074",DoubleToString(by_do_190,0),11,"Arial Bold",0); 
- ObjectSet("10074",OBJPROP_CORNER,1); 
- ObjectSet("10074",OBJPROP_XDISTANCE,76); 
- ObjectSet("10074",OBJPROP_YDISTANCE,95); 
- ObjectCreate("10075",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10075",StringConcatenate("G.BUY(",DoubleToString(by_do_247,2),")"),8,"Arial Bold",0); 
- ObjectSet("10075",OBJPROP_CORNER,1); 
- ObjectSet("10075",OBJPROP_XDISTANCE,110); 
- ObjectSet("10075",OBJPROP_YDISTANCE,106); 
- ObjectCreate("10076",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10076",DoubleToString(by_do_189,0),11,"Arial Bold",0); 
- ObjectSet("10076",OBJPROP_CORNER,1); 
- ObjectSet("10076",OBJPROP_XDISTANCE,134); 
- ObjectSet("10076",OBJPROP_YDISTANCE,90); 
- aa_do_169 = by_do_226 + by_do_227;
-if (by_do_226 + by_do_227>0)  
- {
- by_do_264 = aa_do_169 ;
- by_do_265 = 0 ;
- }
- else
- {
- by_do_265 = by_do_226 + by_do_227 ;
- by_do_264 = 0 ;
- }
- ObjectCreate("10077",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10077","G.LOSS",9,"Arial Bold",0); 
- ObjectSet("10077",OBJPROP_CORNER,1); 
- ObjectSet("10077",OBJPROP_XDISTANCE,56); 
- ObjectSet("10077",OBJPROP_YDISTANCE,153); 
- ObjectCreate("10078",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10078",DoubleToString(by_do_265,1),12,"Arial Bold",0); 
- ObjectSet("10078",OBJPROP_CORNER,1); 
- ObjectSet("10078",OBJPROP_XDISTANCE,48); 
- ObjectSet("10078",OBJPROP_YDISTANCE,138); 
- ObjectCreate("10079",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10079","G.PROFIT",9,"Arial Bold",0); 
- ObjectSet("10079",OBJPROP_CORNER,1); 
- ObjectSet("10079",OBJPROP_XDISTANCE,125); 
- ObjectSet("10079",OBJPROP_YDISTANCE,153); 
- ObjectCreate("10080",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10080",DoubleToString(by_do_264,1),12,"Arial Bold",0); 
- ObjectSet("10080",OBJPROP_CORNER,1); 
- ObjectSet("10080",OBJPROP_XDISTANCE,131); 
- ObjectSet("10080",OBJPROP_YDISTANCE,138); 
- ObjectCreate("10081",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10081","G.MAGIC",9,"Arial Bold",0); 
- ObjectSet("10081",OBJPROP_CORNER,1); 
- ObjectSet("10081",OBJPROP_XDISTANCE,51); 
- ObjectSet("10081",OBJPROP_YDISTANCE,200); 
- ObjectCreate("10082",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10082",DoubleToString(g_MagicNumber,0),12,"Arial Bold",0); 
- ObjectSet("10082",OBJPROP_CORNER,1); 
- ObjectSet("10082",OBJPROP_XDISTANCE,48); 
- ObjectSet("10082",OBJPROP_YDISTANCE,180); 
- ObjectCreate("10083",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10083","G.RUNING",9,"Arial Bold",0); 
- ObjectSet("10083",OBJPROP_CORNER,1); 
- ObjectSet("10083",OBJPROP_XDISTANCE,126); 
- ObjectSet("10083",OBJPROP_YDISTANCE,200); 
- ObjectCreate("10084",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10084",DoubleToString(by_in_169,0),12,"Arial Bold",0); 
- ObjectSet("10084",OBJPROP_CORNER,1); 
- ObjectSet("10084",OBJPROP_XDISTANCE,128); 
- ObjectSet("10084",OBJPROP_YDISTANCE,180); 
- ObjectCreate("10085",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10085",DoubleToString(AccountBalance(),2),20,"Arial Bold",0); 
- ObjectSet("10085",OBJPROP_CORNER,1); 
- ObjectSet("10085",OBJPROP_XDISTANCE,60); 
- ObjectSet("10085",OBJPROP_YDISTANCE,225); 
- ObjectCreate("10086",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10086",DoubleToString(AccountEquity(),2),20,"Arial Bold",0); 
- ObjectSet("10086",OBJPROP_CORNER,1); 
- ObjectSet("10086",OBJPROP_XDISTANCE,60); 
- ObjectSet("10086",OBJPROP_YDISTANCE,260); 
- ObjectCreate("10087",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10087","多货币对冲",14,"Regular script",0); 
- ObjectSet("10087",OBJPROP_CORNER,1); 
- ObjectSet("10087",OBJPROP_XDISTANCE,36); 
- ObjectSet("10087",OBJPROP_YDISTANCE,293); 
- if ( OrdersTotal()!=0 )
+ by_bo_165 = false ;
+ if ( g_GroupName=="第1组2" )
   {
-  dfz_ui_2 = Chocolate ;
+  g_Symbol1 = H01Symbol ;
+  g_Symbol2 = H02Symbol ;
   }
- else
+ if ( g_GroupName=="第2组2" )
   {
-  dfz_ui_2 = White ;
+  g_Symbol1 = H03Symbol ;
+  g_Symbol2 = H04Symbol ;
   }
- if ( by_lo_151 != Day() )
+ if ( g_GroupName=="第3组2" )
   {
-  by_in_115=by_in_115 + 1;
-  by_lo_151 = Day() ;
+  g_Symbol1 = H05Symbol ;
+  g_Symbol2 = H06Symbol ;
   }
- aa_st_205 = "Regular script";
- aa_st_207 = "EA名称 :: " + WindowExpertName() + "\n";
- aa_st_206 = "10088";
- if ( dfz_in_1 != -1 )
-  { 
-  ObjectCreate(aa_st_206,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_206,aa_st_207,9,"Arial Bold",White); 
-  ObjectSet(aa_st_206,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_206,OBJPROP_XDISTANCE,77); 
-  ObjectSet(aa_st_206,OBJPROP_YDISTANCE,95); 
-  }
- aa_st_208 = "Regular script";
- aa_st_210 = "当前品种行情:: " + Symbol() + "//ASK=" + DoubleToString(Ask,5) + "//BID=" + DoubleToString(Bid,5);
- aa_st_209 = "10089";
- if ( dfz_in_1 != -1 )
-  {
-  ObjectCreate(aa_st_209,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_209,aa_st_210,10,aa_st_208,White); 
-  ObjectSet(aa_st_209,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_209,OBJPROP_XDISTANCE,77); 
-  ObjectSet(aa_st_209,OBJPROP_YDISTANCE,110); 
-  }
- aa_st_211 = "Regular script";
- aa_st_213 = "累计运行天数:: D" + DoubleToString(by_in_115,0) + "," + StringConcatenate("K线周期:",Period()) + "," + "星期:" + "W" + DoubleToString(DayOfWeek(),0) + "";
- aa_st_212 = "10090";
- if ( dfz_in_1 != -1 )
-  {
-  ObjectCreate(aa_st_212,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_212,aa_st_213,10,aa_st_211,White); 
-  ObjectSet(aa_st_212,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_212,OBJPROP_XDISTANCE,77); 
-  ObjectSet(aa_st_212,OBJPROP_YDISTANCE,125); 
-  }
- by_st_275 = Symbol() ;
- CalcSpreadSignal(); 
- if ( by_in_166==1 )
-  {
-  by_st_255 = "   多头信号  上下上    " + DoubleToString((Close[0] - by_do_96) / Point(),0) + " P   只多不空" ;
-  }
- if ( by_in_166==2 )
-  {
-  by_st_255 = "   空头信号  下上下    " + DoubleToString((by_do_96 - Close[0]) / Point(),0) + " P   只空不多" ;
-  }
- if ( by_in_166==0 )
-  {
-  by_st_255 = "   无方向  ——  等待" ;
-  }
- aa_st_215 = "Regular script";
- aa_st_217 = StringConcatenate("交易信号:: ",WindowExpertName() + by_st_255);
- aa_st_218 = "10091";
- if ( dfz_in_1 != -1 )
-  {
-  ObjectCreate(aa_st_218,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_218,aa_st_217,10,aa_st_215,DarkKhaki); 
-  ObjectSet(aa_st_218,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_218,OBJPROP_XDISTANCE,77); 
-  ObjectSet(aa_st_218,OBJPROP_YDISTANCE,140); 
-  }
- aa_st_219 = "Regular script";
- aa_st_221 = "累计开仓手数:: " + DoubleToString(by_do_237,2) + "  " + "总订单上限::" + DoubleToString(OrdersTotal(),0) + "//" + DoubleToString(AccountInfoInteger(47),0);
- aa_st_220 = "10092";
- if ( dfz_in_1 != -1 )
-  {
-  ObjectCreate(aa_st_220,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_220,aa_st_221,10,aa_st_219,dfz_ui_2); 
-  ObjectSet(aa_st_220,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_220,OBJPROP_XDISTANCE,77); 
-  ObjectSet(aa_st_220,OBJPROP_YDISTANCE,155); 
-  }
- aa_st_222 = "Regular script";
- aa_st_223=DoubleToString(by_do_241,2) + "USD \n"; 
- aa_st_224=DoubleToString( -by_do_240,2) + "+"; 
- aa_st_225=DoubleToString(by_do_237,2) + "//历史手续费:: "; 
- g_BaseLot = lot ;
- aa_st_227 = StringConcatenate("基础手数(lot)::",DoubleToString(lot,2)," 实开手数和:: ",aa_st_225,aa_st_224,aa_st_223);
- aa_st_228 = "10093";
- if ( dfz_in_1 != -1 )
-  {
-  ObjectCreate(aa_st_228,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_228,aa_st_227,10,aa_st_222,dfz_ui_2); 
-  ObjectSet(aa_st_228,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_228,OBJPROP_XDISTANCE,77); 
-  ObjectSet(aa_st_228,OBJPROP_YDISTANCE,170); 
-  }
- aa_do_169 = by_do_226 + by_do_227;
- if ( by_do_226 + by_do_227<0 )
-  {
-  by_do_250 = ( -aa_do_169) / AccountEquity() * 100 ;
-  }
- else
-  {
-  by_do_250 = 0 ;
-  }
- aa_st_230 = "Regular script";
- aa_st_233 = StringConcatenate("仓位风险率:: ",DoubleToString(by_do_198 / (AccountEquity() * 0.1 / MarketInfo(Symbol(),32)) * 100,2),"%   ","浮亏回撤率::",DoubleToString(by_do_250,2) + "%");
- aa_st_234 = "10094";
- if ( dfz_in_1 != -1 )
-  {
-  ObjectCreate(aa_st_234,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_234,aa_st_233,10,aa_st_230,dfz_ui_2); 
-  ObjectSet(aa_st_234,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_234,OBJPROP_XDISTANCE,77); 
-  ObjectSet(aa_st_234,OBJPROP_YDISTANCE,185); 
-  }
- aa_st_235 = "Regular script";
- aa_st_238 = StringConcatenate("累计占用保证金:: ",DoubleToString(by_do_237 + by_do_238,2),"//历史保证金:: ",DoubleToString(by_do_238,2));
- aa_st_239 = "10095";
- if ( dfz_in_1 != -1 )
-  {
-  ObjectCreate(aa_st_239,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_239,aa_st_238,10,aa_st_235,dfz_ui_2); 
-  ObjectSet(aa_st_239,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_239,OBJPROP_XDISTANCE,77); 
-  ObjectSet(aa_st_239,OBJPROP_YDISTANCE,200); 
-  }
- aa_st_240 = "Regular script";
- aa_st_242 = "历史平仓盈亏::" + DoubleToString(by_do_239,2) + "//账户余额::" + DoubleToString(AccountBalance(),2) + "//账户净值::" + DoubleToString(AccountEquity(),2);
- aa_st_241 = "10096";
- if ( dfz_in_1 != -1 )
-  {
-  ObjectCreate(aa_st_241,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_241,aa_st_242,10,aa_st_240,dfz_ui_2); 
-  ObjectSet(aa_st_241,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_241,OBJPROP_XDISTANCE,77); 
-  ObjectSet(aa_st_241,OBJPROP_YDISTANCE,215); 
-  }
- if ( by_in_182==1 )
-  {
-  by_in_123 = by_in_182 ;
-  }
- if ( by_in_182>1 )
-  {
-  by_in_123=by_in_182 / 4 + 1;
-  }
- aa_st_243 = "Regular script";
- aa_st_246 = StringConcatenate("网格分布:: 总层数=",DoubleToString(by_do_286,0),",上方挂单：",by_do_287,",下方挂单：",by_do_288) + "   活跃网格组数: " + DoubleToString(by_in_123,0);
- aa_st_245 = "10097";
- if ( dfz_in_1 != -1 )
-  {
-  ObjectCreate(aa_st_245,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_245,aa_st_246,10,aa_st_243,dfz_ui_2); 
-  ObjectSet(aa_st_245,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_245,OBJPROP_XDISTANCE,77); 
-  ObjectSet(aa_st_245,OBJPROP_YDISTANCE,230); 
-  }
- aa_st_247 = "Regular script";
- aa_st_249 = "预期盈亏目标::" + DoubleToString((by_do_190 + by_do_189 + 1) * by_do_225 * 100,2) + "USD  " + "已解锁货币对:: " + DoubleToString(by_in_90,0);
- aa_st_248 = "124689";
- if ( dfz_in_1 != -1 )
-  {
-  ObjectCreate(aa_st_248,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_248,aa_st_249,10,aa_st_247,White); 
-  ObjectSet(aa_st_248,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_248,OBJPROP_XDISTANCE,77); 
-  ObjectSet(aa_st_248,OBJPROP_YDISTANCE,245); 
-  }
- aa_st_250 = "Regular script";
- aa_st_252 = "最大单笔浮亏::" + DoubleToString( -by_do_248,2) + "USD" + " 最大单笔浮盈::" + DoubleToString(by_do_249,2) + "USD";
- aa_st_251 = "124699";
- if ( dfz_in_1 != -1 )
-  {
-  ObjectCreate(aa_st_251,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_251,aa_st_252,10,aa_st_250,White); 
-  ObjectSet(aa_st_251,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_251,OBJPROP_XDISTANCE,77); 
-  ObjectSet(aa_st_251,OBJPROP_YDISTANCE,260); 
-  }
- aa_st_253 = "Regular script";
- aa_st_255 = "经纪商:: " + AccountCompany();
- aa_st_254 = "1245";
- if ( dfz_in_1 != -1 )
-  {
-  ObjectCreate(aa_st_254,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_254,aa_st_255,10,aa_st_253,White); 
-  ObjectSet(aa_st_254,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_254,OBJPROP_XDISTANCE,77); 
-  ObjectSet(aa_st_254,OBJPROP_YDISTANCE,275); 
-  }
- aa_st_256 = "Regular script";
-aa_st_258 = "交易账号:: " + DoubleToString(AccountNumber(),0);
- aa_st_257 = "124687";
- if ( dfz_in_1 != -1 )
-  {
-  ObjectCreate(aa_st_257,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_257,aa_st_258,10,aa_st_256,White); 
-  ObjectSet(aa_st_257,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_257,OBJPROP_XDISTANCE,77); 
-  ObjectSet(aa_st_257,OBJPROP_YDISTANCE,290); 
-  }
- dfz_st_5 = "启动自我关闭" ;
- dfz_st_6 = "" ;
- dfz_st_7 = "" ;
- by_st_275 = H01Symbol ;
- g_GroupName = "第1组2" ;
- UpdateRiskParams(); 
- CalcSpreadSignal(); 
- if ( by_do_197>0 )
-  {
-  dfz_ui_3 = LimeGreen ;
-  }
- else
-  {
-  dfz_ui_3 = White ;
-  }
- if ( by_do_197!=0 )
-  {
-  dfz_st_4 = dfz_st_5 ;
-  }
- if ( by_bo_8==true )
-  {
-  dfz_ui_3 = Gold ;
-  }
- dfz_st_6 = "::挂单::OBL=" + DoubleToString(by_in_173,0) + "挂单::OSL=" + DoubleToString(by_in_172,0) + "::挂单::OBS=" + DoubleToString(by_in_174,0) + "挂单::OSS=" + DoubleToString(by_in_171,0) ;
- dfz_st_7 = "开单::B " + DoubleToString(by_in_117,0) + "  S " + DoubleToString(by_in_118,0) + " Blots:: " + DoubleToString(by_do_232,2) + "  Slots:: " + DoubleToString(by_do_199,2) + " 盈亏::" + DoubleToString(by_do_197,2) ;
- ObjectCreate("10122",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10122","(01)" + H01Symbol + dfz_st_7,9,"Regular script",dfz_ui_3); 
- ObjectSet("10122",OBJPROP_CORNER,0); 
- ObjectSet("10122",OBJPROP_XDISTANCE,498); 
- ObjectSet("10122",OBJPROP_YDISTANCE,95); 
- if ( by_bo_165 )
-  {
-  dfz_ui_3 = Red ;
-  dfz_st_4 = "开锁" ;
-  }
- else
-  {
-  dfz_ui_3 = LimeGreen ;
-  dfz_st_4 = "$$" ;
-  }
- aa_st_263 = "Regular script";
- aa_st_264 = dfz_st_4;
- aa_st_265 = "10123";
- if ( dfz_in_1 != -1 )
-  {
-  ObjectCreate(aa_st_265,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_265,aa_st_264,9,aa_st_263,dfz_ui_3); 
-  ObjectSet(aa_st_265,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_265,OBJPROP_XDISTANCE,919); 
-  ObjectSet(aa_st_265,OBJPROP_YDISTANCE,95); 
-  }
- by_st_275 = H02Symbol ;
- g_GroupName = "第1组2" ;
- UpdateRiskParams(); 
- CalcSpreadSignal(); 
- dfz_st_6 = "::挂单::OBL=" + DoubleToString(by_in_173,0) + "挂单::OSL=" + DoubleToString(by_in_172,0) + "::挂单::OBS=" + DoubleToString(by_in_174,0) + "挂单::OSS=" + DoubleToString(by_in_171,0) ;
- dfz_st_7 = "开单::B " + DoubleToString(by_in_117,0) + "  S " + DoubleToString(by_in_118,0) + " Blots:: " + DoubleToString(by_do_232,2) + "  Slots:: " + DoubleToString(by_do_199,2) + " 盈亏::" + DoubleToString(by_do_197,2) ;
- if ( by_do_197>0 )
-  {
-  dfz_ui_3 = LimeGreen ;
-  }
- else
-  {
-  dfz_ui_3 = White ;
-  }
- if ( by_do_197!=0 )
-  {
-  dfz_st_4 = dfz_st_5 ;
-  }
- if ( by_bo_9==true )
-  {
-  dfz_ui_3 = Gold ;
-  }
- ObjectCreate("10124",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10124","(01)" + H02Symbol + dfz_st_7,9,"Regular script",dfz_ui_3); 
- ObjectSet("10124",OBJPROP_CORNER,0); 
- ObjectSet("10124",OBJPROP_XDISTANCE,498); 
- ObjectSet("10124",OBJPROP_YDISTANCE,105); 
- if ( by_bo_165 )
-  {
-  dfz_ui_3 = Red ;
-  dfz_st_4 = "开锁" ;
-  }
- else
-  {
-  dfz_ui_3 = LimeGreen ;
-  dfz_st_4 = "$$" ;
-  }
- aa_st_269 = "Regular script";
- aa_st_270 = dfz_st_4;
- aa_st_271 = "10125";
- if ( dfz_in_1 != -1 )
-  {
-  ObjectCreate(aa_st_271,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_271,aa_st_270,9,aa_st_269,dfz_ui_3); 
-  ObjectSet(aa_st_271,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_271,OBJPROP_XDISTANCE,919); 
-  ObjectSet(aa_st_271,OBJPROP_YDISTANCE,105); 
-  }
- by_st_275 = H03Symbol ;
- g_GroupName = "第2组2" ;
- UpdateRiskParams(); 
- CalcSpreadSignal(); 
- dfz_st_6 = "::挂单::OBL=" + DoubleToString(by_in_173,0) + "挂单::OSL=" + DoubleToString(by_in_172,0) + "::挂单::OBS=" + DoubleToString(by_in_174,0) + "挂单::OSS=" + DoubleToString(by_in_171,0) ;
- dfz_st_7 = "开单::B " + DoubleToString(by_in_117,0) + "  S " + DoubleToString(by_in_118,0) + " Blots:: " + DoubleToString(by_do_232,2) + "  Slots:: " + DoubleToString(by_do_199,2) + " 盈亏::" + DoubleToString(by_do_197,2) ;
- if ( by_do_197>0 )
-  {
-  dfz_ui_3 = LimeGreen ;
-  }
- else
-  {
-  dfz_ui_3 = White ;
-  }
- if ( by_do_197!=0 )
-  {
-  dfz_st_4 = dfz_st_5 ;
-  }
- if ( by_bo_10==true )
-  {
-  dfz_ui_3 = Gold ;
-  }
- ObjectCreate("10126",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10126","(02)" + H03Symbol + dfz_st_7,9,"Regular script",dfz_ui_3); 
- ObjectSet("10126",OBJPROP_CORNER,0); 
- ObjectSet("10126",OBJPROP_XDISTANCE,498); 
- ObjectSet("10126",OBJPROP_YDISTANCE,115); 
- if ( by_bo_165 )
-  {
-  dfz_ui_3 = Red ;
-  dfz_st_4 = "开锁" ;
-  }
- else
-  {
-  dfz_ui_3 = LimeGreen ;
-  dfz_st_4 = "$$" ;
-  }
- aa_st_275 = "Regular script";
- aa_st_276 = dfz_st_4;
- aa_st_277 = "10127";
- if ( dfz_in_1 != -1 )
-  {
-  ObjectCreate(aa_st_277,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_277,aa_st_276,9,aa_st_275,dfz_ui_3); 
-  ObjectSet(aa_st_277,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_277,OBJPROP_XDISTANCE,919); 
-  ObjectSet(aa_st_277,OBJPROP_YDISTANCE,115); 
-  }
- by_st_275 = H04Symbol ;
- g_GroupName = "第2组2" ;
- UpdateRiskParams(); 
- CalcSpreadSignal(); 
- dfz_st_6 = "::挂单::OBL=" + DoubleToString(by_in_173,0) + "挂单::OSL=" + DoubleToString(by_in_172,0) + "::挂单::OBS=" + DoubleToString(by_in_174,0) + "挂单::OSS=" + DoubleToString(by_in_171,0) ;
- dfz_st_7 = "开单::B " + DoubleToString(by_in_117,0) + "  S " + DoubleToString(by_in_118,0) + " Blots:: " + DoubleToString(by_do_232,2) + "  Slots:: " + DoubleToString(by_do_199,2) + " 盈亏::" + DoubleToString(by_do_197,2) ;
- if ( by_do_197>0 )
-  {
-  dfz_ui_3 = LimeGreen ;
-  }
- else
-  {
-  dfz_ui_3 = White ;
-  }
- if ( by_do_197!=0 )
-  {
-  dfz_st_4 = dfz_st_5 ;
-  }
- if ( by_bo_11==true )
-  {
-  dfz_ui_3 = Gold ;
-  }
- ObjectCreate("10128",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10128","(02)" + H04Symbol + dfz_st_7,9,"Regular script",dfz_ui_3); 
- ObjectSet("10128",OBJPROP_CORNER,0); 
- ObjectSet("10128",OBJPROP_XDISTANCE,498); 
- ObjectSet("10128",OBJPROP_YDISTANCE,125); 
- if ( by_bo_165 )
-  {
-  dfz_ui_3 = Red ;
-  dfz_st_4 = "开锁" ;
-  }
- else
-  {
-  dfz_ui_3 = LimeGreen ;
-  dfz_st_4 = "$$" ;
-  }
- aa_st_281 = "Regular script";
- aa_st_282 = dfz_st_4;
- aa_st_283 = "10129";
- if ( dfz_in_1 != -1 )
-  {
-  ObjectCreate(aa_st_283,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_283,aa_st_282,9,aa_st_281,dfz_ui_3); 
-  ObjectSet(aa_st_283,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_283,OBJPROP_XDISTANCE,919); 
-  ObjectSet(aa_st_283,OBJPROP_YDISTANCE,125); 
-  }
- by_st_275 = H05Symbol ;
- g_GroupName = "第3组2" ;
- UpdateRiskParams(); 
- CalcSpreadSignal(); 
- dfz_st_6 = "::挂单::OBL=" + DoubleToString(by_in_173,0) + "挂单::OSL=" + DoubleToString(by_in_172,0) + "::挂单::OBS=" + DoubleToString(by_in_174,0) + "挂单::OSS=" + DoubleToString(by_in_171,0) ;
- dfz_st_7 = "开单::B " + DoubleToString(by_in_117,0) + "  S " + DoubleToString(by_in_118,0) + " Blots:: " + DoubleToString(by_do_232,2) + "  Slots:: " + DoubleToString(by_do_199,2) + " 盈亏::" + DoubleToString(by_do_197,2) ;
- if ( by_do_197>0 )
-  {
-  dfz_ui_3 = LimeGreen ;
-  }
- else
-  {
-  dfz_ui_3 = White ;
-  }
- if ( by_do_197!=0 )
-  {
-  dfz_st_4 = dfz_st_5 ;
-  }
- if ( by_bo_12==true )
-  {
-  dfz_ui_3 = Gold ;
-  }
- ObjectCreate("10130",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10130","(03)" + H05Symbol + dfz_st_7,9,"Regular script",dfz_ui_3); 
- ObjectSet("10130",OBJPROP_CORNER,0); 
- ObjectSet("10130",OBJPROP_XDISTANCE,498); 
- ObjectSet("10130",OBJPROP_YDISTANCE,135); 
- if ( by_bo_165 )
-  {
-  dfz_ui_3 = Red ;
-  dfz_st_4 = "开锁" ;
-  }
- else
-  {
-  dfz_ui_3 = LimeGreen ;
-  dfz_st_4 = "$$" ;
-  }
- aa_st_287 = "Regular script";
- aa_st_288 = dfz_st_4;
- aa_st_289 = "10131";
- if ( dfz_in_1 != -1 )
-  {
-  ObjectCreate(aa_st_289,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_289,aa_st_288,9,aa_st_287,dfz_ui_3); 
-  ObjectSet(aa_st_289,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_289,OBJPROP_XDISTANCE,919); 
-  ObjectSet(aa_st_289,OBJPROP_YDISTANCE,135); 
-  }
- by_st_275 = H06Symbol ;
- g_GroupName = "第3组2" ;
- UpdateRiskParams(); 
- CalcSpreadSignal(); 
- dfz_st_6 = "::挂单::OBL=" + DoubleToString(by_in_173,0) + "挂单::OSL=" + DoubleToString(by_in_172,0) + "::挂单::OBS=" + DoubleToString(by_in_174,0) + "挂单::OSS=" + DoubleToString(by_in_171,0) ;
- dfz_st_7 = "开单::B " + DoubleToString(by_in_117,0) + "  S " + DoubleToString(by_in_118,0) + " Blots:: " + DoubleToString(by_do_232,2) + "  Slots:: " + DoubleToString(by_do_199,2) + " 盈亏::" + DoubleToString(by_do_197,2) ;
- if ( by_do_197>0 )
-  {
-  dfz_ui_3 = LimeGreen ;
-  }
- else
-  {
-  dfz_ui_3 = White ;
-  }
- if ( by_do_197!=0 )
-  {
-  dfz_st_4 = dfz_st_5 ;
-  }
- if ( by_bo_13==true )
-  {
-  dfz_ui_3 = Gold ;
-  }
- ObjectCreate("10132",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10132","(03)" + H06Symbol + dfz_st_7,9,"Regular script",dfz_ui_3); 
- ObjectSet("10132",OBJPROP_CORNER,0); 
- ObjectSet("10132",OBJPROP_XDISTANCE,498); 
- ObjectSet("10132",OBJPROP_YDISTANCE,145); 
- if ( by_bo_165 )
-  {
-  dfz_ui_3 = Red ;
-  dfz_st_4 = "开锁" ;
-  }
- else
-  {
-  dfz_ui_3 = LimeGreen ;
-  dfz_st_4 = "$$" ;
-  }
- aa_st_293 = "Regular script";
- aa_st_294 = dfz_st_4;
- aa_st_295 = "10133";
- if ( dfz_in_1 != -1 )
-  {
-  ObjectCreate(aa_st_295,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_295,aa_st_294,9,aa_st_293,dfz_ui_3); 
-  ObjectSet(aa_st_295,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_295,OBJPROP_XDISTANCE,919); 
-  ObjectSet(aa_st_295,OBJPROP_YDISTANCE,145); 
-  }
- by_st_275 = H07Symbol ;
- g_GroupName = "第4组2" ;
- UpdateRiskParams(); 
- CalcSpreadSignal(); 
- dfz_st_6 = "::挂单::OBL=" + DoubleToString(by_in_173,0) + "挂单::OSL=" + DoubleToString(by_in_172,0) + "::挂单::OBS=" + DoubleToString(by_in_174,0) + "挂单::OSS=" + DoubleToString(by_in_171,0) ;
- dfz_st_7 = "开单::B " + DoubleToString(by_in_117,0) + "  S " + DoubleToString(by_in_118,0) + " Blots:: " + DoubleToString(by_do_232,2) + "  Slots:: " + DoubleToString(by_do_199,2) + " 盈亏::" + DoubleToString(by_do_197,2) ;
- if ( by_do_197>0 )
-  {
-  dfz_ui_3 = LimeGreen ;
-  }
- else
-  {
-  dfz_ui_3 = White ;
-  }
- if ( by_do_197!=0 )
-  {
-  dfz_st_4 = dfz_st_5 ;
-  }
- if ( by_bo_14==true )
-  {
-  dfz_ui_3 = Gold ;
-  }
- ObjectCreate("10134",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10134","(04)" + H07Symbol + dfz_st_7,9,"Regular script",dfz_ui_3); 
- ObjectSet("10134",OBJPROP_CORNER,0); 
- ObjectSet("10134",OBJPROP_XDISTANCE,498); 
- ObjectSet("10134",OBJPROP_YDISTANCE,155); 
- if ( by_bo_165 )
-  {
-  dfz_ui_3 = Red ;
-  dfz_st_4 = "开锁" ;
-  }
- else
-  {
-  dfz_ui_3 = LimeGreen ;
-  dfz_st_4 = "$$" ;
-  }
- aa_st_299 = "Regular script";
- aa_st_300 = dfz_st_4;
- aa_st_301 = "10135";
- if ( dfz_in_1 != -1 )
-  {
-  ObjectCreate(aa_st_301,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_301,aa_st_300,9,aa_st_299,dfz_ui_3); 
-  ObjectSet(aa_st_301,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_301,OBJPROP_XDISTANCE,919); 
-  ObjectSet(aa_st_301,OBJPROP_YDISTANCE,155); 
-  }
- by_st_275 = H08Symbol ;
- g_GroupName = "第4组2" ;
- UpdateRiskParams(); 
- CalcSpreadSignal(); 
- dfz_st_6 = "::挂单::OBL=" + DoubleToString(by_in_173,0) + "挂单::OSL=" + DoubleToString(by_in_172,0) + "::挂单::OBS=" + DoubleToString(by_in_174,0) + "挂单::OSS=" + DoubleToString(by_in_171,0) ;
- dfz_st_7 = "开单::B " + DoubleToString(by_in_117,0) + "  S " + DoubleToString(by_in_118,0) + " Blots:: " + DoubleToString(by_do_232,2) + "  Slots:: " + DoubleToString(by_do_199,2) + " 盈亏::" + DoubleToString(by_do_197,2) ;
- if ( by_do_197>0 )
-  {
-  dfz_ui_3 = LimeGreen ;
-  }
- else
-  {
-  dfz_ui_3 = White ;
-  }
- if ( by_do_197!=0 )
-  {
-  dfz_st_4 = dfz_st_5 ;
-  }
- if ( by_bo_15==true )
-  {
-  dfz_ui_3 = Gold ;
-  }
- ObjectCreate("10136",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10136","(04)" + H08Symbol + dfz_st_7,9,"Regular script",dfz_ui_3); 
- ObjectSet("10136",OBJPROP_CORNER,0); 
- ObjectSet("10136",OBJPROP_XDISTANCE,498); 
- ObjectSet("10136",OBJPROP_YDISTANCE,165); 
- if ( by_bo_165 )
-  {
-  dfz_ui_3 = Red ;
-  dfz_st_4 = "开锁" ;
-  }
- else
-  {
-  dfz_ui_3 = LimeGreen ;
-  dfz_st_4 = "$$" ;
-  }
- aa_st_305 = "Regular script";
- aa_st_306 = dfz_st_4;
- aa_st_307 = "10137";
- if ( dfz_in_1 != -1 )
-  {
-  ObjectCreate(aa_st_307,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_307,aa_st_306,9,aa_st_305,dfz_ui_3); 
-  ObjectSet(aa_st_307,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_307,OBJPROP_XDISTANCE,919); 
-  ObjectSet(aa_st_307,OBJPROP_YDISTANCE,165); 
-  }
- by_st_275 = H09Symbol ;
- g_GroupName = "第5组2" ;
- UpdateRiskParams(); 
- CalcSpreadSignal(); 
- dfz_st_6 = "::挂单::OBL=" + DoubleToString(by_in_173,0) + "挂单::OSL=" + DoubleToString(by_in_172,0) + "::挂单::OBS=" + DoubleToString(by_in_174,0) + "挂单::OSS=" + DoubleToString(by_in_171,0) ;
- dfz_st_7 = "开单::B " + DoubleToString(by_in_117,0) + "  S " + DoubleToString(by_in_118,0) + " Blots:: " + DoubleToString(by_do_232,2) + "  Slots:: " + DoubleToString(by_do_199,2) + " 盈亏::" + DoubleToString(by_do_197,2) ;
- if ( by_do_197>0 )
-  {
-  dfz_ui_3 = LimeGreen ;
-  }
- else
-  {
-  dfz_ui_3 = White ;
-  }
- if ( by_do_197!=0 )
-  {
-  dfz_st_4 = dfz_st_5 ;
-  }
- if ( by_bo_16==true )
-  {
-  dfz_ui_3 = Gold ;
-  }
- ObjectCreate("10138",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10138","(05)" + H09Symbol + dfz_st_7,9,"Regular script",dfz_ui_3); 
- ObjectSet("10138",OBJPROP_CORNER,0); 
- ObjectSet("10138",OBJPROP_XDISTANCE,498); 
- ObjectSet("10138",OBJPROP_YDISTANCE,175); 
- if ( by_bo_165 )
-  {
-  dfz_ui_3 = Red ;
-  dfz_st_4 = "开锁" ;
-  }
- else
-  {
-  dfz_ui_3 = LimeGreen ;
-  dfz_st_4 = "$$" ;
-  }
- aa_st_311 = "Regular script";
- aa_st_312 = dfz_st_4;
- aa_st_313 = "10139";
- if ( dfz_in_1 != -1 )
-  {
-  ObjectCreate(aa_st_313,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_313,aa_st_312,9,aa_st_311,dfz_ui_3); 
-  ObjectSet(aa_st_313,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_313,OBJPROP_XDISTANCE,919); 
-  ObjectSet(aa_st_313,OBJPROP_YDISTANCE,175); 
-  }
- by_st_275 = H10Symbol ;
- g_GroupName = "第5组2" ;
- UpdateRiskParams(); 
- CalcSpreadSignal(); 
- dfz_st_6 = "::挂单::OBL=" + DoubleToString(by_in_173,0) + "挂单::OSL=" + DoubleToString(by_in_172,0) + "::挂单::OBS=" + DoubleToString(by_in_174,0) + "挂单::OSS=" + DoubleToString(by_in_171,0) ;
- dfz_st_7 = "开单::B " + DoubleToString(by_in_117,0) + "  S " + DoubleToString(by_in_118,0) + " Blots:: " + DoubleToString(by_do_232,2) + "  Slots:: " + DoubleToString(by_do_199,2) + " 盈亏::" + DoubleToString(by_do_197,2) ;
- if ( by_do_197>0 )
-  {
-  dfz_ui_3 = LimeGreen ;
-  }
- else
-  {
-  dfz_ui_3 = White ;
-  }
- if ( by_do_197!=0 )
-  {
-  dfz_st_4 = dfz_st_5 ;
-  }
- if ( by_bo_17==true )
-  {
-  dfz_ui_3 = Gold ;
-  }
- ObjectCreate("10140",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10140","(05)" + H10Symbol + dfz_st_7,9,"Regular script",dfz_ui_3); 
- ObjectSet("10140",OBJPROP_CORNER,0); 
- ObjectSet("10140",OBJPROP_XDISTANCE,498); 
- ObjectSet("10140",OBJPROP_YDISTANCE,185); 
- if ( by_bo_165 )
-  {
-  dfz_ui_3 = Red ;
-  dfz_st_4 = "开锁" ;
-  }
- else
-  {
-  dfz_ui_3 = LimeGreen ;
-  dfz_st_4 = "$$" ;
-  }
- aa_st_317 = "Regular script";
- aa_st_318 = dfz_st_4;
- aa_st_319 = "10141";
- if ( dfz_in_1 != -1 )
-  {
-  ObjectCreate(aa_st_319,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_319,aa_st_318,9,aa_st_317,dfz_ui_3); 
-  ObjectSet(aa_st_319,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_319,OBJPROP_XDISTANCE,919); 
-  ObjectSet(aa_st_319,OBJPROP_YDISTANCE,185); 
-  }
- by_st_275 = H11Symbol ;
- g_GroupName = "第6组2" ;
- UpdateRiskParams(); 
- CalcSpreadSignal(); 
- dfz_st_6 = "::挂单::OBL=" + DoubleToString(by_in_173,0) + "挂单::OSL=" + DoubleToString(by_in_172,0) + "::挂单::OBS=" + DoubleToString(by_in_174,0) + "挂单::OSS=" + DoubleToString(by_in_171,0) ;
- dfz_st_7 = "开单::B " + DoubleToString(by_in_117,0) + "  S " + DoubleToString(by_in_118,0) + " Blots:: " + DoubleToString(by_do_232,2) + "  Slots:: " + DoubleToString(by_do_199,2) + " 盈亏::" + DoubleToString(by_do_197,2) ;
- if ( by_do_197>0 )
-  {
-  dfz_ui_3 = LimeGreen ;
-  }
- else
-  {
-  dfz_ui_3 = White ;
-  }
- if ( by_do_197!=0 )
-  {
-  dfz_st_4 = dfz_st_5 ;
-  }
- if ( by_bo_18==true )
-  {
-  dfz_ui_3 = Gold ;
-  }
- ObjectCreate("10142",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10142","(06)" + H11Symbol + dfz_st_7,9,"Regular script",dfz_ui_3); 
- ObjectSet("10142",OBJPROP_CORNER,0); 
- ObjectSet("10142",OBJPROP_XDISTANCE,498); 
- ObjectSet("10142",OBJPROP_YDISTANCE,195); 
- if ( by_bo_165 )
-  {
-  dfz_ui_3 = Red ;
-  dfz_st_4 = "开锁" ;
-  }
- else
-  {
-  dfz_ui_3 = LimeGreen ;
-  dfz_st_4 = "$$" ;
-  }
- aa_st_323 = "Regular script";
- aa_st_324 = dfz_st_4;
- aa_st_325 = "10143";
- if ( dfz_in_1 != -1 )
-  {
-  ObjectCreate(aa_st_325,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_325,aa_st_324,9,aa_st_323,dfz_ui_3); 
-  ObjectSet(aa_st_325,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_325,OBJPROP_XDISTANCE,919); 
-  ObjectSet(aa_st_325,OBJPROP_YDISTANCE,195); 
-  }
- by_st_275 = H12Symbol ;
- g_GroupName = "第6组2" ;
- UpdateRiskParams(); 
- CalcSpreadSignal(); 
- dfz_st_6 = "::挂单::OBL=" + DoubleToString(by_in_173,0) + "挂单::OSL=" + DoubleToString(by_in_172,0) + "::挂单::OBS=" + DoubleToString(by_in_174,0) + "挂单::OSS=" + DoubleToString(by_in_171,0) ;
- dfz_st_7 = "开单::B " + DoubleToString(by_in_117,0) + "  S " + DoubleToString(by_in_118,0) + " Blots:: " + DoubleToString(by_do_232,2) + "  Slots:: " + DoubleToString(by_do_199,2) + " 盈亏::" + DoubleToString(by_do_197,2) ;
- if ( by_do_197>0 )
-  {
-  dfz_ui_3 = LimeGreen ;
-  }
- else
-  {
-  dfz_ui_3 = White ;
-  }
- if ( by_do_197!=0 )
-  {
-  dfz_st_4 = dfz_st_5 ;
-  }
- if ( by_bo_19==true )
-  {
-  dfz_ui_3 = Gold ;
-  }
- ObjectCreate("10144",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10144","(06)" + H12Symbol + dfz_st_7,9,"Regular script",dfz_ui_3); 
- ObjectSet("10144",OBJPROP_CORNER,0); 
- ObjectSet("10144",OBJPROP_XDISTANCE,498); 
- ObjectSet("10144",OBJPROP_YDISTANCE,205); 
- if ( by_bo_165 )
-  {
-  dfz_ui_3 = Red ;
-  dfz_st_4 = "开锁" ;
-  }
- else
-  {
-  dfz_ui_3 = LimeGreen ;
-  dfz_st_4 = "$$" ;
-  }
- aa_st_329 = "Regular script";
- aa_st_330 = dfz_st_4;
- aa_st_331 = "10145";
- if ( dfz_in_1 != -1 )
-  {
-  ObjectCreate(aa_st_331,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_331,aa_st_330,9,aa_st_329,dfz_ui_3); 
-  ObjectSet(aa_st_331,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_331,OBJPROP_XDISTANCE,919); 
-  ObjectSet(aa_st_331,OBJPROP_YDISTANCE,205); 
-  }
- by_st_275 = H13Symbol ;
- g_GroupName = "第7组2" ;
- UpdateRiskParams(); 
- CalcSpreadSignal(); 
- dfz_st_6 = "::挂单::OBL=" + DoubleToString(by_in_173,0) + "挂单::OSL=" + DoubleToString(by_in_172,0) + "::挂单::OBS=" + DoubleToString(by_in_174,0) + "挂单::OSS=" + DoubleToString(by_in_171,0) ;
- dfz_st_7 = "开单::B " + DoubleToString(by_in_117,0) + "  S " + DoubleToString(by_in_118,0) + " Blots:: " + DoubleToString(by_do_232,2) + "  Slots:: " + DoubleToString(by_do_199,2) + " 盈亏::" + DoubleToString(by_do_197,2) ;
- if ( by_do_197>0 )
-  {
-  dfz_ui_3 = LimeGreen ;
-  }
- else
-  {
-  dfz_ui_3 = White ;
-  }
- if ( by_do_197!=0 )
-  {
-  dfz_st_4 = dfz_st_5 ;
-  }
- if ( by_bo_20==true )
-  {
-  dfz_ui_3 = Gold ;
-  }
- ObjectCreate("10189",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10189","(07)" + H13Symbol + dfz_st_7,9,"Regular script",dfz_ui_3); 
- ObjectSet("10189",OBJPROP_CORNER,0); 
- ObjectSet("10189",OBJPROP_XDISTANCE,498); 
- ObjectSet("10189",OBJPROP_YDISTANCE,215); 
- if ( by_bo_165 )
+ if ( g_GroupName=="第4组2" )
   {
-  dfz_ui_3 = Red ;
-  dfz_st_4 = "开锁" ;
+  g_Symbol1 = H07Symbol ;
+  g_Symbol2 = H08Symbol ;
   }
- else
+ if ( g_GroupName=="第5组2" )
   {
-  dfz_ui_3 = LimeGreen ;
-  dfz_st_4 = "$$" ;
+  g_Symbol1 = H09Symbol ;
+  g_Symbol2 = H10Symbol ;
   }
- aa_st_335 = "Regular script";
- aa_st_336 = dfz_st_4;
- aa_st_337 = "10146";
- if ( dfz_in_1 != -1 )
+ if ( g_GroupName=="第6组2" )
   {
-  ObjectCreate(aa_st_337,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_337,aa_st_336,9,aa_st_335,dfz_ui_3); 
-  ObjectSet(aa_st_337,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_337,OBJPROP_XDISTANCE,919); 
-  ObjectSet(aa_st_337,OBJPROP_YDISTANCE,215); 
+  g_Symbol1 = H11Symbol ;
+  g_Symbol2 = H12Symbol ;
   }
- by_st_275 = H14Symbol ;
- g_GroupName = "第7组2" ;
- UpdateRiskParams(); 
- CalcSpreadSignal(); 
- dfz_st_6 = "::挂单::OBL=" + DoubleToString(by_in_173,0) + "挂单::OSL=" + DoubleToString(by_in_172,0) + "::挂单::OBS=" + DoubleToString(by_in_174,0) + "挂单::OSS=" + DoubleToString(by_in_171,0) ;
- dfz_st_7 = "开单::B " + DoubleToString(by_in_117,0) + "  S " + DoubleToString(by_in_118,0) + " Blots:: " + DoubleToString(by_do_232,2) + "  Slots:: " + DoubleToString(by_do_199,2) + " 盈亏::" + DoubleToString(by_do_197,2) ;
- if ( by_do_197>0 )
+ if ( g_GroupName=="第7组2" )
   {
-  dfz_ui_3 = LimeGreen ;
+  g_Symbol1 = H13Symbol ;
+  g_Symbol2 = H14Symbol ;
   }
- else
+ if ( g_GroupName=="第8组2" )
   {
-  dfz_ui_3 = White ;
+  g_Symbol1 = H15Symbol ;
+  g_Symbol2 = H16Symbol ;
   }
- if ( by_do_197!=0 )
+ if ( g_GroupName=="第9组2" )
   {
-  dfz_st_4 = dfz_st_5 ;
+  g_Symbol1 = H17Symbol ;
+  g_Symbol2 = H18Symbol ;
   }
- if ( by_bo_21==true )
+ if ( g_GroupName=="第10组2" )
   {
-  dfz_ui_3 = Gold ;
+  g_Symbol1 = H19Symbol ;
+  g_Symbol2 = H20Symbol ;
   }
- ObjectCreate("10147",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10147","(07)" + H14Symbol + dfz_st_7,9,"Regular script",dfz_ui_3); 
- ObjectSet("10147",OBJPROP_CORNER,0); 
- ObjectSet("10147",OBJPROP_XDISTANCE,498); 
- ObjectSet("10147",OBJPROP_YDISTANCE,225); 
- if ( by_bo_165 )
+ if ( g_GroupName=="第11组2" )
   {
-  dfz_ui_3 = Red ;
-  dfz_st_4 = "开锁" ;
+  g_Symbol1 = H21Symbol ;
+  g_Symbol2 = H22Symbol ;
   }
- else
+ if ( g_GroupName=="第12组2" )
   {
-  dfz_ui_3 = LimeGreen ;
-  dfz_st_4 = "$$" ;
+  g_Symbol1 = H23Symbol ;
+  g_Symbol2 = H24Symbol ;
   }
- aa_st_341 = "Regular script";
- aa_st_342 = dfz_st_4;
- aa_st_343 = "10148";
- if ( dfz_in_1 != -1 )
+ if ( g_GroupName=="第13组2" )
   {
-  ObjectCreate(aa_st_343,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_343,aa_st_342,9,aa_st_341,dfz_ui_3); 
-  ObjectSet(aa_st_343,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_343,OBJPROP_XDISTANCE,919); 
-  ObjectSet(aa_st_343,OBJPROP_YDISTANCE,225); 
+  g_Symbol1 = H25Symbol ;
+  g_Symbol2 = H26Symbol ;
   }
- by_st_275 = H15Symbol ;
- g_GroupName = "第8组2" ;
- UpdateRiskParams(); 
- CalcSpreadSignal(); 
- dfz_st_6 = "::挂单::OBL=" + DoubleToString(by_in_173,0) + "挂单::OSL=" + DoubleToString(by_in_172,0) + "::挂单::OBS=" + DoubleToString(by_in_174,0) + "挂单::OSS=" + DoubleToString(by_in_171,0) ;
- dfz_st_7 = "开单::B " + DoubleToString(by_in_117,0) + "  S " + DoubleToString(by_in_118,0) + " Blots:: " + DoubleToString(by_do_232,2) + "  Slots:: " + DoubleToString(by_do_199,2) + " 盈亏::" + DoubleToString(by_do_197,2) ;
- if ( by_do_197>0 )
+ if ( g_GroupName=="第14组2" )
   {
-  dfz_ui_3 = LimeGreen ;
+  g_Symbol1 = H27Symbol ;
+  g_Symbol2 = H28Symbol ;
   }
- else
+ if ( g_GroupName=="第15组2" )
   {
-  dfz_ui_3 = White ;
+  g_Symbol1 = H29Symbol ;
+  g_Symbol2 = H30Symbol ;
   }
- if ( by_do_197!=0 )
+ if ( g_GroupName=="第16组2" )
   {
-  dfz_st_4 = dfz_st_5 ;
+  g_Symbol1 = H31Symbol ;
+  g_Symbol2 = H32Symbol ;
   }
- else
+ by_bo_165 = false ;
+ dfz_in_1 = (int)MarketInfo(g_Symbol1,13) ;
+ dfz_in_2 = (int)MarketInfo(g_Symbol2,13) ;
+ dfz_do_6 = MarketInfo(g_Symbol1,18) ;
+ dfz_do_7 = MarketInfo(g_Symbol1,19) ;
+ dfz_do_8 = MarketInfo(g_Symbol2,18) ;
+ dfz_do_9 = MarketInfo(g_Symbol2,19) ;
+ 
+  
+ if ( CalcCorrelation(30,15,g_Symbol2,g_Symbol1)>0.7 && 
+      CalcCorrelation(30,60,g_Symbol2,g_Symbol1)>0.7  &&  
+      CalcCorrelation(30,240,g_Symbol2,g_Symbol1)>0.7
+    ){}else
+    {return(0); }
+  
+ 
+ if ( dfz_in_1< 70 && dfz_in_2< 70 && ( ( g_SpreadSignal==1 && dfz_do_6 + dfz_do_9>dfz_do_7 + dfz_do_8 ) || (g_SpreadSignal==2 && dfz_do_7 + dfz_do_8>dfz_do_6 + dfz_do_9) ) && !只平不开 )
   {
-  if ( by_bo_22==true )
+  aa_in_53 = 0;
+  aa_in_54 = 0;
+  for (aa_in_55 = 0 ; aa_in_55<OrdersTotal() ; aa_in_55=aa_in_55 + 1)
    {
-   dfz_ui_3 = Gold ;
-  }}
- ObjectCreate("10149",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10149","(08)" + H15Symbol + dfz_st_7,9,"Regular script",dfz_ui_3); 
- ObjectSet("10149",OBJPROP_CORNER,0); 
- ObjectSet("10149",OBJPROP_XDISTANCE,498); 
- ObjectSet("10149",OBJPROP_YDISTANCE,235); 
- if ( by_bo_165 )
+   if ( OrderSelect(aa_in_55,SELECT_BY_POS,MODE_TRADES)!=false && ( OrderSymbol()==g_Symbol1 || OrderSymbol()==g_Symbol2 ) && OrderMagicNumber()==g_MagicNumber && OrderComment()==g_GroupName )
+    {
+    if ( OrderType()==0 )
+     {
+     aa_in_53=aa_in_53 + 1; 
+     }
+    if ( OrderType()==1 )
+     {
+     aa_in_54=aa_in_54 + 1; 
+    }}
+   }
+  if ( aa_in_53 + aa_in_54==0 )
+   {
+   if ( ((MathAbs(iClose(g_Symbol1,0,0) - iLow(g_Symbol1,PERIOD_D1,0))) / MarketInfo(g_Symbol1,11)) / 10>400 )
+    {
+    aa_bo_59 = true;
+    }
+   else
+    {
+    aa_bo_59 = false;
+    }
+   if ( !aa_bo_59 )
+    {
+    if ( ((MathAbs(iClose(g_Symbol2,0,0) - iLow(g_Symbol2,PERIOD_D1,0))) / MarketInfo(g_Symbol2,11)) / 10>400 )
+     {
+     aa_bo_62 = true;
+     }
+    else
+     {
+     aa_bo_62 = false;
+     }
+    if ( !aa_bo_62 )
+     {
+     if ( g_SpreadSignal==1 )
+      {
+      by_in_290 = 0 ;
+      by_in_291 = 1 ;
+      dfz_do_10 = MarketInfo(g_Symbol1,10) ;
+      dfz_do_11 = MarketInfo(g_Symbol2,9) ;
+      dfz_ui_3 = Green ;
+      dfz_ui_4 = Green ;
+      dfz_ui_5 = Red ;
+      }
+     else
+      {
+      if ( g_SpreadSignal==2 )
+       {
+       by_in_290 = 1 ;
+       by_in_291 = 0 ;
+       dfz_do_10 = MarketInfo(g_Symbol1,9) ;
+       dfz_do_11 = MarketInfo(g_Symbol2,10) ;
+       dfz_ui_3 = Red ;
+       dfz_ui_4 = Red ;
+       dfz_ui_5 = Green ;
+       }
+      else
+       {
+       return(0); 
+      }}
+     by_do_154 = NormalizeDouble(lot,2) ;
+     aa_do_63 = 0;
+     by_st_273 = g_Symbol1 ;
+     by_st_274 = g_Symbol2 ;
+     aa_in_64 = 60;
+     aa_in_65 = 200;
+     aa_do_66 = 0;
+     aa_do_67 = 0;
+     for (aa_in_69 = 200 - 1 ; aa_in_69>=0 ; aa_in_69=aa_in_69 - 1)
+      {
+      aa_do_66 = (iHigh(by_st_273,aa_in_64,aa_in_69) - iLow(by_st_273,aa_in_64,aa_in_69)) / MarketInfo(by_st_273,11) + aa_do_66;
+      aa_do_67 = (iHigh(by_st_274,aa_in_64,aa_in_69) - iLow(by_st_274,aa_in_64,aa_in_69)) / MarketInfo(by_st_274,11) + aa_do_67;
+      }
+     aa_do_70 = aa_do_66 / aa_in_65 * MarketInfo(by_st_273,16);
+     aa_do_71 = aa_do_67 / aa_in_65 * MarketInfo(by_st_274,16);
+     if ( aa_do_67 / aa_in_65 * MarketInfo(by_st_274,16)!=0 )
+      {
+      aa_do_63 = aa_do_70 / aa_do_71;
+      }
+     by_do_155 = NormalizeDouble(aa_do_63 * lot,2) ;
+     if ( by_do_154<0.01 )
+      {
+      by_do_154 = 0.01 ;
+      }
+     if ( by_do_155<0.01 )
+      {
+      by_do_155 = 0.01 ;
+      }
+     RefreshRates(); 
+     aa_st_74 = g_Symbol1;
+     aa_in_68 = 0;
+     aa_in_75 = 0;
+     for (aa_in_76 = 0 ; aa_in_76<OrdersTotal() ; aa_in_76=aa_in_76 + 1)
+      {
+      if ( OrderSelect(aa_in_76,SELECT_BY_POS,MODE_TRADES)!=false && OrderComment()==g_GroupName && OrderMagicNumber()==g_MagicNumber && OrderSymbol()==aa_st_74 )
+       {
+       if ( OrderType()==0 )
+        {
+        aa_in_68=aa_in_68 + 1; 
+        }
+       if ( OrderType()==1 )
+        {
+        aa_in_75=aa_in_75 + 1; 
+       }}
+      }
+     if ( aa_in_68 + aa_in_75==0 && !OrderSend(g_Symbol1,by_in_290,by_do_154,dfz_do_10,50,0,0,g_GroupName,g_MagicNumber,0,dfz_ui_3) )
+      {
+      Print(g_Symbol1 + "开仓",GetLastError()); 
+      }
+     aa_st_79 = g_Symbol2;
+     aa_in_77 = 0;
+     aa_in_80 = 0;
+     for (aa_in_81 = 0 ; aa_in_81<OrdersTotal() ; aa_in_81=aa_in_81 + 1)
+      {
+      if ( OrderSelect(aa_in_81,SELECT_BY_POS,MODE_TRADES)!=false && OrderComment()==g_GroupName && OrderMagicNumber()==g_MagicNumber && OrderSymbol()==aa_st_79 )
+       {
+       if ( OrderType()==0 )
+        {
+        aa_in_77=aa_in_77 + 1; 
+        }
+       if ( OrderType()==1 )
+        {
+        aa_in_80=aa_in_80 + 1; 
+       }}
+      }
+     if ( aa_in_77 + aa_in_80==0 && !OrderSend(g_Symbol2,by_in_291,by_do_155,dfz_do_11,50,0,0,g_GroupName,g_MagicNumber,0,dfz_ui_4) )
+      {
+      Print(g_Symbol2 + "开仓",GetLastError()); 
+      }
+     by_bo_165 = false ;
+  }}}}
+ aa_in_82 = 0;
+ aa_in_84 = 0;
+ for (aa_in_85 = 0 ; aa_in_85<OrdersTotal() ; aa_in_85=aa_in_85 + 1)
   {
-  dfz_ui_3 = Red ;
-  dfz_st_4 = "开锁" ;
+  if ( OrderSelect(aa_in_85,SELECT_BY_POS,MODE_TRADES)!=false && ( OrderSymbol()==g_Symbol1 || OrderSymbol()==g_Symbol2 ) && OrderMagicNumber()==g_MagicNumber && OrderComment()==g_GroupName )
+   {
+   if ( OrderType()==0 )
+    {
+    aa_in_82=aa_in_82 + 1; 
+    }
+   if ( OrderType()==1 )
+    {
+    aa_in_84=aa_in_84 + 1; 
+   }}
+  }
+ if ( aa_in_82 + aa_in_84>=2 )
+  {
+  aa_st_87 = bsw_0;
+  aa_do_88 = 0;
+  for (aa_in_89 = 0 ; aa_in_89<OrdersTotal() ; aa_in_89=aa_in_89 + 1)
+   {
+   if ( OrderSelect(aa_in_89,SELECT_BY_POS,MODE_TRADES)!=false && OrderMagicNumber()==g_MagicNumber && OrderComment()==aa_st_87 )
+    {
+    aa_do_88 = OrderProfit() + OrderSwap() + OrderCommission() + aa_do_88;
+    }
+   }
+  aa_do_90 = aa_do_88;
+  aa_in_91 = 0;
+  aa_in_92 = 0;
+  for (aa_in_93 = 0 ; aa_in_93<OrdersTotal() ; aa_in_93=aa_in_93 + 1)
+   {
+   if ( OrderSelect(aa_in_93,SELECT_BY_POS,MODE_TRADES)!=false && ( OrderSymbol()==g_Symbol1 || OrderSymbol()==g_Symbol2 ) && OrderMagicNumber()==g_MagicNumber && OrderComment()==g_GroupName )
+    {
+    if ( OrderType()==0 )
+     {
+     aa_in_91=aa_in_91 + 1; 
+     }
+    if ( OrderType()==1 )
+     {
+     aa_in_92=aa_in_92 + 1; 
+    }}
+   }
+  aa_do_96 = 0;
+  for (aa_in_97 = 0 ; aa_in_97<=OrdersTotal() - 1 ; aa_in_97=aa_in_97 + 1)
+   {
+   if ( OrderSelect(aa_in_97,SELECT_BY_POS,MODE_TRADES)!=false && OrderMagicNumber()==g_MagicNumber && OrderComment()==g_GroupName )
+    {
+    aa_do_96 = OrderLots();
+    }
+   }
+  if ( aa_do_90<( -(aa_in_91 + aa_in_92) / 2) * aa_do_96 * 100 * 6 * 1.4 )
+   {
+   if ( ((MathAbs(iClose(g_Symbol1,0,0) - iLow(g_Symbol1,PERIOD_D1,0))) / MarketInfo(g_Symbol1,11)) / 10>400 )
+    {
+    aa_bo_99 = true;
+    }
+   else
+    {
+    aa_bo_99 = false;
+    }
+   if ( !aa_bo_99 )
+    {
+    if ( ((MathAbs(iClose(g_Symbol2,0,0) - iLow(g_Symbol2,PERIOD_D1,0))) / MarketInfo(g_Symbol2,11)) / 10>400 )
+     {
+     aa_bo_104 = true;
+     }
+    else
+     {
+     aa_bo_104 = false;
+     }
+    if ( !aa_bo_104 )
+     {
+     aa_st_105 = g_Symbol1;
+     aa_in_106 = -1;
+     for (aa_in_107 = 0 ; aa_in_107<=OrdersTotal() - 1 ; aa_in_107=aa_in_107 + 1)
+      {
+      if ( OrderSelect(aa_in_107,SELECT_BY_POS,MODE_TRADES)!=false && OrderSymbol()==aa_st_105 && OrderMagicNumber()==g_MagicNumber && OrderComment()==g_GroupName )
+       {
+       aa_in_106 = OrderType();
+       }
+      }
+     if ( aa_in_106==0 )
+      {
+      aa_st_109 = g_Symbol2;
+      aa_in_108 = -1;
+      for (aa_in_110 = 0 ; aa_in_110<=OrdersTotal() - 1 ; aa_in_110=aa_in_110 + 1)
+       {
+       if ( OrderSelect(aa_in_110,SELECT_BY_POS,MODE_TRADES)!=false && OrderSymbol()==aa_st_109 && OrderMagicNumber()==g_MagicNumber && OrderComment()==g_GroupName )
+        {
+        aa_in_108 = OrderType();
+        }
+       }
+      if ( aa_in_108==1 )
+       {
+       dfz_do_10 = MarketInfo(g_Symbol1,10) ;
+       dfz_do_11 = MarketInfo(g_Symbol2,9) ;
+       dfz_ui_3 = Green ;
+       dfz_ui_4 = Red ;
+      }}
+     aa_st_112 = g_Symbol1;
+     aa_in_111 = -1;
+     for (aa_in_113 = 0 ; aa_in_113<=OrdersTotal() - 1 ; aa_in_113=aa_in_113 + 1)
+      {
+      if ( OrderSelect(aa_in_113,SELECT_BY_POS,MODE_TRADES)!=false && OrderSymbol()==aa_st_112 && OrderMagicNumber()==g_MagicNumber && OrderComment()==g_GroupName )
+       {
+       aa_in_111 = OrderType();
+       }
+      }
+     if ( aa_in_111==1 )
+      {
+      aa_st_115 = g_Symbol2;
+      aa_in_114 = -1;
+      for (aa_in_116 = 0 ; aa_in_116<=OrdersTotal() - 1 ; aa_in_116=aa_in_116 + 1)
+       {
+       if ( OrderSelect(aa_in_116,SELECT_BY_POS,MODE_TRADES)!=false && OrderSymbol()==aa_st_115 && OrderMagicNumber()==g_MagicNumber && OrderComment()==g_GroupName )
+        {
+        aa_in_114 = OrderType();
+        }
+       }
+      if ( aa_in_114==0 )
+       {
+       dfz_do_10 = MarketInfo(g_Symbol1,9) ;
+       dfz_do_11 = MarketInfo(g_Symbol2,10) ;
+       dfz_ui_3 = Red ;
+       dfz_ui_4 = Green ;
+      }}
+     RefreshRates(); 
+     aa_st_118 = g_Symbol1;
+     aa_in_117 = 0;
+     aa_in_119 = 0;
+     for (aa_in_120 = 0 ; aa_in_120<OrdersTotal() ; aa_in_120=aa_in_120 + 1)
+      {
+      if ( OrderSelect(aa_in_120,SELECT_BY_POS,MODE_TRADES)!=false && OrderComment()==g_GroupName && OrderMagicNumber()==g_MagicNumber && OrderSymbol()==aa_st_118 )
+       {
+       if ( OrderType()==0 )
+        {
+        aa_in_117=aa_in_117 + 1; 
+        }
+       if ( OrderType()==1 )
+        {
+        aa_in_119=aa_in_119 + 1; 
+       }}
+      }
+     if ( aa_in_117 + aa_in_119>=1 && by_lo_148 != iTime(g_Symbol1,0,0) )
+      {
+      aa_st_122 = g_Symbol1;
+      aa_do_123 = 0;
+      for (aa_in_124 = 0 ; aa_in_124<=OrdersTotal() - 1 ; aa_in_124=aa_in_124 + 1)
+       {
+       if ( OrderSelect(aa_in_124,SELECT_BY_POS,MODE_TRADES)!=false && OrderSymbol()==aa_st_122 && OrderMagicNumber()==g_MagicNumber && OrderComment()==g_GroupName )
+        {
+        aa_do_123 = OrderLots();
+        }
+       }
+      aa_do_126 = NormalizeDouble(aa_do_123 * 1.5,2);
+      aa_st_127 = g_Symbol1;
+      aa_in_128 = -1;
+      for (aa_in_129 = 0 ; aa_in_129<=OrdersTotal() - 1 ; aa_in_129=aa_in_129 + 1)
+       {
+       if ( OrderSelect(aa_in_129,SELECT_BY_POS,MODE_TRADES)!=false && OrderSymbol()==aa_st_127 && OrderMagicNumber()==g_MagicNumber && OrderComment()==g_GroupName )
+        {
+        aa_in_128 = OrderType();
+        }
+       }
+      if ( !OrderSend(g_Symbol1,aa_in_128,aa_do_126,dfz_do_10,50,0,0,g_GroupName,g_MagicNumber,0,dfz_ui_3) )
+       {
+       by_lo_148 = iTime(g_Symbol1,0,0) ;
+       }
+      Print(g_Symbol1 + "加仓",GetLastError()); 
+      }
+     aa_st_132 = g_Symbol2;
+     aa_in_125 = 0;
+     aa_in_130 = 0;
+     for (aa_in_133 = 0 ; aa_in_133<OrdersTotal() ; aa_in_133=aa_in_133 + 1)
+      {
+      if ( OrderSelect(aa_in_133,SELECT_BY_POS,MODE_TRADES)!=false && OrderComment()==g_GroupName && OrderMagicNumber()==g_MagicNumber && OrderSymbol()==aa_st_132 )
+       {
+       if ( OrderType()==0 )
+        {
+        aa_in_125=aa_in_125 + 1; 
+        }
+       if ( OrderType()==1 )
+        {
+        aa_in_130=aa_in_130 + 1; 
+       }}
+      }
+     if ( aa_in_125 + aa_in_130>=1 && by_lo_149 != iTime(g_Symbol2,0,0) )
+      {
+      aa_st_135 = g_Symbol2;
+      aa_do_136 = 0;
+      for (aa_in_137 = 0 ; aa_in_137<=OrdersTotal() - 1 ; aa_in_137=aa_in_137 + 1)
+       {
+       if ( OrderSelect(aa_in_137,SELECT_BY_POS,MODE_TRADES)!=false && OrderSymbol()==aa_st_135 && OrderMagicNumber()==g_MagicNumber && OrderComment()==g_GroupName )
+        {
+        aa_do_136 = OrderLots();
+        }
+       }
+      aa_do_139 = NormalizeDouble(aa_do_136 * 1.5,2);
+      aa_st_140 = g_Symbol2;
+      aa_in_141 = -1;
+      for (aa_in_142 = 0 ; aa_in_142<=OrdersTotal() - 1 ; aa_in_142=aa_in_142 + 1)
+       {
+       if ( OrderSelect(aa_in_142,SELECT_BY_POS,MODE_TRADES)!=false && OrderSymbol()==aa_st_140 && OrderMagicNumber()==g_MagicNumber && OrderComment()==g_GroupName )
+        {
+        aa_in_141 = OrderType();
+        }
+       }
+      if ( !OrderSend(g_Symbol2,aa_in_141,aa_do_139,dfz_do_11,50,0,0,g_GroupName,g_MagicNumber,0,dfz_ui_4) )
+       {
+       by_lo_149 = iTime(g_Symbol2,0,0) ;
+       }
+      Print(g_Symbol2 + "加仓",GetLastError()); 
+  }}}}}
+ if ( ((MathAbs(iClose(g_Symbol1,0,0) - iLow(g_Symbol1,PERIOD_D1,0))) / MarketInfo(g_Symbol1,11)) / 10>400 )
+  {
+  aa_bo_146 = true;
   }
  else
   {
-  dfz_ui_3 = LimeGreen ;
-  dfz_st_4 = "$$" ;
+  aa_bo_146 = false;
   }
- aa_st_347 = "Regular script";
- aa_st_348 = dfz_st_4;
- aa_st_349 = "10150";
- if ( dfz_in_1 != -1 )
+ if ( aa_bo_146 )
   {
-  ObjectCreate(aa_st_349,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_349,aa_st_348,9,aa_st_347,dfz_ui_3); 
-  ObjectSet(aa_st_349,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_349,OBJPROP_XDISTANCE,919); 
-  ObjectSet(aa_st_349,OBJPROP_YDISTANCE,235); 
-  }
- by_st_275 = H16Symbol ;
- g_GroupName = "第8组2" ;
- UpdateRiskParams(); 
- CalcSpreadSignal(); 
- dfz_st_6 = "::挂单::OBL=" + DoubleToString(by_in_173,0) + "挂单::OSL=" + DoubleToString(by_in_172,0) + "::挂单::OBS=" + DoubleToString(by_in_174,0) + "挂单::OSS=" + DoubleToString(by_in_171,0) ;
- dfz_st_7 = "开单::B " + DoubleToString(by_in_117,0) + "  S " + DoubleToString(by_in_118,0) + " Blots:: " + DoubleToString(by_do_232,2) + "  Slots:: " + DoubleToString(by_do_199,2) + " 盈亏::" + DoubleToString(by_do_197,2) ;
- if ( by_do_197>0 )
+  aa_st_147 = bsw_0;
+  aa_st_148 = g_Symbol1;
+  aa_do_149 = 0;
+  for (aa_in_150 = 0 ; aa_in_150<OrdersTotal() ; aa_in_150=aa_in_150 + 1)
+   {
+   if ( OrderSelect(aa_in_150,SELECT_BY_POS,MODE_TRADES)!=false && OrderSymbol()==aa_st_148 && OrderMagicNumber()==g_MagicNumber && OrderComment()==aa_st_147 )
+    {
+    aa_do_149 = OrderProfit() + OrderSwap() + OrderCommission() + aa_do_149;
+    }
+   }
+  if ( aa_do_149<0 )
+   {
+   aa_st_153 = g_Symbol1;
+   aa_do_151 = 0;
+   for (aa_in_154 = 0 ; aa_in_154<=OrdersTotal() ; aa_in_154=aa_in_154 + 1)
+    {
+    if ( OrderSelect(aa_in_154,SELECT_BY_POS,MODE_TRADES)!=false && OrderSymbol()==aa_st_153 && OrderMagicNumber()==g_MagicNumber && OrderComment()==g_GroupName && OrderType()==0 )
+     {
+     aa_do_151 = aa_do_151 + OrderLots();
+     }
+    }
+   aa_do_155 = aa_do_151;
+   aa_st_156 = g_Symbol1;
+   aa_do_157 = 0;
+   for (aa_in_158 = 0 ; aa_in_158<=OrdersTotal() ; aa_in_158=aa_in_158 + 1)
+    {
+    if ( OrderSelect(aa_in_158,SELECT_BY_POS,MODE_TRADES)!=false && OrderSymbol()==aa_st_156 && OrderMagicNumber()==g_MagicNumber && OrderComment()==g_GroupName && OrderType()==1 )
+     {
+     aa_do_157 = aa_do_157 + OrderLots();
+     }
+    }
+   if ( aa_do_155>aa_do_157 && by_lo_148 != iTime(g_Symbol1,0,0) )
+    {
+    aa_do_160 = MarketInfo(g_Symbol1,9);
+    aa_st_161 = g_Symbol1;
+    aa_do_162 = 0;
+    for (aa_in_163 = 0 ; aa_in_163<=OrdersTotal() ; aa_in_163=aa_in_163 + 1)
+     {
+     if ( OrderSelect(aa_in_163,SELECT_BY_POS,MODE_TRADES)!=false && OrderSymbol()==aa_st_161 && OrderMagicNumber()==g_MagicNumber && OrderComment()==g_GroupName && OrderType()==0 )
+      {
+      aa_do_162 = aa_do_162 + OrderLots();
+      }
+     }
+    aa_do_164 = aa_do_162;
+    aa_st_165 = g_Symbol1;
+    aa_do_166 = 0;
+    for (aa_in_167 = 0 ; aa_in_167<=OrdersTotal() ; aa_in_167=aa_in_167 + 1)
+     {
+     if ( OrderSelect(aa_in_167,SELECT_BY_POS,MODE_TRADES)!=false && OrderSymbol()==aa_st_165 && OrderMagicNumber()==g_MagicNumber && OrderComment()==g_GroupName && OrderType()==1 )
+      {
+      aa_do_166 = aa_do_166 + OrderLots();
+      }
+     }
+    if ( !OrderSend(g_Symbol1,OP_SELL,aa_do_164 - aa_do_166,aa_do_160,50,0,0,g_GroupName,g_MagicNumber,0,Red) )
+     {
+     PrintFormat("锁单S",GetLastError()); 
+     }
+    by_lo_148 = iTime(g_Symbol1,0,0) ;
+    by_bo_165 = true ;
+  }}}
+ if ( ((MathAbs(iClose(g_Symbol1,0,0) - iLow(g_Symbol1,PERIOD_D1,0))) / MarketInfo(g_Symbol1,11)) / 10>400 )
   {
-  dfz_ui_3 = LimeGreen ;
-  }
- else
-  {
-  dfz_ui_3 = White ;
-  }
- if ( by_do_197!=0 )
-  {
-  dfz_st_4 = dfz_st_5 ;
-  }
- if ( by_bo_23==true )
-  {
-  dfz_ui_3 = Gold ;
-  }
- ObjectCreate("10151",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10151","(08)" + H16Symbol + dfz_st_7,9,"Regular script",dfz_ui_3); 
- ObjectSet("10151",OBJPROP_CORNER,0); 
- ObjectSet("10151",OBJPROP_XDISTANCE,498); 
- ObjectSet("10151",OBJPROP_YDISTANCE,245); 
- if ( by_bo_165 )
-  {
-  dfz_ui_3 = Red ;
-  dfz_st_4 = "开锁" ;
-  }
- else
-  {
-  dfz_ui_3 = LimeGreen ;
-  dfz_st_4 = "$$" ;
-  }
- aa_st_353 = "Regular script";
- aa_st_354 = dfz_st_4;
- aa_st_355 = "10152";
- if ( dfz_in_1 != -1 )
-  {
-  ObjectCreate(aa_st_355,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_355,aa_st_354,9,aa_st_353,dfz_ui_3); 
-  ObjectSet(aa_st_355,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_355,OBJPROP_XDISTANCE,919); 
-  ObjectSet(aa_st_355,OBJPROP_YDISTANCE,245); 
-  }
- by_st_275 = H17Symbol ;
- g_GroupName = "第9组2" ;
- UpdateRiskParams(); 
- CalcSpreadSignal(); 
- dfz_st_6 = "::挂单::OBL=" + DoubleToString(by_in_173,0) + "挂单::OSL=" + DoubleToString(by_in_172,0) + "::挂单::OBS=" + DoubleToString(by_in_174,0) + "挂单::OSS=" + DoubleToString(by_in_171,0) ;
- dfz_st_7 = "开单::B " + DoubleToString(by_in_117,0) + "  S " + DoubleToString(by_in_118,0) + " Blots:: " + DoubleToString(by_do_232,2) + "  Slots:: " + DoubleToString(by_do_199,2) + " 盈亏::" + DoubleToString(by_do_197,2) ;
- if ( by_do_197>0 )
-  {
-  dfz_ui_3 = LimeGreen ;
+  aa_bo_159 = true;
   }
  else
   {
-  dfz_ui_3 = White ;
+  aa_bo_159 = false;
   }
- if ( by_do_197!=0 )
+ if ( aa_bo_159 )
   {
-  dfz_st_4 = dfz_st_5 ;
-  }
- if ( by_bo_22==true )
+  aa_st_171 = bsw_0;
+  aa_st_172 = g_Symbol1;
+  aa_do_168 = 0;
+  for (aa_in_173 = 0 ; aa_in_173<OrdersTotal() ; aa_in_173=aa_in_173 + 1)
+   {
+   if ( OrderSelect(aa_in_173,SELECT_BY_POS,MODE_TRADES)!=false && OrderSymbol()==aa_st_172 && OrderMagicNumber()==g_MagicNumber && OrderComment()==aa_st_171 )
+    {
+    aa_do_168 = OrderProfit() + OrderSwap() + OrderCommission() + aa_do_168;
+    }
+   }
+  if ( aa_do_168<0 )
+   {
+   aa_st_176 = g_Symbol1;
+   aa_do_174 = 0;
+   for (aa_in_177 = 0 ; aa_in_177<=OrdersTotal() ; aa_in_177=aa_in_177 + 1)
+    {
+    if ( OrderSelect(aa_in_177,SELECT_BY_POS,MODE_TRADES)!=false && OrderSymbol()==aa_st_176 && OrderMagicNumber()==g_MagicNumber && OrderComment()==g_GroupName && OrderType()==0 )
+     {
+     aa_do_174 = aa_do_174 + OrderLots();
+     }
+    }
+   aa_do_178 = aa_do_174;
+   aa_st_179 = g_Symbol1;
+   aa_do_180 = 0;
+   for (aa_in_181 = 0 ; aa_in_181<=OrdersTotal() ; aa_in_181=aa_in_181 + 1)
+    {
+    if ( OrderSelect(aa_in_181,SELECT_BY_POS,MODE_TRADES)!=false && OrderSymbol()==aa_st_179 && OrderMagicNumber()==g_MagicNumber && OrderComment()==g_GroupName && OrderType()==1 )
+     {
+     aa_do_180 = aa_do_180 + OrderLots();
+     }
+    }
+   if ( aa_do_178<aa_do_180 && by_lo_148 != iTime(g_Symbol1,0,0) )
+    {
+    aa_do_183 = MarketInfo(g_Symbol1,10);
+    aa_st_184 = g_Symbol1;
+    aa_do_185 = 0;
+    for (aa_in_186 = 0 ; aa_in_186<=OrdersTotal() ; aa_in_186=aa_in_186 + 1)
+     {
+     if ( OrderSelect(aa_in_186,SELECT_BY_POS,MODE_TRADES)!=false && OrderSymbol()==aa_st_184 && OrderMagicNumber()==g_MagicNumber && OrderComment()==g_GroupName && OrderType()==1 )
+      {
+      aa_do_185 = aa_do_185 + OrderLots();
+      }
+     }
+    aa_do_187 = aa_do_185;
+    aa_st_188 = g_Symbol1;
+    aa_do_189 = 0;
+    for (aa_in_190 = 0 ; aa_in_190<=OrdersTotal() ; aa_in_190=aa_in_190 + 1)
+     {
+     if ( OrderSelect(aa_in_190,SELECT_BY_POS,MODE_TRADES)!=false && OrderSymbol()==aa_st_188 && OrderMagicNumber()==g_MagicNumber && OrderComment()==g_GroupName && OrderType()==0 )
+      {
+      aa_do_189 = aa_do_189 + OrderLots();
+      }
+     }
+    if ( !OrderSend(g_Symbol1,OP_BUY,aa_do_187 - aa_do_189,aa_do_183,50,0,0,g_GroupName,g_MagicNumber,0,LimeGreen) )
+     {
+     PrintFormat("锁单B",GetLastError()); 
+     }
+    by_lo_148 = iTime(g_Symbol1,0,0) ;
+    by_bo_165 = true ;
+  }}}
+ if ( ((MathAbs(iClose(g_Symbol2,0,0) - iLow(g_Symbol2,PERIOD_D1,0))) / MarketInfo(g_Symbol2,11)) / 10>400 )
   {
-  dfz_ui_3 = Gold ;
-  }
- ObjectCreate("10153",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10153","(09)" + H17Symbol + dfz_st_7,9,"Regular script",dfz_ui_3); 
- ObjectSet("10153",OBJPROP_CORNER,0); 
- ObjectSet("10153",OBJPROP_XDISTANCE,498); 
- ObjectSet("10153",OBJPROP_YDISTANCE,255); 
- if ( by_bo_165 )
-  {
-  dfz_ui_3 = Red ;
-  dfz_st_4 = "开锁" ;
-  }
- else
-  {
-  dfz_ui_3 = LimeGreen ;
-  dfz_st_4 = "$$" ;
-  }
- aa_st_359 = "Regular script";
- aa_st_360 = dfz_st_4;
- aa_st_361 = "10154";
- if ( dfz_in_1 != -1 )
-  {
-  ObjectCreate(aa_st_361,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_361,aa_st_360,9,aa_st_359,dfz_ui_3); 
-  ObjectSet(aa_st_361,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_361,OBJPROP_XDISTANCE,919); 
-  ObjectSet(aa_st_361,OBJPROP_YDISTANCE,255); 
-  }
- by_st_275 = H18Symbol ;
- g_GroupName = "第9组2" ;
- UpdateRiskParams(); 
- CalcSpreadSignal(); 
- dfz_st_6 = "::挂单::OBL=" + DoubleToString(by_in_173,0) + "挂单::OSL=" + DoubleToString(by_in_172,0) + "::挂单::OBS=" + DoubleToString(by_in_174,0) + "挂单::OSS=" + DoubleToString(by_in_171,0) ;
- dfz_st_7 = "开单::B " + DoubleToString(by_in_117,0) + "  S " + DoubleToString(by_in_118,0) + " Blots:: " + DoubleToString(by_do_232,2) + "  Slots:: " + DoubleToString(by_do_199,2) + " 盈亏::" + DoubleToString(by_do_197,2) ;
- if ( by_do_197>0 )
-  {
-  dfz_ui_3 = LimeGreen ;
-  }
- else
-  {
-  dfz_ui_3 = White ;
-  }
- if ( by_do_197!=0 )
-  {
-  dfz_st_4 = dfz_st_5 ;
-  }
- if ( by_bo_23==true )
-  {
-  dfz_ui_3 = Gold ;
-  }
- ObjectCreate("10155",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10155","(09)" + H18Symbol + dfz_st_7,9,"Regular script",dfz_ui_3); 
- ObjectSet("10155",OBJPROP_CORNER,0); 
- ObjectSet("10155",OBJPROP_XDISTANCE,498); 
- ObjectSet("10155",OBJPROP_YDISTANCE,265); 
- if ( by_bo_165 )
-  {
-  dfz_ui_3 = Red ;
-  }
- else
-  {
-  dfz_ui_3 = LimeGreen ;
-  dfz_st_4 = "$$" ;
-  }
- aa_st_365 = "Regular script";
- aa_st_366 = dfz_st_4;
- aa_st_367 = "10156";
- if ( dfz_in_1 != -1 )
-  {
-  ObjectCreate(aa_st_367,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_367,aa_st_366,9,aa_st_365,dfz_ui_3); 
-  ObjectSet(aa_st_367,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_367,OBJPROP_XDISTANCE,919); 
-  ObjectSet(aa_st_367,OBJPROP_YDISTANCE,265); 
-  }
- by_st_275 = H19Symbol ;
- g_GroupName = "第10组2" ;
- UpdateRiskParams(); 
- CalcSpreadSignal(); 
- dfz_st_6 = "::挂单::OBL=" + DoubleToString(by_in_173,0) + "挂单::OSL=" + DoubleToString(by_in_172,0) + "::挂单::OBS=" + DoubleToString(by_in_174,0) + "挂单::OSS=" + DoubleToString(by_in_171,0) ;
- dfz_st_7 = "开单::B " + DoubleToString(by_in_117,0) + "  S " + DoubleToString(by_in_118,0) + " Blots:: " + DoubleToString(by_do_232,2) + "  Slots:: " + DoubleToString(by_do_199,2) + " 盈亏::" + DoubleToString(by_do_197,2) ;
- if ( by_do_197>0 )
-  {
-  dfz_ui_3 = LimeGreen ;
+  aa_bo_182 = true;
   }
  else
   {
-  dfz_ui_3 = White ;
+  aa_bo_182 = false;
   }
- if ( by_do_197!=0 )
+ if ( aa_bo_182 )
   {
-  dfz_st_4 = dfz_st_5 ;
-  }
- if ( by_bo_23==true )
+  aa_st_194 = bsw_0;
+  aa_st_195 = g_Symbol2;
+  aa_do_191 = 0;
+  for (aa_in_196 = 0 ; aa_in_196<OrdersTotal() ; aa_in_196=aa_in_196 + 1)
+   {
+   if ( OrderSelect(aa_in_196,SELECT_BY_POS,MODE_TRADES)!=false && OrderSymbol()==aa_st_195 && OrderMagicNumber()==g_MagicNumber && OrderComment()==aa_st_194 )
+    {
+    aa_do_191 = OrderProfit() + OrderSwap() + OrderCommission() + aa_do_191;
+    }
+   }
+  if ( aa_do_191<0 )
+   {
+   aa_st_199 = g_Symbol2;
+   aa_do_197 = 0;
+   for (aa_in_200 = 0 ; aa_in_200<=OrdersTotal() ; aa_in_200=aa_in_200 + 1)
+    {
+    if ( OrderSelect(aa_in_200,SELECT_BY_POS,MODE_TRADES)!=false && OrderSymbol()==aa_st_199 && OrderMagicNumber()==g_MagicNumber && OrderComment()==g_GroupName && OrderType()==0 )
+     {
+     aa_do_197 = aa_do_197 + OrderLots();
+     }
+    }
+   aa_do_201 = aa_do_197;
+   aa_st_202 = g_Symbol2;
+   aa_do_203 = 0;
+   for (aa_in_204 = 0 ; aa_in_204<=OrdersTotal() ; aa_in_204=aa_in_204 + 1)
+    {
+    if ( OrderSelect(aa_in_204,SELECT_BY_POS,MODE_TRADES)!=false && OrderSymbol()==aa_st_202 && OrderMagicNumber()==g_MagicNumber && OrderComment()==g_GroupName && OrderType()==1 )
+     {
+     aa_do_203 = aa_do_203 + OrderLots();
+     }
+    }
+   if ( aa_do_201>aa_do_203 && by_lo_149 != iTime(g_Symbol2,0,0) )
+    {
+    aa_do_206 = MarketInfo(g_Symbol2,9);
+    aa_st_207 = g_Symbol2;
+    aa_do_208 = 0;
+    for (aa_in_209 = 0 ; aa_in_209<=OrdersTotal() ; aa_in_209=aa_in_209 + 1)
+     {
+     if ( OrderSelect(aa_in_209,SELECT_BY_POS,MODE_TRADES)!=false && OrderSymbol()==aa_st_207 && OrderMagicNumber()==g_MagicNumber && OrderComment()==g_GroupName && OrderType()==0 )
+      {
+      aa_do_208 = aa_do_208 + OrderLots();
+      }
+     }
+    aa_do_210 = aa_do_208;
+    aa_st_211 = g_Symbol2;
+    aa_do_212 = 0;
+    for (aa_in_213 = 0 ; aa_in_213<=OrdersTotal() ; aa_in_213=aa_in_213 + 1)
+     {
+     if ( OrderSelect(aa_in_213,SELECT_BY_POS,MODE_TRADES)!=false && OrderSymbol()==aa_st_211 && OrderMagicNumber()==g_MagicNumber && OrderComment()==g_GroupName && OrderType()==1 )
+      {
+      aa_do_212 = aa_do_212 + OrderLots();
+      }
+     }
+    if ( !OrderSend(g_Symbol2,OP_SELL,aa_do_210 - aa_do_212,aa_do_206,50,0,0,g_GroupName,g_MagicNumber,0,Red) )
+     {
+     PrintFormat("锁单S",GetLastError()); 
+     }
+    by_lo_149 = iTime(g_Symbol2,0,0) ;
+    by_bo_165 = true ;
+  }}}
+ if ( ((MathAbs(iClose(g_Symbol2,0,0) - iLow(g_Symbol2,PERIOD_D1,0))) / MarketInfo(g_Symbol2,11)) / 10>400 )
   {
-  dfz_ui_3 = Gold ;
-  }
- ObjectCreate("10157",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10157","(10)" + H19Symbol + dfz_st_7,9,"Regular script",dfz_ui_3); 
- ObjectSet("10157",OBJPROP_CORNER,0); 
- ObjectSet("10157",OBJPROP_XDISTANCE,498); 
- ObjectSet("10157",OBJPROP_YDISTANCE,275); 
- if ( by_bo_165 )
-  {
-  dfz_ui_3 = Red ;
-  dfz_st_4 = "开锁" ;
-  }
- else
-  {
-  dfz_ui_3 = LimeGreen ;
-  dfz_st_4 = "$$" ;
-  }
- aa_st_371 = "Regular script";
- aa_st_372 = dfz_st_4;
- aa_st_373 = "10158";
- if ( dfz_in_1 != -1 )
-  {
-  ObjectCreate(aa_st_373,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_373,aa_st_372,9,aa_st_371,dfz_ui_3); 
-  ObjectSet(aa_st_373,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_373,OBJPROP_XDISTANCE,919); 
-  ObjectSet(aa_st_373,OBJPROP_YDISTANCE,275); 
-  }
- by_st_275 = H20Symbol ;
- g_GroupName = "第10组2" ;
- UpdateRiskParams(); 
- CalcSpreadSignal(); 
- dfz_st_6 = "::挂单::OBL=" + DoubleToString(by_in_173,0) + "挂单::OSL=" + DoubleToString(by_in_172,0) + "::挂单::OBS=" + DoubleToString(by_in_174,0) + "挂单::OSS=" + DoubleToString(by_in_171,0) ;
- dfz_st_7 = "开单::B " + DoubleToString(by_in_117,0) + "  S " + DoubleToString(by_in_118,0) + " Blots:: " + DoubleToString(by_do_232,2) + "  Slots:: " + DoubleToString(by_do_199,2) + " 盈亏::" + DoubleToString(by_do_197,2) ;
- if ( by_do_197>0 )
-  {
-  dfz_ui_3 = LimeGreen ;
-  }
- else
-  {
-  dfz_ui_3 = White ;
-  }
- if ( by_do_197!=0 )
-  {
-  dfz_st_4 = dfz_st_5 ;
-  }
- if ( by_bo_22==true )
-  {
-  dfz_ui_3 = Gold ;
-  }
- ObjectCreate("10159",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10159","(10)" + H20Symbol + dfz_st_7,9,"Regular script",dfz_ui_3); 
- ObjectSet("10159",OBJPROP_CORNER,0); 
- ObjectSet("10159",OBJPROP_XDISTANCE,498); 
- ObjectSet("10159",OBJPROP_YDISTANCE,285); 
- if ( by_bo_165 )
-  {
-  dfz_ui_3 = Red ;
-  dfz_st_4 = "开锁" ;
-  }
- else
-  {
-  dfz_ui_3 = LimeGreen ;
-  dfz_st_4 = "$$" ;
-  }
- aa_st_377 = "Regular script";
- aa_st_378 = dfz_st_4;
- aa_st_379 = "10160";
- if ( dfz_in_1 != -1 )
-  {
-  ObjectCreate(aa_st_379,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_379,aa_st_378,9,aa_st_377,dfz_ui_3); 
-  ObjectSet(aa_st_379,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_379,OBJPROP_XDISTANCE,919); 
-  ObjectSet(aa_st_379,OBJPROP_YDISTANCE,285); 
-  }
- by_st_275 = H21Symbol ;
- g_GroupName = "第11组2" ;
- UpdateRiskParams(); 
- CalcSpreadSignal(); 
- dfz_st_6 = "::挂单::OBL=" + DoubleToString(by_in_173,0) + "挂单::OSL=" + DoubleToString(by_in_172,0) + "::挂单::OBS=" + DoubleToString(by_in_174,0) + "挂单::OSS=" + DoubleToString(by_in_171,0) ;
- dfz_st_7 = "开单::B " + DoubleToString(by_in_117,0) + "  S " + DoubleToString(by_in_118,0) + " Blots:: " + DoubleToString(by_do_232,2) + "  Slots:: " + DoubleToString(by_do_199,2) + " 盈亏::" + DoubleToString(by_do_197,2) ;
- if ( by_do_197>0 )
-  {
-  dfz_ui_3 = LimeGreen ;
+  aa_bo_205 = true;
   }
  else
   {
-  dfz_ui_3 = White ;
-  }
- if ( by_do_197!=0 )
-  {
-  dfz_st_4 = dfz_st_5 ;
-  }
- if ( by_bo_23==true )
-  {
-  dfz_ui_3 = Gold ;
-  }
- ObjectCreate("10161",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10161","(11)" + H21Symbol + dfz_st_7,9,"Regular script",dfz_ui_3); 
- ObjectSet("10161",OBJPROP_CORNER,0); 
- ObjectSet("10161",OBJPROP_XDISTANCE,498); 
- ObjectSet("10161",OBJPROP_YDISTANCE,295); 
- if ( by_bo_165 )
-  {
-  dfz_ui_3 = Red ;
-  dfz_st_4 = "开锁" ;
-  }
- else
-  {
-  dfz_ui_3 = LimeGreen ;
-  dfz_st_4 = "$$" ;
-  }
- aa_st_383 = "Regular script";
- aa_st_384 = dfz_st_4;
- aa_st_385 = "10162";
- if ( dfz_in_1 != -1 )
-  {
-  ObjectCreate(aa_st_385,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_385,aa_st_384,9,aa_st_383,dfz_ui_3); 
-  ObjectSet(aa_st_385,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_385,OBJPROP_XDISTANCE,919); 
-  ObjectSet(aa_st_385,OBJPROP_YDISTANCE,295); 
-  }
- by_st_275 = H22Symbol ;
- g_GroupName = "第11组2" ;
- UpdateRiskParams(); 
- CalcSpreadSignal(); 
- dfz_st_6 = "::挂单::OBL=" + DoubleToString(by_in_173,0) + "挂单::OSL=" + DoubleToString(by_in_172,0) + "::挂单::OBS=" + DoubleToString(by_in_174,0) + "挂单::OSS=" + DoubleToString(by_in_171,0) ;
- dfz_st_7 = "开单::B " + DoubleToString(by_in_117,0) + "  S " + DoubleToString(by_in_118,0) + " Blots:: " + DoubleToString(by_do_232,2) + "  Slots:: " + DoubleToString(by_do_199,2) + " 盈亏::" + DoubleToString(by_do_197,2) ;
- if ( by_do_197>0 )
-  {
-  dfz_ui_3 = LimeGreen ;
-  }
- else
-  {
-  dfz_ui_3 = White ;
-  }
- if ( by_do_197!=0 )
-  {
-  dfz_st_4 = dfz_st_5 ;
-  }
- if ( by_bo_22==true )
-  {
-  dfz_ui_3 = Gold ;
-  }
- ObjectCreate("10163",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10163","(11)" + H22Symbol + dfz_st_7,9,"Regular script",dfz_ui_3); 
- ObjectSet("10163",OBJPROP_CORNER,0); 
- ObjectSet("10163",OBJPROP_XDISTANCE,498); 
- ObjectSet("10163",OBJPROP_YDISTANCE,305); 
- if ( by_bo_165 )
-  {
-  dfz_ui_3 = Red ;
-  dfz_st_4 = "开锁" ;
-  }
- else
-  {
-  dfz_ui_3 = LimeGreen ;
-  dfz_st_4 = "$$" ;
-  }
- aa_st_389 = "Regular script";
- aa_st_390 = dfz_st_4;
- aa_st_391 = "10164";
- if ( dfz_in_1 != -1 )
-  {
-  ObjectCreate(aa_st_391,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_391,aa_st_390,9,aa_st_389,dfz_ui_3); 
-  ObjectSet(aa_st_391,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_391,OBJPROP_XDISTANCE,919); 
-  ObjectSet(aa_st_391,OBJPROP_YDISTANCE,305); 
-  }
- by_st_275 = H23Symbol ;
- g_GroupName = "第12组2" ;
- UpdateRiskParams(); 
- CalcSpreadSignal(); 
- dfz_st_6 = "::挂单::OBL=" + DoubleToString(by_in_173,0) + "挂单::OSL=" + DoubleToString(by_in_172,0) + "::挂单::OBS=" + DoubleToString(by_in_174,0) + "挂单::OSS=" + DoubleToString(by_in_171,0) ;
- dfz_st_7 = "开单::B " + DoubleToString(by_in_117,0) + "  S " + DoubleToString(by_in_118,0) + " Blots:: " + DoubleToString(by_do_232,2) + "  Slots:: " + DoubleToString(by_do_199,2) + " 盈亏::" + DoubleToString(by_do_197,2) ;
- if ( by_do_197>0 )
-  {
-  dfz_ui_3 = LimeGreen ;
-  }
- else
-  {
-  dfz_ui_3 = White ;
-  }
- if ( by_do_197!=0 )
-  {
-  dfz_st_4 = dfz_st_5 ;
-  }
- if ( by_bo_23==true )
-  {
-  dfz_ui_3 = Gold ;
-  }
- ObjectCreate("10165",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10165","(12)" + H23Symbol + dfz_st_7,9,"Regular script",dfz_ui_3); 
- ObjectSet("10165",OBJPROP_CORNER,0); 
- ObjectSet("10165",OBJPROP_XDISTANCE,498); 
- ObjectSet("10165",OBJPROP_YDISTANCE,315); 
- if ( by_bo_165 )
-  {
-  dfz_ui_3 = Red ;
-  dfz_st_4 = "开锁" ;
-  }
- else
-  {
-  dfz_ui_3 = LimeGreen ;
-  dfz_st_4 = "$$" ;
-  }
- aa_st_395 = "Regular script";
- aa_st_396 = dfz_st_4;
- aa_st_397 = "10166";
- if ( dfz_in_1 != -1 )
-  {
-  ObjectCreate(aa_st_397,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_397,aa_st_396,9,aa_st_395,dfz_ui_3); 
-  ObjectSet(aa_st_397,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_397,OBJPROP_XDISTANCE,919); 
-  ObjectSet(aa_st_397,OBJPROP_YDISTANCE,315); 
-  }
- by_st_275 = H24Symbol ;
- g_GroupName = "第12组2" ;
- UpdateRiskParams(); 
- CalcSpreadSignal(); 
- dfz_st_6 = "::挂单::OBL=" + DoubleToString(by_in_173,0) + "挂单::OSL=" + DoubleToString(by_in_172,0) + "::挂单::OBS=" + DoubleToString(by_in_174,0) + "挂单::OSS=" + DoubleToString(by_in_171,0) ;
- dfz_st_7 = "开单::B " + DoubleToString(by_in_117,0) + "  S " + DoubleToString(by_in_118,0) + " Blots:: " + DoubleToString(by_do_232,2) + "  Slots:: " + DoubleToString(by_do_199,2) + " 盈亏::" + DoubleToString(by_do_197,2) ;
- if ( by_do_197>0 )
-  {
-  dfz_ui_3 = LimeGreen ;
-  }
- else
-  {
-  dfz_ui_3 = White ;
-  }
- if ( by_do_197!=0 )
-  {
-  dfz_st_4 = dfz_st_5 ;
-  }
- if ( by_bo_22==true )
-  {
-  dfz_ui_3 = Gold ;
-  }
- ObjectCreate("10167",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10167","(12)" + H24Symbol + dfz_st_7,9,"Regular script",dfz_ui_3); 
- ObjectSet("10167",OBJPROP_CORNER,0); 
- ObjectSet("10167",OBJPROP_XDISTANCE,498); 
- ObjectSet("10167",OBJPROP_YDISTANCE,325); 
- if ( by_bo_165 )
-  {
-  dfz_ui_3 = Red ;
-  dfz_st_4 = "开锁" ;
-  }
- else
-  {
-  dfz_ui_3 = LimeGreen ;
-  dfz_st_4 = "$$" ;
-  }
- aa_st_401 = "Regular script";
- aa_st_402 = dfz_st_4;
- aa_st_403 = "10168";
- if ( dfz_in_1 != -1 )
-  {
-  ObjectCreate(aa_st_403,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_403,aa_st_402,9,aa_st_401,dfz_ui_3); 
-  ObjectSet(aa_st_403,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_403,OBJPROP_XDISTANCE,919); 
-  ObjectSet(aa_st_403,OBJPROP_YDISTANCE,325); 
-  }
- by_st_275 = H25Symbol ;
- g_GroupName = "第13组2" ;
- UpdateRiskParams(); 
- CalcSpreadSignal(); 
- dfz_st_6 = "::挂单::OBL=" + DoubleToString(by_in_173,0) + "挂单::OSL=" + DoubleToString(by_in_172,0) + "::挂单::OBS=" + DoubleToString(by_in_174,0) + "挂单::OSS=" + DoubleToString(by_in_171,0) ;
- dfz_st_7 = "开单::B " + DoubleToString(by_in_117,0) + "  S " + DoubleToString(by_in_118,0) + " Blots:: " + DoubleToString(by_do_232,2) + "  Slots:: " + DoubleToString(by_do_199,2) + " 盈亏::" + DoubleToString(by_do_197,2) ;
- if ( by_do_197>0 )
-  {
-  dfz_ui_3 = LimeGreen ;
-  }
- else
-  {
-  dfz_ui_3 = White ;
-  }
- if ( by_do_197!=0 )
-  {
-  dfz_st_4 = dfz_st_5 ;
-  }
- if ( by_bo_23==true )
-  {
-  dfz_ui_3 = Gold ;
-  }
- ObjectCreate("10169",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10169","(13)" + H25Symbol + dfz_st_7,9,"Regular script",dfz_ui_3); 
- ObjectSet("10169",OBJPROP_CORNER,0); 
- ObjectSet("10169",OBJPROP_XDISTANCE,498); 
- ObjectSet("10169",OBJPROP_YDISTANCE,335); 
- if ( by_bo_165 )
-  {
-  dfz_ui_3 = Red ;
-  dfz_st_4 = "开锁" ;
-  }
- else
-  {
-  dfz_ui_3 = LimeGreen ;
-  dfz_st_4 = "$$" ;
-  }
- aa_st_407 = "Regular script";
- aa_st_408 = dfz_st_4;
- aa_st_409 = "10170";
- if ( dfz_in_1 != -1 )
-  {
-  ObjectCreate(aa_st_409,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_409,aa_st_408,9,aa_st_407,dfz_ui_3); 
-  ObjectSet(aa_st_409,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_409,OBJPROP_XDISTANCE,919); 
-  ObjectSet(aa_st_409,OBJPROP_YDISTANCE,335); 
-  }
- by_st_275 = H26Symbol ;
- g_GroupName = "第13组2" ;
- UpdateRiskParams(); 
- CalcSpreadSignal(); 
- dfz_st_6 = "::挂单::OBL=" + DoubleToString(by_in_173,0) + "挂单::OSL=" + DoubleToString(by_in_172,0) + "::挂单::OBS=" + DoubleToString(by_in_174,0) + "挂单::OSS=" + DoubleToString(by_in_171,0) ;
- dfz_st_7 = "开单::B " + DoubleToString(by_in_117,0) + "  S " + DoubleToString(by_in_118,0) + " Blots:: " + DoubleToString(by_do_232,2) + "  Slots:: " + DoubleToString(by_do_199,2) + " 盈亏::" + DoubleToString(by_do_197,2) ;
- if ( by_do_197>0 )
-  {
-  dfz_ui_3 = LimeGreen ;
-  }
- else
-  {
-  dfz_ui_3 = White ;
-  }
- if ( by_do_197!=0 )
-  {
-  dfz_st_4 = dfz_st_5 ;
-  }
- if ( by_bo_22==true )
-  {
-  dfz_ui_3 = Gold ;
-  }
- ObjectCreate("10171",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10171","(13)" + H26Symbol + dfz_st_7,9,"Regular script",dfz_ui_3); 
- ObjectSet("10171",OBJPROP_CORNER,0); 
- ObjectSet("10171",OBJPROP_XDISTANCE,498); 
- ObjectSet("10171",OBJPROP_YDISTANCE,345); 
- if ( by_bo_165 )
-  {
-  dfz_ui_3 = Red ;
-  dfz_st_4 = "开锁" ;
-  }
- else
-  {
-  dfz_ui_3 = LimeGreen ;
-  dfz_st_4 = "$$" ;
-  }
- aa_st_413 = "Regular script";
- aa_st_414 = dfz_st_4;
- aa_st_415 = "10172";
- if ( dfz_in_1 != -1 )
-  {
-  ObjectCreate(aa_st_415,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_415,aa_st_414,9,aa_st_413,dfz_ui_3); 
-  ObjectSet(aa_st_415,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_415,OBJPROP_XDISTANCE,919); 
-  ObjectSet(aa_st_415,OBJPROP_YDISTANCE,345); 
-  }
- by_st_275 = H27Symbol ;
- g_GroupName = "第14组2" ;
- UpdateRiskParams(); 
- CalcSpreadSignal(); 
- dfz_st_6 = "::挂单::OBL=" + DoubleToString(by_in_173,0) + "挂单::OSL=" + DoubleToString(by_in_172,0) + "::挂单::OBS=" + DoubleToString(by_in_174,0) + "挂单::OSS=" + DoubleToString(by_in_171,0) ;
- dfz_st_7 = "开单::B " + DoubleToString(by_in_117,0) + "  S " + DoubleToString(by_in_118,0) + " Blots:: " + DoubleToString(by_do_232,2) + "  Slots:: " + DoubleToString(by_do_199,2) + " 盈亏::" + DoubleToString(by_do_197,2) ;
- if ( by_do_197>0 )
-  {
-  dfz_ui_3 = LimeGreen ;
-  }
- else
-  {
-  dfz_ui_3 = White ;
-  }
- if ( by_do_197!=0 )
-  {
-  dfz_st_4 = dfz_st_5 ;
-  }
- if ( by_bo_23==true )
-  {
-  dfz_ui_3 = Gold ;
-  }
- ObjectCreate("10173",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10173","(14)" + H27Symbol + dfz_st_7,9,"Regular script",dfz_ui_3); 
- ObjectSet("10173",OBJPROP_CORNER,0); 
- ObjectSet("10173",OBJPROP_XDISTANCE,498); 
- ObjectSet("10173",OBJPROP_YDISTANCE,355); 
- if ( by_bo_165 )
-  {
-  dfz_ui_3 = Red ;
-  dfz_st_4 = "开锁" ;
-  }
- else
-  {
-  dfz_ui_3 = LimeGreen ;
-  dfz_st_4 = "$$" ;
-  }
- aa_st_419 = "Regular script";
- aa_st_420 = dfz_st_4;
- aa_st_421 = "10174";
- if ( dfz_in_1 != -1 )
-  {
-  ObjectCreate(aa_st_421,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_421,aa_st_420,9,aa_st_419,dfz_ui_3); 
-  ObjectSet(aa_st_421,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_421,OBJPROP_XDISTANCE,919); 
-  ObjectSet(aa_st_421,OBJPROP_YDISTANCE,355); 
-  }
- by_st_275 = H28Symbol ;
- g_GroupName = "第14组2" ;
- UpdateRiskParams(); 
- CalcSpreadSignal(); 
- dfz_st_6 = "::挂单::OBL=" + DoubleToString(by_in_173,0) + "挂单::OSL=" + DoubleToString(by_in_172,0) + "::挂单::OBS=" + DoubleToString(by_in_174,0) + "挂单::OSS=" + DoubleToString(by_in_171,0) ;
- dfz_st_7 = "开单::B " + DoubleToString(by_in_117,0) + "  S " + DoubleToString(by_in_118,0) + " Blots:: " + DoubleToString(by_do_232,2) + "  Slots:: " + DoubleToString(by_do_199,2) + " 盈亏::" + DoubleToString(by_do_197,2) ;
- if ( by_do_197>0 )
-  {
-  dfz_ui_3 = LimeGreen ;
-  }
- else
-  {
-  dfz_ui_3 = White ;
-  }
- if ( by_do_197!=0 )
-  {
-  dfz_st_4 = dfz_st_5 ;
-  }
- if ( by_bo_23==true )
-  {
-  dfz_ui_3 = Gold ;
-  }
- ObjectCreate("10175",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10175","(14)" + H28Symbol + dfz_st_7,9,"Regular script",dfz_ui_3); 
- ObjectSet("10175",OBJPROP_CORNER,0); 
- ObjectSet("10175",OBJPROP_XDISTANCE,498); 
- ObjectSet("10175",OBJPROP_YDISTANCE,365); 
- if ( by_bo_165 )
-  {
-  dfz_ui_3 = Red ;
-  dfz_st_4 = "开锁" ;
-  }
- else
-  {
-  dfz_ui_3 = LimeGreen ;
-  dfz_st_4 = "$$" ;
-  }
- aa_st_425 = "Regular script";
- aa_st_426 = dfz_st_4;
- aa_st_427 = "10176";
- if ( dfz_in_1 != -1 )
-  {
-  ObjectCreate(aa_st_427,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_427,aa_st_426,9,aa_st_425,dfz_ui_3); 
-  ObjectSet(aa_st_427,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_427,OBJPROP_XDISTANCE,919); 
-  ObjectSet(aa_st_427,OBJPROP_YDISTANCE,365); 
-  }
- by_st_275 = H29Symbol ;
- g_GroupName = "第15组2" ;
- UpdateRiskParams(); 
- CalcSpreadSignal(); 
- dfz_st_6 = "::挂单::OBL=" + DoubleToString(by_in_173,0) + "挂单::OSL=" + DoubleToString(by_in_172,0) + "::挂单::OBS=" + DoubleToString(by_in_174,0) + "挂单::OSS=" + DoubleToString(by_in_171,0) ;
- dfz_st_7 = "开单::B " + DoubleToString(by_in_117,0) + "  S " + DoubleToString(by_in_118,0) + " Blots:: " + DoubleToString(by_do_232,2) + "  Slots:: " + DoubleToString(by_do_199,2) + " 盈亏::" + DoubleToString(by_do_197,2) ;
- if ( by_do_197>0 )
-  {
-  dfz_ui_3 = LimeGreen ;
-  }
- else
-  {
-  dfz_ui_3 = White ;
-  }
- if ( by_do_197!=0 )
-  {
-  dfz_st_4 = dfz_st_5 ;
-  }
- if ( by_bo_23==true )
-  {
-  dfz_ui_3 = Gold ;
-  }
- ObjectCreate("10177",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10177","(15)" + H29Symbol + dfz_st_7,9,"Regular script",dfz_ui_3); 
- ObjectSet("10177",OBJPROP_CORNER,0); 
- ObjectSet("10177",OBJPROP_XDISTANCE,498); 
- ObjectSet("10177",OBJPROP_YDISTANCE,375); 
- if ( by_bo_165 )
-  {
-  dfz_ui_3 = Red ;
-  dfz_st_4 = "开锁" ;
-  }
- else
-  {
-  dfz_ui_3 = LimeGreen ;
-  dfz_st_4 = "$$" ;
-  }
- aa_st_431 = "Regular script";
- aa_st_432 = dfz_st_4;
- aa_st_433 = "10178";
- if ( dfz_in_1 != -1 )
-  {
-  ObjectCreate(aa_st_433,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_433,aa_st_432,9,aa_st_431,dfz_ui_3); 
-  ObjectSet(aa_st_433,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_433,OBJPROP_XDISTANCE,919); 
-  ObjectSet(aa_st_433,OBJPROP_YDISTANCE,375); 
-  }
- by_st_275 = H30Symbol ;
- g_GroupName = "第15组2" ;
- UpdateRiskParams(); 
- CalcSpreadSignal(); 
- dfz_st_6 = "::挂单::OBL=" + DoubleToString(by_in_173,0) + "挂单::OSL=" + DoubleToString(by_in_172,0) + "::挂单::OBS=" + DoubleToString(by_in_174,0) + "挂单::OSS=" + DoubleToString(by_in_171,0) ;
- dfz_st_7 = "开单::B " + DoubleToString(by_in_117,0) + "  S " + DoubleToString(by_in_118,0) + " Blots:: " + DoubleToString(by_do_232,2) + "  Slots:: " + DoubleToString(by_do_199,2) + " 盈亏::" + DoubleToString(by_do_197,2) ;
- if ( by_do_197>0 )
-  {
-  dfz_ui_3 = LimeGreen ;
-  }
- else
-  {
-  dfz_ui_3 = White ;
-  }
- if ( by_do_197!=0 )
-  {
-  dfz_st_4 = dfz_st_5 ;
-  }
- if ( by_bo_23==true )
-  {
-  dfz_ui_3 = Gold ;
-  }
- ObjectCreate("10179",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10179","(15)" + H30Symbol + dfz_st_7,9,"Regular script",dfz_ui_3); 
- ObjectSet("10179",OBJPROP_CORNER,0); 
- ObjectSet("10179",OBJPROP_XDISTANCE,498); 
- ObjectSet("10179",OBJPROP_YDISTANCE,385); 
- if ( by_bo_165 )
-  {
-  dfz_ui_3 = Red ;
-  dfz_st_4 = "开锁" ;
-  }
- else
-  {
-  dfz_ui_3 = LimeGreen ;
-  dfz_st_4 = "$$" ;
-  }
- aa_st_437 = "Regular script";
- aa_st_438 = dfz_st_4;
- aa_st_439 = "10180";
- if ( dfz_in_1 != -1 )
-  {
-  ObjectCreate(aa_st_439,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_439,aa_st_438,9,aa_st_437,dfz_ui_3); 
-  ObjectSet(aa_st_439,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_439,OBJPROP_XDISTANCE,919); 
-  ObjectSet(aa_st_439,OBJPROP_YDISTANCE,385); 
-  }
- by_st_275 = H31Symbol ;
- g_GroupName = "第16组2" ;
- UpdateRiskParams(); 
- CalcSpreadSignal(); 
- dfz_st_6 = "::挂单::OBL=" + DoubleToString(by_in_173,0) + "挂单::OSL=" + DoubleToString(by_in_172,0) + "::挂单::OBS=" + DoubleToString(by_in_174,0) + "挂单::OSS=" + DoubleToString(by_in_171,0) ;
- dfz_st_7 = "开单::B " + DoubleToString(by_in_117,0) + "  S " + DoubleToString(by_in_118,0) + " Blots:: " + DoubleToString(by_do_232,2) + "  Slots:: " + DoubleToString(by_do_199,2) + " 盈亏::" + DoubleToString(by_do_197,2) ;
- if ( by_do_197>0 )
-  {
-  dfz_ui_3 = LimeGreen ;
-  }
- else
-  {
-  dfz_ui_3 = White ;
-  }
- if ( by_do_197!=0 )
-  {
-  dfz_st_4 = dfz_st_5 ;
-  }
- if ( by_bo_23==true )
-  {
-  dfz_ui_3 = Gold ;
-  }
- ObjectCreate("10181",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10181","(16)" + H31Symbol + dfz_st_7,9,"Regular script",dfz_ui_3); 
- ObjectSet("10181",OBJPROP_CORNER,0); 
- ObjectSet("10181",OBJPROP_XDISTANCE,498); 
- ObjectSet("10181",OBJPROP_YDISTANCE,395); 
- if ( by_bo_165 )
-  {
-  dfz_ui_3 = Red ;
-  dfz_st_4 = "开锁" ;
-  }
- else
-  {
-  dfz_ui_3 = LimeGreen ;
-  dfz_st_4 = "$$" ;
-  }
- aa_st_443 = "Regular script";
- aa_st_444 = dfz_st_4;
- aa_st_445 = "10182";
- if ( dfz_in_1 != -1 )
-  {
-  ObjectCreate(aa_st_445,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_445,aa_st_444,9,aa_st_443,dfz_ui_3); 
-  ObjectSet(aa_st_445,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_445,OBJPROP_XDISTANCE,919); 
-  ObjectSet(aa_st_445,OBJPROP_YDISTANCE,395); 
-  }
- by_st_275 = H32Symbol ;
- g_GroupName = "第16组2" ;
- UpdateRiskParams(); 
- CalcSpreadSignal(); 
- dfz_st_6 = "::挂单::OBL=" + DoubleToString(by_in_173,0) + "挂单::OSL=" + DoubleToString(by_in_172,0) + "::挂单::OBS=" + DoubleToString(by_in_174,0) + "挂单::OSS=" + DoubleToString(by_in_171,0) ;
- dfz_st_7 = "开单::B " + DoubleToString(by_in_117,0) + "  S " + DoubleToString(by_in_118,0) + " Blots:: " + DoubleToString(by_do_232,2) + "  Slots:: " + DoubleToString(by_do_199,2) + " 盈亏::" + DoubleToString(by_do_197,2) ;
- if ( by_do_197>0 )
-  {
-  dfz_ui_3 = LimeGreen ;
-  }
- else
-  {
-  dfz_ui_3 = White ;
-  }
- if ( by_do_197!=0 )
-  {
-  dfz_st_4 = dfz_st_5 ;
-  }
- if ( by_bo_23==true )
-  {
-  dfz_ui_3 = Gold ;
-  }
- ObjectCreate("10183",OBJ_LABEL,0,0,0,0,0,0,0); 
- ObjectSetText("10183","(16)" + H32Symbol + dfz_st_7,9,"Regular script",dfz_ui_3); 
- ObjectSet("10183",OBJPROP_CORNER,0); 
- ObjectSet("10183",OBJPROP_XDISTANCE,498); 
- ObjectSet("10183",OBJPROP_YDISTANCE,405); 
- if ( by_bo_165 )
-  {
-  dfz_ui_3 = Red ;
-  dfz_st_4 = "开锁" ;
-  }
- else
-  {
-  dfz_ui_3 = LimeGreen ;
-  dfz_st_4 = "$$" ;
-  }
- aa_st_449 = "Regular script";
- aa_st_450 = dfz_st_4;
- aa_st_451 = "10184";
- if ( dfz_in_1 != -1 )
-  {
-  ObjectCreate(aa_st_451,OBJ_LABEL,0,0,0,0,0,0,0); 
-  ObjectSetText(aa_st_451,aa_st_450,9,aa_st_449,dfz_ui_3); 
-  ObjectSet(aa_st_451,OBJPROP_CORNER,dfz_in_1); 
-  ObjectSet(aa_st_451,OBJPROP_XDISTANCE,919); 
-  ObjectSet(aa_st_451,OBJPROP_YDISTANCE,405); 
-  }
- // ===== v2 模块化面板（新增监控模块，对象ID 20000–20663，与旧版 10xxx 完全并行互不影响）=====
+  aa_bo_205 = false;
+  }
+ if ( aa_bo_205 )
+  {
+  aa_st_217 = bsw_0;
+  aa_st_218 = g_Symbol2;
+  aa_do_214 = 0;
+  for (aa_in_219 = 0 ; aa_in_219<OrdersTotal() ; aa_in_219=aa_in_219 + 1)
+   {
+   if ( OrderSelect(aa_in_219,SELECT_BY_POS,MODE_TRADES)!=false && OrderSymbol()==aa_st_218 && OrderMagicNumber()==g_MagicNumber && OrderComment()==aa_st_217 )
+    {
+    aa_do_214 = OrderProfit() + OrderSwap() + OrderCommission() + aa_do_214;
+    }
+   }
+  if ( aa_do_214<0 )
+   {
+   aa_st_222 = g_Symbol2;
+   aa_do_220 = 0;
+   for (aa_in_223 = 0 ; aa_in_223<=OrdersTotal() ; aa_in_223=aa_in_223 + 1)
+    {
+    if ( OrderSelect(aa_in_223,SELECT_BY_POS,MODE_TRADES)!=false && OrderSymbol()==aa_st_222 && OrderMagicNumber()==g_MagicNumber && OrderComment()==g_GroupName && OrderType()==0 )
+     {
+     aa_do_220 = aa_do_220 + OrderLots();
+     }
+    }
+   aa_do_224 = aa_do_220;
+   aa_st_225 = g_Symbol2;
+   aa_do_226 = 0;
+   for (aa_in_227 = 0 ; aa_in_227<=OrdersTotal() ; aa_in_227=aa_in_227 + 1)
+    {
+    if ( OrderSelect(aa_in_227,SELECT_BY_POS,MODE_TRADES)!=false && OrderSymbol()==aa_st_225 && OrderMagicNumber()==g_MagicNumber && OrderComment()==g_GroupName && OrderType()==1 )
+     {
+     aa_do_226 = aa_do_226 + OrderLots();
+     }
+    }
+   if ( aa_do_224<aa_do_226 && by_lo_149 != iTime(g_Symbol2,0,0) )
+    {
+    aa_do_229 = MarketInfo(g_Symbol2,10);
+    aa_st_230 = g_Symbol2;
+    aa_do_231 = 0;
+    for (aa_in_232 = 0 ; aa_in_232<=OrdersTotal() ; aa_in_232=aa_in_232 + 1)
+     {
+     if ( OrderSelect(aa_in_232,SELECT_BY_POS,MODE_TRADES)!=false && OrderSymbol()==aa_st_230 && OrderMagicNumber()==g_MagicNumber && OrderComment()==g_GroupName && OrderType()==1 )
+      {
+      aa_do_231 = aa_do_231 + OrderLots();
+      }
+     }
+    aa_do_233 = aa_do_231;
+    aa_st_234 = g_Symbol2;
+    aa_do_235 = 0;
+    for (aa_in_236 = 0 ; aa_in_236<=OrdersTotal() ; aa_in_236=aa_in_236 + 1)
+     {
+     if ( OrderSelect(aa_in_236,SELECT_BY_POS,MODE_TRADES)!=false && OrderSymbol()==aa_st_234 && OrderMagicNumber()==g_MagicNumber && OrderComment()==g_GroupName && OrderType()==0 )
+      {
+      aa_do_235 = aa_do_235 + OrderLots();
+      }
+     }
+    if ( !OrderSend(g_Symbol2,OP_BUY,aa_do_233 - aa_do_235,aa_do_229,50,0,0,g_GroupName,g_MagicNumber,0,LimeGreen) )
+     {
+     PrintFormat("锁单B",GetLastError()); 
+     }
+    by_lo_149 = iTime(g_Symbol2,0,0) ;
+    by_bo_165 = true ;
+  }}}
+ return(0); 
+ }
+double       CalcCorrelation(int bsw_0,int bsw_1,string bsw_2, string bsw_3)
+{
+   EnsurePanelObjects();
+   RefreshGroupCache();
+
+   // ===== 清理旧版面板对象（10000~19999 范围，防止新旧共存）=====
+   int __oldId;
+   string __oldName;
+   for(__oldId=10000; __oldId<=19999; __oldId++) {
+      __oldName = DoubleToString(__oldId, 0);
+      if(ObjectFind(__oldName) >= 0) {
+         ObjectDelete(__oldName);
+      }
+   }
+   // QIAN/HLINE 旧对象
+   if(ObjectFind("QIAN") >= 0) ObjectDelete("QIAN");
+   if(ObjectFind("11") >= 0) ObjectDelete("11");
+
+   // ===== v2 模块化面板 =====
+   RenderAccountKPI();
+   RenderSignalMatrix();
+   RenderStatusPillars();
+   RenderPositionTable();
+   RenderRiskMonitor();
+   RenderActivityLog();
+   return(0);
+// ===== v2 模块化面板（新增监控模块，对象ID 20000–20663，与旧版 10xxx 完全并行互不影响）=====
  RenderAccountKPI();
  RenderSignalMatrix();
  RenderStatusPillars();
@@ -4960,7 +3952,7 @@ void RenderRiskMonitor() {
       addPct=100; aTxt="- 无仓"; aC=CLR_TEXT_META;
       if(g_GC_lots[gi]>0 && g_GC_pnl[gi]<0) {
          thr=g_GC_lots[gi]*6.8*100;
-         addPct=(-g_GC_pnl[gi])/MathMax(thr,0.01)*100;
+         addPct=(-g_GC_pnl[gi])/((thr>0.01)?thr:0.01)*100;
          aTxt=DoubleToString(addPct,0)+"%";
          if(addPct>=100)      aC=CLR_TEXT_LOSS;
          else if(addPct>=70) aC=CLR_TEXT_WARN;
