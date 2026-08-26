@@ -4796,73 +4796,56 @@ aa_st_258 = "交易账号:: " + DoubleToString(AccountNumber(),0);
 
 // ====== 模块 ① RenderAccountKPI：顶部 KPI 条（CORNER=1）背景卡 + 文字对齐 ======
 void RenderAccountKPI() {
-   int x[6];
-   x[0]=5;   x[1]=170; x[2]=335; x[3]=500; x[4]=665; x[5]=830;
-   int w[6];
-   w[0]=160; w[1]=160; w[2]=160; w[3]=160; w[4]=160; w[5]=155;
+   int x0,x1,x2,x3,x4,x5;
+   int w0,w1,w2,w3,w4,w5;
    int yTop,yLbl,yVal;
    color valC;
    string s;
-   yTop=5; yLbl=yTop+6; yVal=yTop+28;
+   x0=5;   x1=170; x2=335; x3=500; x4=665; x5=830;
+   w0=160; w1=160; w2=160; w3=160; w4=160; w5=155;
+   yTop=5; yLbl=24; yVal=38;
    SetRect("20000",5,yTop,985,58,CLR_PANEL_BG,CLR_FRAME,1);
-   SetLabel("20001","  账户监控 · 多品种对冲套利 EA",9,PANEL_FONT_B,CLR_TEXT_WARN,8,yLbl-1);
-   // KPI1 余额
-   SetRect("20010",x[0]+5,yTop+18,w[0]-10,36,CLR_ALT_ROW,CLR_FRAME,1);
-   SetLabel("20011","余额 Balance",8,PANEL_FONT,CLR_TEXT_META,x[0]+10,yLbl+12);
-   valC = (AccountBalance()>0)?CLR_TEXT_PROFIT:CLR_TEXT_LOSS;
-   s = "$"+DoubleToString(AccountBalance(),2);
-   SetLabel("20012",s,10,PANEL_FONT_B,valC,x[0]+10,yVal+12);
-   // KPI2 净值
-   SetRect("20013",x[1]+5,yTop+18,w[1]-10,36,CLR_ALT_ROW,CLR_FRAME,1);
-   SetLabel("20014","净值 Equity",8,PANEL_FONT,CLR_TEXT_META,x[1]+10,yLbl+12);
-   valC = (AccountEquity()>=AccountBalance())?CLR_TEXT_PROFIT:CLR_TEXT_LOSS;
-   s = "$"+DoubleToString(AccountEquity(),2);
-   SetLabel("20015",s,10,PANEL_FONT_B,valC,x[1]+10,yVal+12);
-   // KPI3 浮盈
-   SetRect("20016",x[2]+5,yTop+18,w[2]-10,36,CLR_ALT_ROW,CLR_FRAME,1);
-   SetLabel("20017","浮动盈亏",8,PANEL_FONT,CLR_TEXT_META,x[2]+10,yLbl+12);
-   valC = (AccountProfit()>=0)?CLR_TEXT_PROFIT:CLR_TEXT_LOSS;
-   if(AccountProfit()>=0) s="+"+DoubleToString(AccountProfit(),2)+" USD";
-   else                 s=DoubleToString(AccountProfit(),2)+" USD";
-   SetLabel("20018",s,10,PANEL_FONT_B,valC,x[2]+10,yVal+12);
-   // KPI4 保证金
-   SetRect("20019",x[3]+5,yTop+18,w[3]-10,36,CLR_ALT_ROW,CLR_FRAME,1);
-   SetLabel("2001A","已用保证金",8,PANEL_FONT,CLR_TEXT_META,x[3]+10,yLbl+12);
-   s = "$"+DoubleToString(AccountMargin(),2);
-   SetLabel("2001B",s,10,PANEL_FONT_B,CLR_TEXT_WARN,x[3]+10,yVal+12);
-   // KPI5 可用
-   SetRect("2001C",x[4]+5,yTop+18,w[4]-10,36,CLR_ALT_ROW,CLR_FRAME,1);
-   SetLabel("2001D","可用 FreeMargin",8,PANEL_FONT,CLR_TEXT_META,x[4]+10,yLbl+12);
-   valC = (AccountFreeMargin()>0)?White:CLR_TEXT_LOSS;
-   s = "$"+DoubleToString(AccountFreeMargin(),2);
-   SetLabel("2001E",s,10,PANEL_FONT_B,valC,x[4]+10,yVal+12);
-   // KPI6 开仓数
-   SetRect("2001F",x[5]+5,yTop+18,w[5]-10,36,CLR_ALT_ROW,CLR_FRAME,1);
-   SetLabel("20020","开仓/杠杆",8,PANEL_FONT,CLR_TEXT_META,x[5]+10,yLbl+12);
-   s = DoubleToString(OrdersTotal(),0)+"单  1:"+DoubleToString(AccountLeverage(),0);
-   SetLabel("20021",s,10,PANEL_FONT_B,CLR_TEXT_WARN,x[5]+10,yVal+12);
+   SetLabel("20001","  账户监控 · 多品种对冲套利 EA",9,PANEL_FONT_B,CLR_TEXT_WARN,8,yTop+4);
+   SetRect("20010",x0+3,yLbl,w0-6,22,CLR_ALT_ROW,CLR_FRAME,1);
+   SetLabel("20011","余额 $"+DoubleToString(AccountBalance(),2),9,PANEL_FONT_B,CLR_TEXT_PROFIT,x0+6,yLbl+4);
+   SetRect("20013",x1+3,yLbl,w1-6,22,CLR_ALT_ROW,CLR_FRAME,1);
+   SetLabel("20014","净值 $"+DoubleToString(AccountEquity(),2),9,PANEL_FONT_B,CLR_TEXT_PROFIT,x1+6,yLbl+4);
+   SetRect("20016",x2+3,yLbl,w2-6,22,CLR_ALT_ROW,CLR_FRAME,1);
+   valC=(AccountProfit()>=0)?CLR_TEXT_PROFIT:CLR_TEXT_LOSS;
+   if(AccountProfit()>=0) s="+"+DoubleToString(AccountProfit(),2);
+   else                 s=DoubleToString(AccountProfit(),2);
+   SetLabel("20017","浮盈 "+s+" USD",9,PANEL_FONT_B,valC,x2+6,yLbl+4);
+   SetRect("20019",x3+3,yLbl,w3-6,22,CLR_ALT_ROW,CLR_FRAME,1);
+   SetLabel("2001A","保证金 $"+DoubleToString(AccountMargin(),2),8,PANEL_FONT_B,CLR_TEXT_WARN,x3+6,yLbl+5);
+   SetRect("2001C",x4+3,yLbl,w4-6,22,CLR_ALT_ROW,CLR_FRAME,1);
+   valC=(AccountFreeMargin()>0)?White:CLR_TEXT_LOSS;
+   SetLabel("2001D","可用 $"+DoubleToString(AccountFreeMargin(),2),8,PANEL_FONT_B,valC,x4+6,yLbl+5);
+   SetRect("2001F",x5+3,yLbl,w5-6,22,CLR_ALT_ROW,CLR_FRAME,1);
+   s=DoubleToString(OrdersTotal(),0)+"单 1:"+DoubleToString(AccountLeverage(),0);
+   SetLabel("20020",s,8,PANEL_FONT_B,CLR_TEXT_WARN,x5+6,yLbl+5);
 }
 void RenderSignalMatrix() {
    int gi,col,row,cx,cy;
-   color bgC, sdC, tC, mC;
-   string sig, sid;
-   SetLabel("20100","  信号矩阵 · 16 组",9,PANEL_FONT_B,CLR_TEXT_WARN,505,70);
-   SetLabel("20101","1=偏低 2=偏高 0=带内 Corr=拒绝",7,PANEL_FONT,CLR_TEXT_DIM,630,72);
-   for ( gi=1; gi<=16; gi++ ) {
+   color bgC,sdC,tC,mC;
+   string sig,sid;
+   SetRect("20100",505,68,490,200,CLR_PANEL_BG,CLR_FRAME,1);
+   SetLabel("20101","  信号矩阵 · 16 组",9,PANEL_FONT_B,CLR_TEXT_WARN,511,72);
+   SetLabel("20102","1=偏低 2=偏高 0=带内 Corr=拒绝",7,PANEL_FONT,CLR_TEXT_DIM,640,74);
+   for(gi=1;gi<=16;gi++) {
       col=(gi-1)%4; row=(gi-1)/4;
-      cx=505+col*122;
-      cy=86+row*44;
-      bgC=CLR_ALT_ROW; tC=White; mC=CLR_TEXT_META; sdC=CLR_SIDE_NEUTRAL; sig="  带内";
-      if(!g_GC_active[gi]) { bgC=CLR_PANEL_BG; tC=CLR_TEXT_DIM; mC=CLR_TEXT_DIM; sdC=CLR_SIDE_NEUTRAL; sig="  关闭"; }
-      else if(g_GC_corrReject[gi]) { sdC=CLR_SIDE_CORR; sig="  Corr拒绝"; mC=CLR_TEXT_WARN; }
-      else if(g_GC_signal[gi]==1) { sdC=CLR_SIDE_BUY; sig="  Signal1 偏低"; }
-      else if(g_GC_signal[gi]==2) { sdC=CLR_SIDE_SELL; sig="  Signal2 偏高"; }
+      cx=511+col*120;
+      cy=90+row*44;
+      bgC=CLR_ALT_ROW; tC=White; mC=CLR_TEXT_META; sdC=CLR_SIDE_NEUTRAL; sig="带内";
+      if(!g_GC_active[gi]) { bgC=CLR_PANEL_BG; tC=CLR_TEXT_DIM; mC=CLR_TEXT_DIM; sdC=CLR_SIDE_NEUTRAL; sig="关闭"; }
+      else if(g_GC_corrReject[gi]) { sdC=CLR_SIDE_CORR; sig="Corr拒绝"; mC=CLR_TEXT_WARN; }
+      else if(g_GC_signal[gi]==1) { sdC=CLR_SIDE_BUY; sig="偏低 Signal1"; }
+      else if(g_GC_signal[gi]==2) { sdC=CLR_SIDE_SELL; sig="偏高 Signal2"; }
       sid="201"+DoubleToString(gi,0);
-      SetRect(sid,cx,cy,SIG_CELL_W,SIG_CELL_H,bgC,CLR_FRAME,1);
-      SetRect(sid+"s",cx,cy,3,SIG_CELL_H,sdC,sdC,1);
-      SetLabel("211"+DoubleToString(gi,0),"G"+DoubleToString(gi,0)+" "+g_GC_sym1[gi]+"·"+g_GC_sym2[gi],8,PANEL_FONT_B,tC,cx+6,cy+3);
-      SetLabel("221"+DoubleToString(gi,0),sig,8,PANEL_FONT_B,sdC,cx+6,cy+14);
-      SetLabel("231"+DoubleToString(gi,0),"β="+DoubleToString(g_GC_beta[gi],3)+" 偏离="+DoubleToString(g_GC_devPts[gi],2),7,PANEL_FONT,mC,cx+6,cy+26);
+      SetRect(sid,cx,cy,114,40,bgC,CLR_FRAME,1);
+      SetRect(sid+"s",cx,cy,3,40,sdC,sdC,1);
+      SetLabel("211"+DoubleToString(gi,0),"G"+DoubleToString(gi,0)+" "+g_GC_sym1[gi]+" "+g_GC_sym2[gi],8,PANEL_FONT_B,tC,cx+6,cy+2);
+      SetLabel("221"+DoubleToString(gi,0),sig,8,PANEL_FONT_B,sdC,cx+6,cy+13);
+      SetLabel("231"+DoubleToString(gi,0),"B="+DoubleToString(g_GC_beta[gi],3)+" D="+DoubleToString(g_GC_devPts[gi],2),7,PANEL_FONT,mC,cx+6,cy+25);
    }
 }
 void RenderStatusPillars() {
@@ -4870,115 +4853,109 @@ void RenderStatusPillars() {
    color vC;
    string sSig,sVal;
    double dd;
-   px=505; py=266; pw=488; ph=168;
+   px=505; py=274; pw=490; ph=154;
    SetRect("20200",px,py,pw,ph,CLR_PANEL_BG,CLR_FRAME,1);
-   SetLabel("20201","  运行状态",9,PANEL_FONT_B,CLR_TEXT_WARN,px+6,py+6);
+   SetLabel("20201","  运行状态",9,PANEL_FONT_B,CLR_TEXT_WARN,px+6,py+4);
    y=py+22;
-   // 行1 EA 运行
-   SetRect("20202",px+5,y,pw-10,STA_ROW_H,CLR_ALT_ROW,CLR_FRAME,1);
-   SetLabel("20203","EA 运行",8,PANEL_FONT,CLR_TEXT_META,px+10,y+4);
-   SetLabel("20204","● 正常",9,PANEL_FONT_B,CLR_SIDE_BUY,px+pw-80,y+4);
+   SetRect("20202",px+5,y,pw-10,20,CLR_ALT_ROW,CLR_FRAME,1);
+   SetLabel("20203","EA 运行",8,PANEL_FONT,CLR_TEXT_META,px+10,y+5);
+   SetLabel("20204","● 正常",9,PANEL_FONT_B,CLR_SIDE_BUY,px+pw-70,y+5);
    y+=22;
-   // 行2 清仓
-   SetRect("20205",px+5,y,pw-10,STA_ROW_H,CLR_ALT_ROW,CLR_FRAME,1);
-   SetLabel("20206","强制清仓",8,PANEL_FONT,CLR_TEXT_META,px+10,y+4);
-   vC = 清仓?CLR_TEXT_LOSS:White;
-   sVal = 清仓?"● 启用":"○ 关闭";
-   SetLabel("20207",sVal,9,PANEL_FONT_B,vC,px+pw-80,y+4);
+   SetRect("20205",px+5,y,pw-10,20,CLR_ALT_ROW,CLR_FRAME,1);
+   SetLabel("20206","强制清仓",8,PANEL_FONT,CLR_TEXT_META,px+10,y+5);
+   vC=清仓?CLR_TEXT_LOSS:White;
+   sVal=清仓?"● 启用":"○ 关闭";
+   SetLabel("20207",sVal,9,PANEL_FONT_B,vC,px+pw-70,y+5);
    y+=22;
-   // 行3 只平不开
-   SetRect("20208",px+5,y,pw-10,STA_ROW_H,CLR_ALT_ROW,CLR_FRAME,1);
-   SetLabel("20209","只平不开",8,PANEL_FONT,CLR_TEXT_META,px+10,y+4);
-   vC = 只平不开?CLR_TEXT_WARN:White;
-   sVal = 只平不开?"● 启用":"○ 关闭";
-   SetLabel("2020A",sVal,9,PANEL_FONT_B,vC,px+pw-80,y+4);
+   SetRect("20208",px+5,y,pw-10,20,CLR_ALT_ROW,CLR_FRAME,1);
+   SetLabel("20209","只平不开",8,PANEL_FONT,CLR_TEXT_META,px+10,y+5);
+   vC=只平不开?CLR_TEXT_WARN:White;
+   sVal=只平不开?"● 启用":"○ 关闭";
+   SetLabel("2020A",sVal,9,PANEL_FONT_B,vC,px+pw-70,y+5);
    y+=22;
-   // 行4 当前信号
-   SetRect("2020B",px+5,y,pw-10,STA_ROW_H,CLR_ALT_ROW,CLR_FRAME,1);
-   SetLabel("2020C","当前信号",8,PANEL_FONT,CLR_TEXT_META,px+10,y+4);
+   SetRect("2020B",px+5,y,pw-10,20,CLR_ALT_ROW,CLR_FRAME,1);
+   SetLabel("2020C","当前信号",8,PANEL_FONT,CLR_TEXT_META,px+10,y+5);
    sSig="中性"; vC=White;
    if(g_SpreadSignal==1) { sSig="偏低▼"; vC=CLR_SIDE_BUY; }
    if(g_SpreadSignal==2) { sSig="偏高▲"; vC=CLR_SIDE_SELL; }
-   SetLabel("2020D",sSig,9,PANEL_FONT_B,vC,px+pw-80,y+4);
+   SetLabel("2020D",sSig,9,PANEL_FONT_B,vC,px+pw-70,y+5);
    y+=22;
-   // 行5 回撤比
-   SetRect("2020E",px+5,y,pw-10,STA_ROW_H,CLR_ALT_ROW,CLR_FRAME,1);
-   SetLabel("2020F","回撤比",8,PANEL_FONT,CLR_TEXT_META,px+10,y+4);
+   SetRect("2020E",px+5,y,pw-10,20,CLR_ALT_ROW,CLR_FRAME,1);
+   SetLabel("2020F","回撤比",8,PANEL_FONT,CLR_TEXT_META,px+10,y+5);
    dd=0;
    if(AccountBalance()>0) dd=(AccountEquity()-AccountBalance())/AccountBalance()*100;
    if(dd>=-2)      vC=CLR_SIDE_BUY;
    else if(dd>=-5) vC=CLR_TEXT_WARN;
    else            vC=CLR_TEXT_LOSS;
-   SetLabel("20210",DoubleToString(dd,2)+"%",9,PANEL_FONT_B,vC,px+pw-80,y+4);
+   SetLabel("20210",DoubleToString(dd,2)+"%",9,PANEL_FONT_B,vC,px+pw-70,y+5);
    y+=22;
-   // 行6 服务器时间
-   SetRect("20211",px+5,y,pw-10,STA_ROW_H,CLR_ALT_ROW,CLR_FRAME,1);
-   SetLabel("20212","服务器时间",8,PANEL_FONT,CLR_TEXT_META,px+10,y+4);
-   SetLabel("20213",TimeToString(TimeCurrent(),TIME_MINUTES),9,PANEL_FONT_B,White,px+pw-80,y+4);
+   SetRect("20211",px+5,y,pw-10,20,CLR_ALT_ROW,CLR_FRAME,1);
+   SetLabel("20212","服务器时间",8,PANEL_FONT,CLR_TEXT_META,px+10,y+5);
+   SetLabel("20213",TimeToString(TimeCurrent(),TIME_MINUTES),9,PANEL_FONT_B,White,px+pw-70,y+5);
 }
 void RenderPositionTable() {
-   int tblX,tblY,tblW,hdrY,rowH,sumY;
-   int colX[6];
+   int tx,ty,tw,hdrY,rowH,sumY;
+   int c0,c1,c2,c3,c4,c5;
    int gi,Y;
    double totLots,totPnl; int totB,totS;
    color rbg,pC,bC,tC;
-   tblX=5; tblY=70; tblW=495; hdrY=90; rowH=PANEL_ROW_H;
-   colX[0]=tblX+8;  colX[1]=tblX+48;  colX[2]=tblX+210;
-   colX[3]=tblX+250; colX[4]=tblX+290; colX[5]=tblX+330;
+   tx=5; ty=68; tw=495; hdrY=88; rowH=14;
+   c0=tx+8;  c1=tx+48;  c2=tx+210;
+   c3=tx+250; c4=tx+290; c5=tx+330;
    totLots=0; totPnl=0; totB=0; totS=0;
-   SetRect("20300",tblX,tblY,tblW,18+16*PANEL_ROW_H+POS_SUM_H+10,CLR_PANEL_BG,CLR_FRAME,1);
-   SetLabel("20301","  仓位矩阵 · 16 组",9,PANEL_FONT_B,CLR_TEXT_WARN,tblX+6,tblY+5);
-   SetRect("20302",tblX+4,hdrY-2,tblW-8,POS_HDR_H,CLR_HEADER_BG,CLR_FRAME,1);
-   SetLabel("20303","组",8,PANEL_FONT_B,CLR_TEXT_META,colX[0],hdrY+3);
-   SetLabel("20304","币对 1 · 币对 2",8,PANEL_FONT_B,CLR_TEXT_META,colX[1],hdrY+3);
-   SetLabel("20305","B单",8,PANEL_FONT_B,CLR_TEXT_META,colX[2],hdrY+3);
-   SetLabel("20306","S单",8,PANEL_FONT_B,CLR_TEXT_META,colX[3],hdrY+3);
-   SetLabel("20307","手数",8,PANEL_FONT_B,CLR_TEXT_META,colX[4],hdrY+3);
-   SetLabel("20308","盈亏 USD",8,PANEL_FONT_B,CLR_TEXT_META,colX[5],hdrY+3);
+   SetRect("20300",tx,ty,tw,288,CLR_PANEL_BG,CLR_FRAME,1);
+   SetLabel("20301","  仓位矩阵 · 16 组",9,PANEL_FONT_B,CLR_TEXT_WARN,tx+6,ty+4);
+   SetRect("20302",tx+4,hdrY-2,tw-8,18,CLR_HEADER_BG,CLR_FRAME,1);
+   SetLabel("20303","组",8,PANEL_FONT_B,CLR_TEXT_META,c0,hdrY+3);
+   SetLabel("20304","币对 1 · 币对 2",8,PANEL_FONT_B,CLR_TEXT_META,c1,hdrY+3);
+   SetLabel("20305","B单",8,PANEL_FONT_B,CLR_TEXT_META,c2,hdrY+3);
+   SetLabel("20306","S单",8,PANEL_FONT_B,CLR_TEXT_META,c3,hdrY+3);
+   SetLabel("20307","手数",8,PANEL_FONT_B,CLR_TEXT_META,c4,hdrY+3);
+   SetLabel("20308","盈亏 USD",8,PANEL_FONT_B,CLR_TEXT_META,c5,hdrY+3);
    for(gi=1;gi<=16;gi++) {
-      Y = hdrY + 2 + gi*rowH;
-      rbg = (gi%2==0)?CLR_ALT_ROW:CLR_ALT_ROW2;
-      pC = (g_GC_pnl[gi]>=0)?CLR_TEXT_PROFIT:CLR_TEXT_LOSS;
-      bC = g_GC_active[gi]?White:CLR_TEXT_DIM;
-      SetRect("2031"+DoubleToString(gi,0),tblX+4,Y-1,tblW-8,rowH-1,rbg,rbg,1);
-      SetLabel("2032"+DoubleToString(gi,0),"G"+DoubleToString(gi,0),7,PANEL_FONT,bC,colX[0],Y+1);
-      SetLabel("2033"+DoubleToString(gi,0),g_GC_sym1[gi]+"·"+g_GC_sym2[gi],7,PANEL_FONT,bC,colX[1],Y+1);
-      SetLabel("2034"+DoubleToString(gi,0),DoubleToString(g_GC_bCnt[gi],0),7,PANEL_FONT_B,CLR_SIDE_BUY,colX[2],Y+1);
-      SetLabel("2035"+DoubleToString(gi,0),DoubleToString(g_GC_sCnt[gi],0),7,PANEL_FONT_B,CLR_SIDE_SELL,colX[3],Y+1);
-      SetLabel("2036"+DoubleToString(gi,0),DoubleToString(g_GC_lots[gi],2),7,PANEL_FONT,White,colX[4],Y+1);
-      SetLabel("2037"+DoubleToString(gi,0),DoubleToString(g_GC_pnl[gi],2),7,PANEL_FONT_B,pC,colX[5],Y+1);
+      Y=hdrY+2+gi*rowH;
+      rbg=(gi%2==0)?CLR_ALT_ROW:CLR_ALT_ROW2;
+      pC=(g_GC_pnl[gi]>=0)?CLR_TEXT_PROFIT:CLR_TEXT_LOSS;
+      bC=g_GC_active[gi]?White:CLR_TEXT_DIM;
+      SetRect("2031"+DoubleToString(gi,0),tx+4,Y-1,tw-8,rowH-1,rbg,rbg,1);
+      SetLabel("2032"+DoubleToString(gi,0),"G"+DoubleToString(gi,0),7,PANEL_FONT,bC,c0,Y+1);
+      SetLabel("2033"+DoubleToString(gi,0),g_GC_sym1[gi]+" "+g_GC_sym2[gi],7,PANEL_FONT,bC,c1,Y+1);
+      SetLabel("2034"+DoubleToString(gi,0),DoubleToString(g_GC_bCnt[gi],0),7,PANEL_FONT_B,CLR_SIDE_BUY,c2,Y+1);
+      SetLabel("2035"+DoubleToString(gi,0),DoubleToString(g_GC_sCnt[gi],0),7,PANEL_FONT_B,CLR_SIDE_SELL,c3,Y+1);
+      SetLabel("2036"+DoubleToString(gi,0),DoubleToString(g_GC_lots[gi],2),7,PANEL_FONT,White,c4,Y+1);
+      SetLabel("2037"+DoubleToString(gi,0),DoubleToString(g_GC_pnl[gi],2),7,PANEL_FONT_B,pC,c5,Y+1);
       totB+=g_GC_bCnt[gi]; totS+=g_GC_sCnt[gi];
       totLots+=g_GC_lots[gi]; totPnl+=g_GC_pnl[gi];
    }
-   sumY = hdrY + 2 + 17*rowH;
-   tC = (totPnl>=0)?CLR_TEXT_PROFIT:CLR_TEXT_LOSS;
-   SetRect("20390",tblX+4,sumY-2,tblW-8,POS_SUM_H,CLR_TOTAL_ROW,CLR_TEXT_WARN,1);
-   SetLabel("20391","S",8,PANEL_FONT_B,CLR_TEXT_WARN,colX[0],sumY+2);
-   SetLabel("20392","16组合计",8,PANEL_FONT_B,CLR_TEXT_WARN,colX[1],sumY+2);
-   SetLabel("20393",DoubleToString(totB,0),8,PANEL_FONT_B,CLR_SIDE_BUY,colX[2],sumY+2);
-   SetLabel("20394",DoubleToString(totS,0),8,PANEL_FONT_B,CLR_SIDE_SELL,colX[3],sumY+2);
-   SetLabel("20395",DoubleToString(totLots,2),8,PANEL_FONT_B,White,colX[4],sumY+2);
-   SetLabel("20396",DoubleToString(totPnl,2),8,PANEL_FONT_B,tC,colX[5],sumY+2);
+   sumY=hdrY+2+17*rowH;
+   tC=(totPnl>=0)?CLR_TEXT_PROFIT:CLR_TEXT_LOSS;
+   SetRect("20390",tx+4,sumY-2,tw-8,18,CLR_TOTAL_ROW,CLR_TEXT_WARN,1);
+   SetLabel("20391","S",8,PANEL_FONT_B,CLR_TEXT_WARN,c0,sumY+2);
+   SetLabel("20392","16组合计",8,PANEL_FONT_B,CLR_TEXT_WARN,c1,sumY+2);
+   SetLabel("20393",DoubleToString(totB,0),8,PANEL_FONT_B,CLR_SIDE_BUY,c2,sumY+2);
+   SetLabel("20394",DoubleToString(totS,0),8,PANEL_FONT_B,CLR_SIDE_SELL,c3,sumY+2);
+   SetLabel("20395",DoubleToString(totLots,2),8,PANEL_FONT_B,White,c4,sumY+2);
+   SetLabel("20396",DoubleToString(totPnl,2),8,PANEL_FONT_B,tC,c5,sumY+2);
 }
 void RenderRiskMonitor() {
    int rx,ry,rw,hdrY,rowH;
-   int cX[4];
+   int c0,c1,c2,c3;
    int gi,Y;
    double addPct,thr;
    color rbg,aC,rC,lC;
    string aTxt,rTxt,lTxt;
-   rx=5; ry=360; rw=495; hdrY=ry+20; rowH=12;
-   cX[0]=rx+8;  cX[1]=rx+130; cX[2]=rx+240; cX[3]=rx+350;
-   SetRect("20500",rx,ry,rw,18+16*rowH+8,CLR_PANEL_BG,CLR_FRAME,1);
-   SetLabel("20501","  风险触发监控 · 16 组",9,PANEL_FONT_B,CLR_TEXT_WARN,rx+6,ry+5);
-   SetRect("20502",rx+4,hdrY-2,rw-8,RISK_HDR_H,CLR_HEADER_BG,CLR_FRAME,1);
-   SetLabel("20503","组",8,PANEL_FONT_B,CLR_TEXT_META,cX[0],hdrY+3);
-   SetLabel("20504","距加仓",8,PANEL_FONT_B,CLR_TEXT_META,cX[1],hdrY+3);
-   SetLabel("20505","距减仓",8,PANEL_FONT_B,CLR_TEXT_META,cX[2],hdrY+3);
-   SetLabel("20506","限频/手数",8,PANEL_FONT_B,CLR_TEXT_META,cX[3],hdrY+3);
+   rx=5; ry=362; rw=495; hdrY=ry+20; rowH=12;
+   c0=rx+8;  c1=rx+130; c2=rx+240; c3=rx+350;
+   SetRect("20500",rx,ry,rw,234,CLR_PANEL_BG,CLR_FRAME,1);
+   SetLabel("20501","  风险触发监控 · 16 组",9,PANEL_FONT_B,CLR_TEXT_WARN,rx+6,ry+4);
+   SetRect("20502",rx+4,hdrY-2,rw-8,16,CLR_HEADER_BG,CLR_FRAME,1);
+   SetLabel("20503","组",8,PANEL_FONT_B,CLR_TEXT_META,c0,hdrY+2);
+   SetLabel("20504","距加仓",8,PANEL_FONT_B,CLR_TEXT_META,c1,hdrY+2);
+   SetLabel("20505","距减仓",8,PANEL_FONT_B,CLR_TEXT_META,c2,hdrY+2);
+   SetLabel("20506","限频/手数",8,PANEL_FONT_B,CLR_TEXT_META,c3,hdrY+2);
    for(gi=1;gi<=16;gi++) {
-      Y = hdrY + 2 + gi*rowH;
-      rbg = (gi%2==0)?CLR_ALT_ROW:CLR_ALT_ROW2;
+      Y=hdrY+2+gi*rowH;
+      rbg=(gi%2==0)?CLR_ALT_ROW:CLR_ALT_ROW2;
       SetRect("2051"+DoubleToString(gi,0),rx+4,Y-1,rw-8,rowH-1,rbg,rbg,1);
       addPct=100; aTxt="- 无仓"; aC=CLR_TEXT_META;
       if(g_GC_lots[gi]>0 && g_GC_pnl[gi]<0) {
@@ -4994,40 +4971,41 @@ void RenderRiskMonitor() {
       rTxt=(g_GC_signal[gi]!=0)?"待命":"无信号";
       rC  =(g_GC_signal[gi]!=0)?CLR_TEXT_WARN:CLR_TEXT_DIM;
       lTxt="手:"+DoubleToString(g_GC_lots[gi],2); lC=White;
-      SetLabel("2052"+DoubleToString(gi,0),"G"+DoubleToString(gi,0),7,PANEL_FONT,White,cX[0],Y+1);
-      SetLabel("2053"+DoubleToString(gi,0),aTxt,7,PANEL_FONT_B,aC,cX[1],Y+1);
-      SetLabel("2054"+DoubleToString(gi,0),rTxt,7,PANEL_FONT_B,rC,cX[2],Y+1);
-      SetLabel("2055"+DoubleToString(gi,0),lTxt,7,PANEL_FONT,lC,cX[3],Y+1);
+      SetLabel("2052"+DoubleToString(gi,0),"G"+DoubleToString(gi,0),7,PANEL_FONT,White,c0,Y+1);
+      SetLabel("2053"+DoubleToString(gi,0),aTxt,7,PANEL_FONT_B,aC,c1,Y+1);
+      SetLabel("2054"+DoubleToString(gi,0),rTxt,7,PANEL_FONT_B,rC,c2,Y+1);
+      SetLabel("2055"+DoubleToString(gi,0),lTxt,7,PANEL_FONT,lC,c3,Y+1);
    }
 }
 void RenderActivityLog() {
-   int lx,lw,baseY,rowH,colX[4];
+   int lx,lw,ly,rowH;
+   int c0,c1,c2,c3;
    int i,idx,Y;
    string line,tm,bd;
    color rbg;
-   lx=5; lw=990; baseY=570; rowH=LOG_ROW_H;
-   colX[0]=lx+8;  colX[1]=lx+85;  colX[2]=lx+210; colX[3]=lx+410;
-   SetRect("20600",lx,baseY-20,lw,20+8*rowH+10,CLR_PANEL_BG,CLR_FRAME,1);
-   SetLabel("20601","  活动日志 · 最近事件",9,PANEL_FONT_B,CLR_TEXT_WARN,lx+6,baseY-14);
-   SetLabel("20602","时间",7,PANEL_FONT_B,CLR_TEXT_META,colX[0],baseY-2);
-   SetLabel("20603","事件",7,PANEL_FONT_B,CLR_TEXT_META,colX[1],baseY-2);
-   SetLabel("20604","详情",7,PANEL_FONT_B,CLR_TEXT_META,colX[2],baseY-2);
-   SetLabel("20605","状态",7,PANEL_FONT_B,CLR_TEXT_META,colX[3],baseY-2);
+   lx=5; lw=990; ly=602; rowH=10;
+   c0=lx+8;  c1=lx+85;  c2=lx+210; c3=lx+410;
+   SetRect("20600",lx,ly,lw,106,CLR_PANEL_BG,CLR_FRAME,1);
+   SetLabel("20601","  活动日志 · 最近事件",9,PANEL_FONT_B,CLR_TEXT_WARN,lx+6,ly+4);
+   SetLabel("20602","时间",7,PANEL_FONT_B,CLR_TEXT_META,c0,ly+20);
+   SetLabel("20603","事件",7,PANEL_FONT_B,CLR_TEXT_META,c1,ly+20);
+   SetLabel("20604","详情",7,PANEL_FONT_B,CLR_TEXT_META,c2,ly+20);
+   SetLabel("20605","状态",7,PANEL_FONT_B,CLR_TEXT_META,c3,ly+20);
    for(i=0;i<8;i++) {
       idx=(g_LogPtr-1-i+8)%8;
-      Y=baseY+4+i*rowH;
+      Y=ly+32+i*rowH;
       line=g_LogLine[idx];
       rbg=(i%2==0)?CLR_ALT_ROW:CLR_ALT_ROW2;
       SetRect("2061"+DoubleToString(i,0),lx+4,Y-1,lw-8,rowH,rbg,rbg,1);
       if(StringLen(line)<3) {
-         SetLabel("2062"+DoubleToString(i,0),"",7,PANEL_FONT,CLR_TEXT_DIM,colX[0],Y+1);
-         SetLabel("2063"+DoubleToString(i,0),"- 无记录 -",7,PANEL_FONT,CLR_TEXT_DIM,colX[1],Y+1);
+         SetLabel("2062"+DoubleToString(i,0),"",7,PANEL_FONT,CLR_TEXT_DIM,c0,Y+1);
+         SetLabel("2063"+DoubleToString(i,0),"- 无记录 -",7,PANEL_FONT,CLR_TEXT_DIM,c1,Y+1);
          continue;
       }
       tm=StringSubstr(line,0,StringFind(line,"| "));
       bd=StringSubstr(line,StringFind(line,"| ")+2);
-      SetLabel("2064"+DoubleToString(i,0),tm,7,PANEL_FONT,White,colX[0],Y+1);
-      SetLabel("2065"+DoubleToString(i,0),bd,7,PANEL_FONT,CLR_TEXT_META,colX[1],Y+1);
+      SetLabel("2064"+DoubleToString(i,0),tm,7,PANEL_FONT,White,c0,Y+1);
+      SetLabel("2065"+DoubleToString(i,0),bd,7,PANEL_FONT,CLR_TEXT_META,c1,Y+1);
    }
 }
 
