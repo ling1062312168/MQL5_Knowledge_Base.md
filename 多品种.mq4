@@ -4886,7 +4886,9 @@ void RenderStatusPillars() {
 void RenderPositionTable() {
    int tblX=5, tblY=5, tblW=490, tblH=280;
    int hdrY=tblY+20, rowH=14, sumY;
-   int colX[6]={tblX+6,tblX+46,tblX+200,tblX+240,tblX+280,tblX+320};
+   int colX[6];
+   colX[0]=tblX+6; colX[1]=tblX+46; colX[2]=tblX+200;
+   colX[3]=tblX+240; colX[4]=tblX+280; colX[5]=tblX+320;
    int gi, Y;
    double totLots=0, totPnl=0; int totB=0, totS=0;
    color rowBg, pnlC, bC, totC;
@@ -4929,7 +4931,8 @@ void RenderPositionTable() {
 void RenderRiskMonitor() {
    int rx=500, ry=5, rw=495, rh=150;
    int hdrY=ry+20, rowH=12;
-   int cX[4]={rx+6,rx+120,rx+230,rx+340};
+   int cX[4];
+   cX[0]=rx+6; cX[1]=rx+120; cX[2]=rx+230; cX[3]=rx+340;
    int gi, Y;
    double addPct, thr;
    color rowBg, addC, relC, limC;
