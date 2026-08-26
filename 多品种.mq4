@@ -3935,34 +3935,34 @@ void RenderRiskMonitor() {
    }
 }
 void RenderActivityLog() {
-   int lx,lw,ly,rowH;
+   int lx,ly,lw,lh,rowH;
    int c0,c1,c2,c3;
    int i,idx,Y;
    string line,tm,bd;
    color rbg;
-   lx=5; lw=990; ly=602; rowH=10;
-   c0=lx+8;  c1=lx+85;  c2=lx+210; c3=lx+410;
-   SetRect("20600",lx,ly,lw,106,CLR_PANEL_BG,CLR_FRAME, 0);
-   SetLabel("20601","  活动日志 · 最近事件",9,PANEL_FONT_B,CLR_TEXT_WARN,lx+6,ly+4);
-   SetLabel("20602","时间",7,PANEL_FONT_B,CLR_TEXT_META,c0,ly+20);
-   SetLabel("20603","事件",7,PANEL_FONT_B,CLR_TEXT_META,c1,ly+20);
-   SetLabel("20604","详情",7,PANEL_FONT_B,CLR_TEXT_META,c2,ly+20);
-   SetLabel("20605","状态",7,PANEL_FONT_B,CLR_TEXT_META,c3,ly+20);
+   lx=505; ly=428; lw=490; lh=154; rowH=14;
+   c0=lx+8;  c1=lx+70;  c2=lx+150; c3=lx+290;
+   SetRect("20600",lx,ly,lw,lh,CLR_PANEL_BG,CLR_FRAME, 0);
+   SetLabel("20601","  活动日志",9,PANEL_FONT_B,CLR_TEXT_WARN,lx+6,ly+4);
+   SetLabel("20602","时间",7,PANEL_FONT_B,CLR_TEXT_META,c0,ly+18);
+   SetLabel("20603","事件",7,PANEL_FONT_B,CLR_TEXT_META,c1,ly+18);
+   SetLabel("20604","详情",7,PANEL_FONT_B,CLR_TEXT_META,c2,ly+18);
+   SetLabel("20605","状态",7,PANEL_FONT_B,CLR_TEXT_META,c3,ly+18);
    for(i=0;i<8;i++) {
       idx=(g_LogPtr-1-i+8)%8;
-      Y=ly+32+i*rowH;
+      Y=ly+30+i*rowH;
       line=g_LogLine[idx];
       rbg=(i%2==0)?CLR_ALT_ROW:CLR_ALT_ROW2;
       SetRect("2061"+DoubleToString(i,0),lx+4,Y-1,lw-8,rowH,rbg,rbg,1);
       if(StringLen(line)<3) {
-         SetLabel("2062"+DoubleToString(i,0),"",7,PANEL_FONT,CLR_TEXT_DIM,c0,Y+1);
-         SetLabel("2063"+DoubleToString(i,0),"- 无记录 -",7,PANEL_FONT,CLR_TEXT_DIM,c1,Y+1);
+         SetLabel("2062"+DoubleToString(i,0),"",7,PANEL_FONT,CLR_TEXT_DIM,c0,Y+4);
+         SetLabel("2063"+DoubleToString(i,0),"- 无记录 -",7,PANEL_FONT,CLR_TEXT_DIM,c1,Y+4);
          continue;
       }
       tm=StringSubstr(line,0,StringFind(line,"| "));
       bd=StringSubstr(line,StringFind(line,"| ")+2);
-      SetLabel("2064"+DoubleToString(i,0),tm,7,PANEL_FONT,White,c0,Y+1);
-      SetLabel("2065"+DoubleToString(i,0),bd,7,PANEL_FONT,CLR_TEXT_META,c1,Y+1);
+      SetLabel("2064"+DoubleToString(i,0),tm,7,PANEL_FONT,White,c0,Y+4);
+      SetLabel("2065"+DoubleToString(i,0),bd,7,PANEL_FONT,CLR_TEXT_META,c1,Y+4);
    }
 }
 
