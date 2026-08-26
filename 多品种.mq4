@@ -3750,41 +3750,6 @@ void RefreshGroupCache() {
   }}}
  return(0); 
  }
-double       CalcCorrelation(int bsw_0,int bsw_1,string bsw_2, string bsw_3)
-{
-   EnsurePanelObjects();
-   RefreshGroupCache();
-
-   // ===== 清理旧版面板对象（10000~19999 范围，防止新旧共存）=====
-   int __oldId;
-   string __oldName;
-   for(__oldId=10000; __oldId<=19999; __oldId++) {
-      __oldName = DoubleToString(__oldId, 0);
-      if(ObjectFind(__oldName) >= 0) {
-         ObjectDelete(__oldName);
-      }
-   }
-   // QIAN/HLINE 旧对象
-   if(ObjectFind("QIAN") >= 0) ObjectDelete("QIAN");
-   if(ObjectFind("11") >= 0) ObjectDelete("11");
-
-   // ===== v2 模块化面板 =====
-   RenderAccountKPI();
-   RenderSignalMatrix();
-   RenderStatusPillars();
-   RenderPositionTable();
-   RenderRiskMonitor();
-   RenderActivityLog();
-   return(0);
-// ===== v2 模块化面板（新增监控模块，对象ID 20000–20663，与旧版 10xxx 完全并行互不影响）=====
- RenderAccountKPI();
- RenderSignalMatrix();
- RenderStatusPillars();
- RenderPositionTable();
- RenderRiskMonitor();
- RenderActivityLog();
- return(0); 
-}
 
 // ====== 模块 ① RenderAccountKPI：顶部 KPI 条（CORNER=1）背景卡 + 文字对齐 ======
 void RenderAccountKPI() {
@@ -4001,65 +3966,6 @@ void RenderActivityLog() {
    }
 }
 
- void CloseAllPositions()
- {
- bool        dfz_bo_1;
- int         dfz_in_2=0;
-
- int        aa_in_7;
-
- dfz_bo_1 = false ;
- for (dfz_in_2 = OrdersTotal() ; dfz_in_2>=0 ; dfz_in_2 = dfz_in_2 - 1)
-  {
-  if ( OrderSelect(dfz_in_2,SELECT_BY_POS,MODE_TRADES)!=false && OrderMagicNumber()==g_MagicNumber )
-   {
-   if ( OrderType()==0 )
-    {
-    if(dfz_bo_1 = OrderClose(OrderTicket(),OrderLots(),MarketInfo(OrderSymbol(),9),0,Red)) { }
-    by_st_252 = StringConcatenate("关闭全部::",OrdersTotal(),"账单未结::",AccountBalance(),"") ;
-    SendStatusMail(); 
-    }
-   if ( OrderType()==1 )
-    {
-    if(dfz_bo_1 = OrderClose(OrderTicket(),OrderLots(),MarketInfo(OrderSymbol(),10),0,Red)) { }
-    by_st_252 = StringConcatenate("关闭全部::",OrdersTotal(),"账单未结::",AccountBalance(),"") ;
-    SendStatusMail(); 
-    }
-   if ( ( OrderType()==4 || OrderType()==2 || OrderType()==5 || OrderType()==3 ) )
-    {
-    if(dfz_bo_1 = OrderDelete(OrderTicket(),0xFFFFFFFF)) { }
-   }}
-  }
- if (dfz_bo_1)  return;
- for (aa_in_7 = OrdersTotal() ; aa_in_7>=0 ; aa_in_7=aa_in_7 - 1)
-  {
-  if ( OrderSelect(aa_in_7,SELECT_BY_POS,MODE_TRADES)!=false && OrderMagicNumber()==g_MagicNumber )
-   {
-   if ( OrderType()==0 )
-    {
-    if(OrderClose(OrderTicket(),OrderLots(),MarketInfo(OrderSymbol(),9),0,Red)) { }
-    }
-   if ( OrderType()==1 )
-    {
-    if(OrderClose(OrderTicket(),OrderLots(),MarketInfo(OrderSymbol(),10),0,Red)) { }
-    }
-   if ( ( OrderType()==4 || OrderType()==2 || OrderType()==5 || OrderType()==3 ) )
-    {
-    if(OrderDelete(OrderTicket(),0xFFFFFFFF)) { }
-   }}
-  }
- Alert("Order failed to Close.Balance :: ",OrdersTotal(),""); 
- by_st_252 = StringConcatenate("关闭失败::",OrdersTotal(),"账单未结::",AccountBalance(),"") ;
- SendStatusMail(); 
- }
-
- void SendStatusMail()
- {
-
- by_st_253 = StringConcatenate("",AccountNumber(),"/余额::",DoubleToString(AccountBalance(),0) + "/净值::",DoubleToString(AccountEquity(),0) + "/浮盈::",DoubleToString(AccountProfit(),0) + "/订单::",OrdersTotal(),"/智能手数:: ",by_do_256,"/",ServerAddress() + "") ;
- by_st_254 = " // " + by_st_252 + "\n" + " // EA名称::" + WindowExpertName() + "\n" + " // 图表品种:: " + Symbol() + "\n" + " // 两组盈亏:: " + DoubleToString(by_do_233 + by_do_234,2) + "\n" + StringConcatenate(" // 账户浮盈:: ",AccountProfit(),"\n") + StringConcatenate(" // 基础手数:: ",g_BaseLot,"\n") + StringConcatenate(" // 实开手数和:: ",by_do_237,"\n") + StringConcatenate(" // 持仓单量:: ",DoubleToString(by_in_118 + by_in_117,2),"\n") + " // 估算单量:: " + DoubleToString(by_do_190 + by_do_189,2) + "\n" + " // 智能调节手数:: " + DoubleToString(by_do_256,2) + " \n" + " // 历史手续费:: " + DoubleToString(by_do_240,2) + "+" + DoubleToString(by_do_241,2) + "USD \n" + " // 历史累计保证金:: " + DoubleToString(by_do_238,2) + " \n" + " // 账户余额:: " + DoubleToString(AccountBalance(),2) + " \n" + " // 账户净值:: " + DoubleToString(AccountEquity(),2) + " \n" + " // 历史平仓盈亏:: " + DoubleToString(by_do_239,2) + " \n" + " // 经纪商:: " + AccountCompany() + "\n" + " // 服务器:: " + ServerAddress() + "\n" + StringConcatenate(" // 可用保证金:: ",AccountFreeMargin(),"\n") + StringConcatenate(" // 已用保证金:: ",AccountMargin(),"\n") + StringConcatenate(" // 标准保证金=",MarketInfo(Symbol(),32),"\n") + StringConcatenate(" // 杠杆:: ",AccountLeverage(),"\n") + StringConcatenate(" // 账户姓名:: ",AccountName(),"\n") + StringConcatenate(" // 账户号码:: ",AccountNumber(),"\n") + StringConcatenate(" // 账户余额:: ",AccountBalance(),"\n") + StringConcatenate(" // 账户净值:: ",AccountEquity(),"\n") + StringConcatenate(" // 本地时间::",TimeToString(TimeLocal(),3),"\n") + StringConcatenate(" // 服务器时间::",TimeToString(TimeCurrent(),3),"\n") + StringConcatenate("MODE_POINT=",MarketInfo(Symbol(),11),"\n") + StringConcatenate("MODE_SPREAD=",MarketInfo(Symbol(),13),"\n") + StringConcatenate("MODE_STOPLEVEL=",MarketInfo(Symbol(),14),"\n") + StringConcatenate("MODE_LOTSIZE=",MarketInfo(Symbol(),15),"\n") + StringConcatenate("MODE_SWAPLONGbuy order=",MarketInfo(Symbol(),18),"\n") + StringConcatenate("MODE_SWAPSHORT sell order=",MarketInfo(Symbol(),19),"\n") + StringConcatenate("MODE_MINLOT=",MarketInfo(Symbol(),23),"\n") + StringConcatenate("MODE_LOTSTEP=",MarketInfo(Symbol(),24),"\n") + StringConcatenate("MODE_MAXLOT=",MarketInfo(Symbol(),25),"\n") + StringConcatenate("MODE_PROFITCALCMODE=",MarketInfo(Symbol(),27),"\n") + StringConcatenate("MODE_MARGININIT for 1 lot=",MarketInfo(Symbol(),29),"\n") + StringConcatenate("MODE_MARGINMAINTENANCEt=",MarketInfo(Symbol(),30),"\n") + StringConcatenate("MODE_MARGINHEDGED=",MarketInfo(Symbol(),31),"\n") + StringConcatenate("MODE_MARGINREQUIREDt=",MarketInfo(Symbol(),32),"\n") + StringConcatenate("MODE_FREEZELEVEL=",MarketInfo(Symbol(),33),"\n") + " " ;
- SendMail(by_st_253,by_st_254); 
- }
 
  double GetCurrencyStrength (string bsw_0,int bsw_1)
  {
