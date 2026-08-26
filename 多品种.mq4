@@ -4805,7 +4805,8 @@ void RenderAccountKPI() {
 // ====== 模块 ② RenderSignalMatrix：4×4 网格（CORNER=1）背景格 + 左边框色条 ======
 void RenderSignalMatrix() {
    int baseY=72, cellW=118, cellH=36;
-   int baseX=5, gridY=baseY+12;
+   int baseX=5, gridY;
+   gridY=baseY+12;
    int col,row,gi,X,Y;
    color bgC, brdC, sideC, txtC, metaC;
    string sigTxt, bgId, nmId, stId, mtId;
@@ -4885,7 +4886,8 @@ void RenderStatusPillars() {
 // ====== 模块 ④ RenderPositionTable：仓位表（CORNER=0）带背景 + 列对齐 ======
 void RenderPositionTable() {
    int tblX=5, tblY=5, tblW=490, tblH=280;
-   int hdrY=tblY+20, rowH=14, sumY;
+   int hdrY, rowH=14, sumY;
+   hdrY=tblY+20;
    int colX[6];
    colX[0]=tblX+6; colX[1]=tblX+46; colX[2]=tblX+200;
    colX[3]=tblX+240; colX[4]=tblX+280; colX[5]=tblX+320;
@@ -4930,7 +4932,8 @@ void RenderPositionTable() {
 // ====== 模块 ⑤ RenderRiskMonitor：风险监控（CORNER=0）带进度色条 ======
 void RenderRiskMonitor() {
    int rx=500, ry=5, rw=495, rh=150;
-   int hdrY=ry+20, rowH=12;
+   int hdrY, rowH=12;
+   hdrY=ry+20;
    int cX[4];
    cX[0]=rx+6; cX[1]=rx+120; cX[2]=rx+230; cX[3]=rx+340;
    int gi, Y;
