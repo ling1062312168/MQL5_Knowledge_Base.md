@@ -80,45 +80,45 @@ string    g_LogLine[8];
 datetime  g_LogTime[8];
 int       g_LogPtr=0;
 
-// 自定义颜色常量 (RGB 函数，MQL4 全版本兼容)
-#define CLR_PANEL_BG     RGB(37,37,53)
-#define CLR_CARD_BG      RGB(45,45,66)
-#define CLR_FRAME        RGB(58,58,85)
-#define CLR_BORDER       RGB(62,62,90)
-#define CLR_SIG_BG       RGB(42,42,62)
-#define CLR_INACTIVE_BG  RGB(53,53,74)
-#define CLR_INNER_BAND   RGB(85,85,119)
-#define CLR_ALT_ROW      RGB(40,40,64)
-#define CLR_HEADER_BG     RGB(47,47,69)
-#define CLR_TOTAL_ROW    RGB(58,58,90)
-#define CLR_SIDE_BUY      RGB(50,205,50)
-#define CLR_SIDE_SELL     RGB(255,50,50)
-#define CLR_SIDE_CORR     RGB(255,215,0)
-#define CLR_TEXT_DIM      RGB(128,128,128)
-#define CLR_TEXT_META     RGB(176,196,222)
-#define CLR_TEXT_WARN     RGB(255,215,0)
-#define CLR_TEXT_PROFIT   RGB(50,205,50)
-#define CLR_TEXT_LOSS     RGB(255,50,50)
-#define CLR_CARD_BORDER   RGB(74,74,106)
-#define CLR_ALT_ROW2      RGB(37,37,56)
+// 自定义颜色常量 (hex 整数，MQL4 全版本兼容)
+#define CLR_PANEL_BG     0x352525
+#define CLR_CARD_BG      0x422D2D
+#define CLR_FRAME        0x553A3A
+#define CLR_BORDER       0x5A3E3E
+#define CLR_SIG_BG       0x3E2A2A
+#define CLR_INACTIVE_BG  0x4A3535
+#define CLR_INNER_BAND   0x775555
+#define CLR_ALT_ROW      0x402828
+#define CLR_HEADER_BG     0x452F2F
+#define CLR_TOTAL_ROW    0x5A3A3A
+#define CLR_SIDE_BUY      0x32CD32
+#define CLR_SIDE_SELL     0x3232FF
+#define CLR_SIDE_CORR     0x00D7FF
+#define CLR_TEXT_DIM      0x808080
+#define CLR_TEXT_META     0xDEC4B0
+#define CLR_TEXT_WARN     0x00D7FF
+#define CLR_TEXT_PROFIT   0x32CD32
+#define CLR_TEXT_LOSS     0x3232FF
+#define CLR_CARD_BORDER   0x6A4A4A
+#define CLR_ALT_ROW2      0x382525
 
 // 辅助：创建/刷新 OBJ_LABEL。MQL4 无 OBJPROP_ANCHOR，anchor 参数用于模拟右对齐（扣减字符宽度）
-void SetLabel(string id,string text,int fsize=9,string fname="Arial Bold",color clr=clrWhite,int corner=0,int x=0,int y=0,int anchor=0) {
-   int actualX=x;
-   if ( anchor>=6 ) { // 右对齐（anchor 6/7/8）
-      int tw=StringLen(text)*(fsize+1);
+void SetLabel(string id,string text,int fsize=9,string fname="Arial Bold",color clr=White,int corner=0,int x=0,int y=0,int anchor=0) {
+   int actualX=x, tw=0;
+   if ( anchor>=6 ) {
+      tw=StringLen(text)*(fsize+1);
       actualX=x-tw;
    }
    if ( ObjectFind(id) < 0 ) {
       ObjectCreate(id,OBJ_LABEL,0,0,0,0,0,0,0);
       ObjectSet(id,OBJPROP_CORNER,corner);
-      ObjectSet(id,OBJPROP_XDISTANCE,actualX);
-      ObjectSet(id,OBJPROP_YDISTANCE,y);
    }
+   ObjectSet(id,OBJPROP_XDISTANCE,actualX);
+   ObjectSet(id,OBJPROP_YDISTANCE,y);
    ObjectSetText(id,text,fsize,fname,clr);
 }
 // 辅助：创建/刷新 OBJ_RECTANGLE_LABEL 背景板
-void SetRect(string id,int x,int y,int w,int h,int corner=0,color bg=clrDarkSlateGray,color brd=clrGray,int borderType=1) {
+void SetRect(string id,int x,int y,int w,int h,int corner=0,color bg=DarkSlateGray,color brd=Gray,int borderType=1) {
    if ( ObjectFind(id) < 0 ) {
       ObjectCreate(id,OBJ_RECTANGLE_LABEL,0,0,0,0,0,0,0);
       ObjectSet(id,OBJPROP_CORNER,corner);
@@ -138,10 +138,9 @@ void PushPanelLog(string line) {
    g_LogPtr = (g_LogPtr + 1) % 8;
 }
 
-// ===== Panel 模块函数原型（定义在下文，此处提前声明供 UpdateStatusDisplay 调用）=====
+// ===== Panel 模块函数原型（SetLabel/SetRect 已在前文定义，此处声明后文定义的函数）=====
 void EnsurePanelObjects();
 void RefreshGroupCache();
-void SetRect(string id,int x,int y,int w,int h,int corner=0,color bg=clrDarkSlateGray,color brd=clrGray,int borderType=1);
 void RenderAccountKPI();
 void RenderSignalMatrix();
 void RenderStatusPillars();
